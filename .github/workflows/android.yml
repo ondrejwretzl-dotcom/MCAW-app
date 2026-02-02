@@ -1,0 +1,89 @@
+name: Android CI
+
+on:
+  push:
+    branches: [ "**" ]
+  pull_request:
+    branches: [ "**" ]
+
+jobs:
+  build:
+    name: Build & Lint (Debug)
+    runs-on: ubuntu-latest
+
+    env:
+      # Uprav dle projektu, pokud máš jiné názvy modulù / variant
+      ANDROID_SDK_ROOT: /usr/local/android-sdk
+      GRADLE_OPTS: -Dorg.gradle.daemon=false -Dorg.gradle.jvmargs="-Xmx3g -XX:+UseG1GC -XX:MaxGCPauseMillis=200" -Dkotlin.daemon.jvm.options="-Xmx2g"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      # (Volitelné) Validace gradle wrapperu
+      - name: Validate Gradle Wrapper
+        uses: gradle/wrapper-validation-action@v2
+
+      # (Volitelné) Pokud používáš Android SDK komponenty, mùžeš explicitnì nainstalovat balíèky:
+      # - name: Set up Android SDK
+      #   uses: android-actions/setup-android@v3
+
+      - name: Gradle Build (assembleDebug)
+        uses: gradle/gradle-build-action@v3
+        with:
+          arguments: |
+            clean
+            :app:assembleDebug
+          build-root-directory: .
+          gradle-home-cache-cleanup: true
+
+      - name: Run Lint (Debug)
+        uses: gradle/gradle-build-action@v3
+        with:
+          arguments: |
+            :app:lintDebug
+          build-root-directory: .
+          gradle-home-cache-cleanup: true
+
+      # Uložení APK (pokud modul = app)
+      - name: Upload APK (Debug)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: ignore
+          retention-days: 7
+
+      # Uložení Lint reportù
+      - name: Upload Lint Reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-reports
+          path: |
+            app/build/reports/lint-results-debug.html
+            app/build/reports/lint-results-debug.xml
+            **/build/reports/**/*
+          if-no-files-found: ignore
+          retention-days: 7
+
+      # Uložení build logù (užiteèné pøi pádu kompilace)
+      - name: Upload Build Logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-logs
+          path: |
+            **/build/**/outputs/logs/**/*
+            **/.gradle/**/buildOutputCleanup/*
+            **/build/tmp/**/*
+          if-no-files-found: ignore
+          retention-days: 7
