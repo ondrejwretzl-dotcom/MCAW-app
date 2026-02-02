@@ -13,36 +13,41 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Nainstaluje JDK 17 a zapne cache pro Gradle (rychlejší buildy)
-      # Oficiální akce setup-java: doporučený způsob pro JDK na GitHub Actions.
-      # https://github.com/actions/setup-java
+      # 🔥 VYPÍNÁME VEŠKERÉ CACHOVÁNÍ GRADLE I KOTLIN
+      - name: Disable Gradle cache
+        run: |
+          echo "org.gradle.caching=false" >> gradle.properties
+          rm -rf ~/.gradle/caches
+          rm -rf ~/.gradle/wrapper
+          rm -rf ~/.gradle/kotlin-dsl
+          rm -rf ~/.gradle/buildOutputCleanup
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '17'
-          cache: 'gradle'
+          cache: 'none'     # ← vypnuto
 
-      # Připraví Gradle prostředí na runneru (caching, reporting…)
-      # Oficiální akce Gradle týmu – doporučené pro CI.
-      # https://github.com/gradle/actions
+      # 🔥 Nepoužíváme žádné cache v setup-gradle
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v5
+        with:
+          cache-disabled: true
 
-      # Pokud v repozitáři chybí gradle-wrapper.jar, tímto krokem wrapper vygenerujeme.
-      # Vytvoří soubory:
-      #  gradlew, gradlew.bat, gradle/wrapper/gradle-wrapper.jar, gradle-wrapper.properties
-      - name: Generate Gradle Wrapper (if missing)
+      # 🔥 Vynucené znovuvytvoření Gradle wrapperu (zabrání použití starého)
+      - name: Force-generate Gradle Wrapper
         run: |
-          if [ ! -f "gradle/wrapper/gradle-wrapper.jar" ]; then
-            gradle wrapper --gradle-version 8.7
-          fi
+          rm -rf gradle/wrapper
+          rm -f gradlew
+          rm -f gradlew.bat
+          gradle wrapper --gradle-version 8.7
 
       - name: Make gradlew executable
         run: chmod +x gradlew
 
       - name: Build debug APK
-        run: ./gradlew assembleDebug
+        run: ./gradlew --no-build-cache assembleDebug
 
       - name: Upload debug APK artifact
         uses: actions/upload-artifact@v4
