@@ -8,8 +8,8 @@
     <androidx.camera.view.PreviewView
         android:id="@+id/previewView"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-           <com.mcaw.ui.OverlayView
+        android:layout_height="match_parent"/>
+    <com.mcaw.ui.OverlayView
         android:id="@+id/overlay"
         android:layout_width="match_parent"
         android:layout_height="match_parent"/>
