@@ -10,8 +10,9 @@ import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import com.mcaw.app.R
 import com.mcaw.config.AppPreferences
+import com.mcaw.model.Box
+import com.mcaw.model.Detection
 import java.util.Locale
-import kotlin.math.max
 
 class DetectionAnalyzer(
     private val ctx: Context,
@@ -19,7 +20,8 @@ class DetectionAnalyzer(
     private val det: EfficientDetTFLiteDetector
 ) : ImageAnalysis.Analyzer {
 
-    private var lastBoxWidth = -1f
+    // U TTC pracujeme s výškou boxu › držíme si poslední hodnotu
+    private var lastBoxHeight = -1f
     private var lastTimestamp = -1L
 
     private var tts: TextToSpeech? = null
@@ -42,8 +44,10 @@ class DetectionAnalyzer(
             return
         }
 
+        // -------------------------
         // DETEKCE
-        val detList = when (AppPreferences.selectedModel) {
+        // -------------------------
+        val detList: List<Detection> = when (AppPreferences.selectedModel) {
             1 -> yolo.detect(bitmap)
             2 -> det.detect(bitmap)
             else -> emptyList()
@@ -54,35 +58,54 @@ class DetectionAnalyzer(
             return
         }
 
-        // Nejvìtší objekt = auto
-        val best: com.mcaw.model.Detection? = detections.maxByOrNull { it.score }
-
-        // Fyzikální distance (kalibrace FoV)
-        val distance = DetectionPhysics.estimateDistance(best.box)
-
-        // Rychlost pøibližování
-        val width = best.box.width()
-        var speed = 0f
-        if (lastBoxWidth > 0) {
-            val dt = (ts - lastTimestamp) / 1000f
-            speed = (width - lastBoxWidth) / dt
+        // Nejlepší (nejvìtší score)
+        val best: Detection? = detList.maxByOrNull { it.score }
+        if (best == null) {
+            image.close()
+            return
         }
 
-        // TTC (Time-to-collision)
-        val ttc = DetectionPhysics.computeTTC(distance, speed)
+        // -------------------------
+        // FYZIKA: vzdálenost + TTC
+        // -------------------------
+        // Heuristický odhad fokální délky (px) – nahraï pozdìji kalibrací/FoV
+        val focalPxEstimate = 1000f
+        val frameH = bitmap.height
 
-        // Adaptivní prah TTC podle rychlosti vlastního auta (zatím 0)
+        val distance: Float = DetectionPhysics.estimateDistanceMeters(
+            bbox = best.box,
+            frameHeightPx = frameH,
+            focalPx = focalPxEstimate,
+            realHeightM = if (best.label == "motorcycle") 1.3f else 1.5f
+        ) ?: Float.POSITIVE_INFINITY
+
+        // TTC z rùstu výšky boxu (logaritmická derivace)
+        val currH = best.box.h
+        var ttc = Float.POSITIVE_INFINITY
+        if (lastBoxHeight > 0f && lastTimestamp > 0L) {
+            val dtSec = ((ts - lastTimestamp).coerceAtLeast(1L)).toFloat() / 1000f
+            DetectionPhysics.computeTtcFromHeights(lastBoxHeight, currH, dtSec)?.let { ttc = it }
+        }
+
+        // Volitelnì mùžeš dopoèítat i "speed" (tady necháme 0, TTC máme robustní)
+        val speed = 0f
+
+        // Adaptivní práh TTC – zatím bez napojení na rychlost vlastního vozidla
         val userSpeed = 0f
-        val ttcThreshold = DetectionPhysics.adaptiveTtcThreshold(userSpeed)
+        val ttcThreshold: Float = DetectionPhysics.adaptiveTtcThreshold(userSpeed)
 
-        // uložit
-        lastBoxWidth = width
+        // Uložit pro další snímek
+        lastBoxHeight = currH
         lastTimestamp = ts
 
-        // upozornìní podle fyzikálních hodnot
+        // -------------------------
+        // ALERTY
+        // -------------------------
         handleAlerts(distance, speed, ttc, ttcThreshold)
 
-        // debug overlay
+        // -------------------------
+        // DEBUG OVERLAY
+        // -------------------------
         if (AppPreferences.debugOverlay) {
             sendOverlayUpdate(best.box, distance, speed, ttc)
         }
@@ -90,12 +113,10 @@ class DetectionAnalyzer(
         image.close()
     }
 
-
     // -------------------------------------------------------------------
     //   ALERT LOGIKA (sjednocená s OverlayView)
     // -------------------------------------------------------------------
     private fun handleAlerts(distance: Float, speed: Float, ttc: Float, ttcTh: Float) {
-
         val mode = AppPreferences.detectionMode
 
         val shouldAlert = when (mode) {
@@ -114,22 +135,20 @@ class DetectionAnalyzer(
         if (AppPreferences.voice) speak("Pozor! Auto se pøibližuje!")
     }
 
-
     // -------------------------------------------------------------------
     //   DEBUG OVERLAY BROADCAST
     // -------------------------------------------------------------------
     private fun sendOverlayUpdate(box: Box, dist: Float, speed: Float, ttc: Float) {
         val i = Intent("MCAW_DEBUG_UPDATE")
-        i.putExtra("left", box.left)
-        i.putExtra("top", box.top)
-        i.putExtra("right", box.right)
-        i.putExtra("bottom", box.bottom)
+        i.putExtra("left", box.x1)
+        i.putExtra("top", box.y1)
+        i.putExtra("right", box.x2)
+        i.putExtra("bottom", box.y2)
         i.putExtra("dist", dist)
         i.putExtra("speed", speed)
         i.putExtra("ttc", ttc)
         ctx.sendBroadcast(i)
     }
-
 
     // -------------------------------------------------------------------
     //   ALERTS
