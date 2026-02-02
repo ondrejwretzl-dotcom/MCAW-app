@@ -16,7 +16,11 @@ import kotlin.math.min
  * --------------------
  * - ONNX Runtime na Androidu
  * - Vstup: 640x640 RGB, normalizováno do 0..1 (NCHW)
+<<<<<<< HEAD
  * - Výstup: typicky [1, 84, 8400] (D,N) nebo [1, 8400, 84] (N,D)
+=======
+ * - Výstup: nejèastìji [1, 84, 8400] (D,N) nebo [1, 8400, 84] (N,D)
+>>>>>>> a2ea4604b3033a520b8bead7a61c50ce6754f059
  *   - prvních 4 složek: cx, cy, w, h
  *   - zbytek: class scores (bereme max class jako conf)
  */
@@ -66,7 +70,11 @@ class YoloOnnxDetector(
     }
 
     // ---------------------------------------------------------------------------
+<<<<<<< HEAD
     // PREPROCESS (NCHW, bez mean/std – doplò dle modelu, pokud je potøeba)
+=======
+    // PREPROCESS (NCHW, bez mean/std normalizace – lze doplnit podle modelu)
+>>>>>>> a2ea4604b3033a520b8bead7a61c50ce6754f059
     // ---------------------------------------------------------------------------
     private fun preprocess(bitmap: Bitmap): OnnxTensor {
         val imgData = FloatArray(1 * 3 * inputSize * inputSize)
@@ -74,6 +82,10 @@ class YoloOnnxDetector(
         for (y in 0 until inputSize) {
             for (x in 0 until inputSize) {
                 val px = bitmap.getPixel(x, y)
+<<<<<<< HEAD
+=======
+                // R, G, B v rozsahu 0..1
+>>>>>>> a2ea4604b3033a520b8bead7a61c50ce6754f059
                 val r = ((px shr 16) and 0xFF) / 255f
                 val g = ((px shr 8) and 0xFF) / 255f
                 val b = (px and 0xFF) / 255f
@@ -98,6 +110,10 @@ class YoloOnnxDetector(
 
         // Pokus A: [1, D, N] (D=5+C, N=pøedpovìdi)
         if (a >= 5) {
+<<<<<<< HEAD
+=======
+            // indexování: (0, c, n) -> ((0*a + c)*b + n)
+>>>>>>> a2ea4604b3033a520b8bead7a61c50ce6754f059
             val d = a
             val n = b
             for (j in 0 until n) {
@@ -105,6 +121,10 @@ class YoloOnnxDetector(
                 val cy = flat[j + 1 * n]
                 val w  = flat[j + 2 * n]
                 val h  = flat[j + 3 * n]
+<<<<<<< HEAD
+=======
+                // konf z klasí (max od indexu 4)
+>>>>>>> a2ea4604b3033a520b8bead7a61c50ce6754f059
                 var conf = 0f
                 var cIdx = 4
                 while (cIdx < d) {
@@ -125,6 +145,11 @@ class YoloOnnxDetector(
 
         // Pokus B: [1, N, D] (N=pøedpovìdi, D=5+C)
         if (b >= 5) {
+<<<<<<< HEAD
+=======
+            // indexování: (0, n, c) -> ((0*b + n)*b? != správnì) › pøepoèet:
+            // Pro [1, N, D]: lineární index (0*N + n)*D + c
+>>>>>>> a2ea4604b3033a520b8bead7a61c50ce6754f059
             val n = a
             val d = b
             var base = 0
