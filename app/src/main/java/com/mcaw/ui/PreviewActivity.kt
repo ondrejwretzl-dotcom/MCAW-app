@@ -8,6 +8,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.camera.view.PreviewView
 import com.mcaw.app.R
+import com.mcaw.model.Box
 
 class PreviewActivity : ComponentActivity() {
 
@@ -23,7 +24,7 @@ class PreviewActivity : ComponentActivity() {
             val right = i.getFloatExtra("right", 0f)
             val bottom = i.getFloatExtra("bottom", 0f)
 
-            overlay.box = com.mcaw.ai.Box(left, top, right, bottom)
+            overlay.box = Box(left, top, right, bottom)
             overlay.distance = i.getFloatExtra("dist", -1f)
             overlay.speed = i.getFloatExtra("speed", -1f)
             overlay.ttc = i.getFloatExtra("ttc", -1f)
