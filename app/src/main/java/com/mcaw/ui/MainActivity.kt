@@ -24,6 +24,10 @@ class MainActivity : ComponentActivity() {
         findViewById<Button>(R.id.btnStop).setOnClickListener {
             stopService(Intent(this, McawService::class.java))
         }
+        
+        findViewById<Button>(R.id.btnSettings).setOnClickListener {
+            startActivity(Intent(this, SettingsActivity::class.java))
+        }
     }
 
     private fun start() {

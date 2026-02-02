@@ -1,0 +1,14 @@
+<resources>
+    <string-array name="modes">
+        <item>TTC</item>
+        <item>Distance</item>
+        <item>Approach Speed</item>
+        <item>Full Detect</item>
+        <item>Debug Camera</item>
+    </string-array>
+
+    <string-array name="models">
+        <item>YOLOv8n (ONNX)</item>
+        <item>EfficientDet Lite0 (TFLite)</item>
+    </string-array>
+</resources>

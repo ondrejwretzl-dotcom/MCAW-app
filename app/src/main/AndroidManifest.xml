@@ -22,6 +22,14 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        
+        <activity
+             android:name="com.mcaw.ui.PreviewActivity"
+             android:exported="false" />
+        
+        <activity
+            android:name="com.mcaw.ui.PreviewActivity"
+            android:exported="false" />
 
         <!-- Foreground Camera Service -->
         <service
