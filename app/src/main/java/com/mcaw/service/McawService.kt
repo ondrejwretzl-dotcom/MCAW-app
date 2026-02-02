@@ -2,7 +2,6 @@ package com.mcaw.service
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.os.Build
@@ -18,13 +17,15 @@ import java.util.concurrent.Executors
 
 class McawService : LifecycleService() {
 
+    override fun onBind(intent: Intent?): IBinder? {
+        return null
+    }
+
     override fun onCreate() {
         super.onCreate()
         startForegroundWithNotification()
         initCamera()
     }
-
-    override fun onBind(intent: Intent?): IBinder? = null
 
     private fun startForegroundWithNotification() {
         val channelId = "mcaw_fg"
@@ -57,14 +58,13 @@ class McawService : LifecycleService() {
             analysis.setAnalyzer(
                 Executors.newSingleThreadExecutor()
             ) { image ->
-                // sem půjde tvoje analýza
                 image.close()
             }
 
             provider.unbindAll()
 
             provider.bindToLifecycle(
-                this, // LifecycleOwner = LifecycleService → OK
+                this,
                 CameraSelector.DEFAULT_BACK_CAMERA,
                 analysis
             )
