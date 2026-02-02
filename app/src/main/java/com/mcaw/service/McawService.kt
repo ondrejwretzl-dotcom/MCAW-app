@@ -12,6 +12,7 @@ import androidx.core.content.ContextCompat
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.CameraSelector
+import androidx.lifecycle.ProcessLifecycleOwner
 import com.mcaw.app.R
 import com.mcaw.ai.DetectionAnalyzer
 import com.mcaw.ai.YoloOnnxDetector
@@ -20,11 +21,9 @@ import com.mcaw.config.AppPreferences
 import java.util.concurrent.Executors
 
 /**
- * McawService – finální verze
- * ---------------------------
- * - foreground service s kamerou
- * - načítá oba modely
- * - napojí DetectionAnalyzer
+ * McawService – foreground služba s kamerou a detekcí
+ * - načte modely
+ * - propojí DetectionAnalyzer
  * - běží i se zhaslou obrazovkou
  */
 class McawService : Service() {
@@ -41,12 +40,16 @@ class McawService : Service() {
         // Inicializace nastavení
         AppPreferences.init(this)
 
-        // Spuštění foreground notifikace
+        // Foreground notifikace
         startForegroundNotification()
 
-        // Načtení obou modelů
+        // Načtení modelů
         initModels()
-        DetectionPhysics.focalLengthPx = computeFocalLengthPx()
+
+        // (Volitelné) výpočet fokální délky v pixelech – zatím se jen spočítá.
+        // Až budeš chtít, můžeš ji uložit do AppPreferences a použít v Analyzeru.
+        val focalPx = computeFocalLengthPx()
+        // TODO: AppPreferences.setFocalPx(focalPx) – pokud si přidáš takovou volbu.
 
         // Vytvoření analyzéru
         analyzer = DetectionAnalyzer(this, yolo, eff)
@@ -58,7 +61,6 @@ class McawService : Service() {
     // ---------------------------------------------------------
     //  NOTIFIKACE FOREGROUND SERVICE
     // ---------------------------------------------------------
-
     private fun startForegroundNotification() {
         val channelId = "mcaw_fg"
 
@@ -85,13 +87,11 @@ class McawService : Service() {
     // ---------------------------------------------------------
     // MODEL LOADING
     // ---------------------------------------------------------
-
     private fun initModels() {
         yolo = YoloOnnxDetector(
             context = this,
             modelName = "yolov8n.onnx"
         )
-
         eff = EfficientDetTFLiteDetector(
             ctx = this,
             modelName = "efficientdet_lite0.tflite"
@@ -101,9 +101,7 @@ class McawService : Service() {
     // ---------------------------------------------------------
     // CAMERA + ANALYZER
     // ---------------------------------------------------------
-
     private fun startCamera() {
-
         val providerFuture = ProcessCameraProvider.getInstance(this)
 
         providerFuture.addListener({
@@ -115,20 +113,23 @@ class McawService : Service() {
 
             val executor = Executors.newSingleThreadExecutor()
 
-            // Napoj detekční analyzér
+            // Napojení detekčního analyzéru
             analysis.setAnalyzer(executor, analyzer)
 
             provider.unbindAll()
 
             provider.bindToLifecycle(
-                androidx.lifecycle.ProcessLifecycleOwner.get(),
+                ProcessLifecycleOwner.get(),
                 CameraSelector.DEFAULT_BACK_CAMERA,
                 analysis
             )
 
         }, ContextCompat.getMainExecutor(this))
     }
-    
+
+    // ---------------------------------------------------------
+    // FOKÁLNÍ DÉLKA (px) – z Camera2 parametrů
+    // ---------------------------------------------------------
     private fun computeFocalLengthPx(): Float {
         val camManager = getSystemService(Context.CAMERA_SERVICE) as android.hardware.camera2.CameraManager
         val camId = camManager.cameraIdList.first()
@@ -139,8 +140,9 @@ class McawService : Service() {
         val sensorSize = chars.get(android.hardware.camera2.CameraCharacteristics.SENSOR_INFO_PHYSICAL_SIZE)
         val pixelArray = chars.get(android.hardware.camera2.CameraCharacteristics.SENSOR_INFO_PIXEL_ARRAY_SIZE)
 
-        if (focalLengths == null || sensorSize == null || pixelArray == null)
+        if (focalLengths == null || sensorSize == null || pixelArray == null) {
             return 1000f // fallback
+        }
 
         val focalMm = focalLengths[0]
         val sensorWidthMm = sensorSize.width
@@ -149,4 +151,3 @@ class McawService : Service() {
         return (focalMm / sensorWidthMm) * imageWidthPx
     }
 }
-

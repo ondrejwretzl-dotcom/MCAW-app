@@ -26,10 +26,6 @@
         <activity
              android:name="com.mcaw.ui.PreviewActivity"
              android:exported="false" />
-        
-        <activity
-            android:name="com.mcaw.ui.PreviewActivity"
-            android:exported="false" />
 
         <!-- Foreground Camera Service -->
         <service
