@@ -34,6 +34,16 @@ android {
 }
 
 dependencies {
+
+
+val camerax_version = "1.3.1"
+
+    // CameraX (nutné)
+    implementation("androidx.camera:camera-core:$camerax_version")
+    implementation("androidx.camera:camera-camera2:$camerax_version")
+    implementation("androidx.camera:camera-lifecycle:$camerax_version")
+    implementation("androidx.camera:camera-view:$camerax_version")
+
     // Příklad – ponech dle svého projektu
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
