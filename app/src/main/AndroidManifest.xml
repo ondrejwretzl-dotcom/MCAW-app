@@ -1,20 +1,33 @@
-<!-- app/src/main/AndroidManifest.xml -->
+<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Oprávnění potřebná pro kameru -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+
+    <!-- Důležité pro Android 11+: foreground service s kamerou -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
 
     <application
         android:label="MCAW"
         android:theme="@style/Theme.Material3.DayNight.NoActionBar">
 
+        <!-- Launcher Activity -->
         <activity
-            android:name="com.mcaw.app.ui.MainActivity"
-            android:exported="true">   <!-- ✅ DŮLEŽITÉ -->
+            android:name="com.mcaw.ui.MainActivity"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
 
-        <!-- další komponenty... -->
+        <!-- Foreground Camera Service -->
+        <service
+            android:name="com.mcaw.service.McawService"
+            android:exported="false"
+            android:foregroundServiceType="camera" />
     </application>
 
 </manifest>
