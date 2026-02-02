@@ -36,7 +36,8 @@ class YoloOnnxDetector(
     fun detect(bitmap: Bitmap): List<Detection> {
         // Resize + normalize
         val resized = Bitmap.createScaledBitmap(bitmap, inputSize, inputSize, false)
-        val inputTensor = preprocess(resized)
+        //val inputTensor = preprocess(resized)
+        val inputTensor = OnnxInput.fromCHW(env, chwFloatArray, /*C*/3, /*H*/inputH, /*W*/inputW
 
         val inputName = session.inputNames.iterator().next()
         val outputs = session.run(mapOf(inputName to inputTensor))

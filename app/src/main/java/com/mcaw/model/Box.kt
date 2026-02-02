@@ -5,13 +5,9 @@ import com.mcaw.model.Detection
 import kotlin.math.max
 import kotlin.math.min
 
-/**
- * Jednoduchá "fyzika" pro detekce: IoU a NMS.
- * Tohle nahradí chybìjící DetectionPhysics a sjednotí post-processing.
- */
 object DetectionPhysics {
 
-    /** Non-maximum suppression podle IoU. */
+    /** IoU + NMS; jednoduchá implementace */
     fun nms(input: List<Detection>, iouThreshold: Float = 0.45f): List<Detection> {
         val work = input.sortedByDescending { it.score }.toMutableList()
         val out = mutableListOf<Detection>()
@@ -23,7 +19,6 @@ object DetectionPhysics {
         return out
     }
 
-    /** Intersection-over-Union dvou boxù. */
     private fun iou(a: Box, b: Box): Float {
         val x1 = max(a.left, b.left)
         val y1 = max(a.top, b.top)

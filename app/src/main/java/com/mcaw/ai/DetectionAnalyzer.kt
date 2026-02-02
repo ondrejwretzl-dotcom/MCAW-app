@@ -55,7 +55,7 @@ class DetectionAnalyzer(
         }
 
         // Nejvìtší objekt = auto
-        val best = detList.maxBy { it.box.area() }
+        val best: com.mcaw.model.Detection? = detections.maxByOrNull { it.score }
 
         // Fyzikální distance (kalibrace FoV)
         val distance = DetectionPhysics.estimateDistance(best.box)

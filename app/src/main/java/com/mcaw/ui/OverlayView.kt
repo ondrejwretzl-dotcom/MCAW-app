@@ -4,66 +4,61 @@ import android.content.Context
 import android.graphics.*
 import android.util.AttributeSet
 import android.view.View
-import com.mcaw.ai.Box
+import com.mcaw.model.Detection
 
+/**
+ * Jednoduchý overlay, který umí vykreslit seznam detekcí (box + label).
+ * Nahrazuje pùvodní OverlayView – reference na left/top/right/bottom teï pochází z com.mcaw.model.Box.
+ */
 class OverlayView @JvmOverloads constructor(
-    ctx: Context,
+    context: Context,
     attrs: AttributeSet? = null
-) : View(ctx, attrs) {
-
-    var box: Box? = null
-    var ttc: Float? = null
-    var distance: Float? = null
-    var speed: Float? = null
+) : View(context, attrs) {
 
     private val boxPaint = Paint().apply {
-        strokeWidth = 6f
+        color = Color.GREEN
         style = Paint.Style.STROKE
+        strokeWidth = 4f
+        isAntiAlias = true
+    }
+
+    private val textBgPaint = Paint().apply {
+        color = Color.argb(140, 0, 0, 0)
+        style = Paint.Style.FILL
         isAntiAlias = true
     }
 
     private val textPaint = Paint().apply {
         color = Color.WHITE
-        textSize = 44f
+        textSize = 32f
         isAntiAlias = true
+        typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
     }
+
+    var detections: List<Detection> = emptyList()
+        set(value) { field = value; invalidate() }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
+        for (d in detections) {
+            val b = d.box
+            // box
+            canvas.drawRect(b.left, b.top, b.right, b.bottom, boxPaint)
 
-        val b = box ?: return
-        val ttcVal = ttc ?: return
-        val distVal = distance ?: return
-        val speedVal = speed ?: return
+            // štítek
+            val label = "${d.label} ${"%.2f".format(d.score)}"
+            val padding = 8f
+            val textW = textPaint.measureText(label)
+            val textH = textPaint.fontMetrics.run { bottom - top }
 
-        // PRAHY MUSÍ LADIT S DetectionAnalyzer
-        val ttcThreshold = 2.5f
+            val bgLeft = b.left
+            val bgBottom = b.top
+            val bgTop = bgBottom - textH - 2 * padding
+            val bgRight = bgLeft + textW + 2 * padding
 
-        val isHighRisk =
-            (ttcVal < ttcThreshold) ||
-            (distVal < 1.0f) ||
-            (speedVal > 1.2f)
-
-        val isMediumRisk =
-            !isHighRisk && (
-            (ttcVal < 4.0f) ||
-            (distVal < 2.0f) ||
-            (speedVal > 0.8f)
-        )
-
-        val boxColor = when {
-            isHighRisk -> Color.RED
-            isMediumRisk -> Color.YELLOW
-            else -> Color.GREEN
+            val rect = RectF(bgLeft, bgTop, bgRight, bgBottom)
+            canvas.drawRoundRect(rect, 8f, 8f, textBgPaint)
+            canvas.drawText(label, bgLeft + padding, bgBottom - padding, textPaint)
         }
-
-        boxPaint.color = boxColor
-        textPaint.color = boxColor
-
-        canvas.drawRect(b.left, b.top, b.right, b.bottom, boxPaint)
-
-        canvas.drawText("TTC: %.1f s".format(ttcVal), 40f, 80f, textPaint)
-        canvas.drawText("Dist: %.1f m".format(distVal), 40f, 140f, textPaint)
-        canvas.drawText("Speed: %.1f".format(speedVal), 40f, 200f, textPaint)
     }
 }
