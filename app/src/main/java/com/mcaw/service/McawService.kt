@@ -6,12 +6,12 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
-import androidx.core.app.NotificationCompat
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleService
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.CameraSelector
+import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.mcaw.app.R
 import java.util.concurrent.Executors
 
@@ -23,29 +23,33 @@ class McawService : LifecycleService() {
 
     override fun onCreate() {
         super.onCreate()
-        startForegroundWithNotification()
-        initCamera()
+        startForegroundNotification()
+        startCamera()
     }
 
-    private fun startForegroundWithNotification() {
+    private fun startForegroundNotification() {
         val channelId = "mcaw_fg"
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            val ch = NotificationChannel(channelId, "MCAW", NotificationManager.IMPORTANCE_LOW)
-            nm.createNotificationChannel(ch)
+            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val channel = NotificationChannel(
+                channelId,
+                "MCAW",
+                NotificationManager.IMPORTANCE_LOW
+            )
+            manager.createNotificationChannel(channel)
         }
 
         val notif = NotificationCompat.Builder(this, channelId)
-            .setSmallIcon(android.R.drawable.stat_sys_warning)
             .setContentTitle("MCAW běží")
+            .setSmallIcon(android.R.drawable.stat_sys_warning)
             .setOngoing(true)
             .build()
 
         startForeground(1, notif)
     }
 
-    private fun initCamera() {
+    private fun startCamera() {
         val providerFuture = ProcessCameraProvider.getInstance(this)
 
         providerFuture.addListener({
@@ -57,8 +61,8 @@ class McawService : LifecycleService() {
 
             analysis.setAnalyzer(
                 Executors.newSingleThreadExecutor()
-            ) { image ->
-                image.close()
+            ) { img ->
+                img.close()
             }
 
             provider.unbindAll()
