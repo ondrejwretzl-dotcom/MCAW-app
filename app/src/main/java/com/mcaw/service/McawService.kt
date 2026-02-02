@@ -1,2 +1,61 @@
 package com.mcaw.service
-import android.app.*; import android.content.*; import android.os.*; import androidx.camera.core.*; import androidx.camera.lifecycle.ProcessCameraProvider; import androidx.core.app.NotificationCompat; import androidx.core.content.ContextCompat; import import com.mcaw.app.R; import java.util.concurrent.Executors; class McawService: Service(){ override fun onBind(p0: Intent?)= null; override fun onCreate(){ super.onCreate(); if(Build.VERSION.SDK_INT>=26){ val nm=getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager; val ch= NotificationChannel("mcaw_fg","MCAW", NotificationManager.IMPORTANCE_LOW); nm.createNotificationChannel(ch) }; val notif= NotificationCompat.Builder(this,"mcaw_fg").setContentTitle("MCAW běží").setSmallIcon(android.R.drawable.stat_sys_warning).build(); startForeground(1, notif); val f= ProcessCameraProvider.getInstance(this); f.addListener({ val p=f.get(); val a= ImageAnalysis.Builder().setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST).build(); a.setAnalyzer(Executors.newSingleThreadExecutor()){ it.close() }; p.unbindAll(); p.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, a) }, ContextCompat.getMainExecutor(this)) } }
+
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.os.Build
+import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.LifecycleService
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.CameraSelector
+import com.mcaw.app.R
+import java.util.concurrent.Executors
+
+class McawService : LifecycleService() {
+
+    override fun onCreate() {
+        super.onCreate()
+        createFgNotification()
+        startCamera()
+    }
+
+    private fun createFgNotification() {
+        val channelId = "mcaw_fg"
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val nm = getSystemService(NotificationManager::class.java)
+            val ch = NotificationChannel(channelId, "MCAW", NotificationManager.IMPORTANCE_LOW)
+            nm.createNotificationChannel(ch)
+        }
+        val notif = NotificationCompat.Builder(this, channelId)
+            .setSmallIcon(android.R.drawable.stat_sys_warning)
+            .setContentTitle("MCAW běží")
+            .setOngoing(true)
+            .build()
+        startForeground(1, notif)
+    }
+
+    private fun startCamera() {
+        val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
+        cameraProviderFuture.addListener({
+            val cameraProvider = cameraProviderFuture.get()
+
+            val analysis = ImageAnalysis.Builder()
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .build()
+
+            analysis.setAnalyzer(Executors.newSingleThreadExecutor()) { image ->
+                // TODO: sem dej detekci + výpočet vzdál./TTC
+                image.close()
+            }
+
+            cameraProvider.unbindAll()
+            // LifecycleService -> this je LifecycleOwner => bindToLifecycle funguje
+            cameraProvider.bindToLifecycle(
+                this,
+                CameraSelector.DEFAULT_BACK_CAMERA,
+                analysis
+            )
+        }, ContextCompat.getMainExecutor(this))
+    }
+}
