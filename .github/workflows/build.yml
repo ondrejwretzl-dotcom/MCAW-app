@@ -22,8 +22,17 @@ jobs:
         with:
           distribution: 'zulu'
           java-version: '17'
-          cache: gradle
+          cache: 'gradle'
 
+      # Připraví Gradle na runneru (cache, reporting, apod.)
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      # 1) Vygenerujeme Gradle Wrapper přímo na runneru
+      - name: Generate Gradle Wrapper (if missing)
+        run: gradle wrapper --gradle-version 8.7
+
+      # 2) Teď už wrapper existuje, můžeme použít ./gradlew
       - name: Make gradlew executable
         run: chmod +x gradlew
 
