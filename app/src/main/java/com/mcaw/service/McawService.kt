@@ -2,24 +2,23 @@ package com.mcaw.service
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
-import androidx.lifecycle.LifecycleService
+import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.CameraSelector
-import androidx.core.app.NotificationCompat
-import androidx.core.content.ContextCompat
 import com.mcaw.app.R
 import java.util.concurrent.Executors
 
-class McawService : LifecycleService() {
+class McawService : Service() {
 
-    override fun onBind(intent: Intent?): IBinder? {
-        return null
-    }
+    override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -31,18 +30,14 @@ class McawService : LifecycleService() {
         val channelId = "mcaw_fg"
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            val channel = NotificationChannel(
-                channelId,
-                "MCAW",
-                NotificationManager.IMPORTANCE_LOW
-            )
-            manager.createNotificationChannel(channel)
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val ch = NotificationChannel(channelId, "MCAW", NotificationManager.IMPORTANCE_LOW)
+            nm.createNotificationChannel(ch)
         }
 
         val notif = NotificationCompat.Builder(this, channelId)
-            .setContentTitle("MCAW běží")
             .setSmallIcon(android.R.drawable.stat_sys_warning)
+            .setContentTitle("MCAW běží")
             .setOngoing(true)
             .build()
 
@@ -50,6 +45,7 @@ class McawService : LifecycleService() {
     }
 
     private fun startCamera() {
+        val lifecycleOwner = ProcessLifecycleOwner.get()   // globální LifecycleOwner
         val providerFuture = ProcessCameraProvider.getInstance(this)
 
         providerFuture.addListener({
@@ -59,20 +55,17 @@ class McawService : LifecycleService() {
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .build()
 
-            analysis.setAnalyzer(
-                Executors.newSingleThreadExecutor()
-            ) { img ->
-                img.close()
+            analysis.setAnalyzer(Executors.newSingleThreadExecutor()) { image ->
+                // tvoje analýza
+                image.close()
             }
 
             provider.unbindAll()
-
             provider.bindToLifecycle(
-                this,
+                lifecycleOwner,                          // ísto `this`
                 CameraSelector.DEFAULT_BACK_CAMERA,
                 analysis
             )
-
         }, ContextCompat.getMainExecutor(this))
     }
 }
