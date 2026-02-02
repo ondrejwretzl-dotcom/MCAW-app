@@ -43,4 +43,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: MCAW-debug-apk
-          path: MCAW/app/build/outputs/apk/debug/*.apk
+          path: app/build/outputs/apk/debug/*.apk
