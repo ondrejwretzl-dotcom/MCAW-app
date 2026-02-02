@@ -9,51 +9,45 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content">
 
-        <!-- DETEKČNÍ REŽIM -->
+        <!-- Detekční režim -->
         <TextView
             android:text="Detekční režim"
             android:textSize="18sp"
-            android:layout_marginBottom="8dp"/>
+            android:layout_marginBottom="8dp" />
 
         <Spinner
             android:id="@+id/spMode"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:entries="@array/modes"/>
+            android:entries="@array/modes" />
 
-        <!-- MODEL -->
+        <!-- Výběr modelu -->
         <TextView
             android:text="Výběr modelu"
             android:layout_marginTop="20dp"
-            android:layout_marginBottom="8dp"/>
+            android:layout_marginBottom="8dp" />
 
-        <Spinner
-            android:id="@+id/spModel"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:entries="@array/models"/>
-
-        <!-- UPOZORNĚNÍ -->
+        <!-- Upozornění -->
         <TextView
             android:text="Upozornění"
             android:layout_marginTop="20dp"
-            android:layout_marginBottom="8dp"/>
+            android:layout_marginBottom="8dp" />
 
         <Switch
             android:id="@+id/swSound"
-            android:text="Zvuk"/>
+            android:text="Zvuk" />
 
         <Switch
             android:id="@+id/swVibration"
-            android:text="Vibrace"/>
+            android:text="Vibrace" />
 
         <Switch
             android:id="@+id/swVoice"
-            android:text="Hlasové varování"/>
+            android:text="Hlasové varování" />
 
         <Switch
             android:id="@+id/swDebug"
-            android:text="Debug overlay"/>
+            android:text="Debug overlay" />
 
     </LinearLayout>
 </ScrollView>
