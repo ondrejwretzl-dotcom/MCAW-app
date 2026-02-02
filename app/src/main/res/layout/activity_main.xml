@@ -1,14 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout
-    xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/root"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:background="#101114"
     android:padding="16dp">
 
-    <!-- Hlavièka / stav služby -->
     <TextView
         android:id="@+id/txtStatus"
         android:layout_width="match_parent"
@@ -17,12 +14,11 @@
         android:textColor="#FFFFFF"
         android:textStyle="bold"
         android:textSize="18sp"
+        android:gravity="center"
         android:padding="4dp"
-        android:gravity="center_horizontal"
         android:background="#1E222A"
-        android:layout_marginBottom="12dp"/>
+        android:layout="12dp" />
 
-    <!-- Hlavní metriky -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -39,9 +35,7 @@
             android:textColor="#00E5A8"
             android:textStyle="bold"
             android:textSize="28sp"
-            android:gravity="center_horizontal"
-            android:paddingTop="4dp"
-            android:paddingBottom="4dp"/>
+            android:gravity="center"/>
 
         <TextView
             android:id="@+id/txtDistance"
@@ -50,9 +44,7 @@
             android:text="Vzdálenost: --.- m"
             android:textColor="#FFFFFF"
             android:textSize="22sp"
-            android:gravity="center_horizontal"
-            android:paddingTop="2dp"
-            android:paddingBottom="2dp"/>
+            android:gravity="center"/>
 
         <TextView
             android:id="@+id/txtSpeed"
@@ -61,12 +53,9 @@
             android:text="Rychlost pøiblížení: --.- m/s"
             android:textColor="#FFFFFF"
             android:textSize="22sp"
-            android:gravity="center_horizontal"
-            android:paddingTop="2dp"
-            android:paddingBottom="2dp"/>
+            android:gravity="center"/>
     </LinearLayout>
 
-    <!-- Ovládací tlaèítka -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -80,9 +69,8 @@
             android:layout_height="48dp"
             android:layout_weight="1"
             android:text="START"
-            android:textAllCaps="false"
-            android:backgroundTint="#2ECC71"
             android:textColor="#FFFFFF"
+            android:backgroundTint="#2ECC71"
             android:layout_marginEnd="6dp"/>
 
         <Button
@@ -91,9 +79,8 @@
             android:layout_height="48dp"
             android:layout_weight="1"
             android:text="STOP"
-            android:textAllCaps="false"
-            android:backgroundTint="#E74C3C"
             android:textColor="#FFFFFF"
+            android:backgroundTint="#E74C3C"
             android:layout_marginStart="6dp"/>
     </LinearLayout>
 
@@ -102,8 +89,16 @@
         android:layout_width="match_parent"
         android:layout_height="48dp"
         android:text="Nastavení"
-        android:textAllCaps="false"
+        android:textColor="#FFFFFF"
         android:backgroundTint="#3B82F6"
-        android:textColor="#FFFFFF"/>
+        android:layout_marginBottom="12dp"/>
+
+    <Button
+        android:id="@+id/btnCamera"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:text="Kamera"
+        android:textColor="#FFFFFF"
+        android:backgroundTint="#8E44AD"/>
 
 </LinearLayout>
