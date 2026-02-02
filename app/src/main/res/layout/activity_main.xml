@@ -10,7 +10,7 @@
         android:id="@+id/txtStatus"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Služba: ZASTAVENA"
+        android:text="SluÅ¾ba: ZASTAVENA"
         android:textColor="#FFFFFF"
         android:textStyle="bold"
         android:textSize="18sp"
@@ -41,7 +41,7 @@
             android:id="@+id/txtDistance"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Vzdálenost: --.- m"
+            android:text="VzdÃ¡lenost: --.- m"
             android:textColor="#FFFFFF"
             android:textSize="22sp"
             android:gravity="center"/>
@@ -50,7 +50,7 @@
             android:id="@+id/txtSpeed"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Rychlost pøiblížení: --.- m/s"
+            android:text="Rychlost pÅ™iblÃ­Å¾enÃ­: --.- m/s"
             android:textColor="#FFFFFF"
             android:textSize="22sp"
             android:gravity="center"/>
@@ -88,7 +88,7 @@
         android:id="@+id/btnSettings"
         android:layout_width="match_parent"
         android:layout_height="48dp"
-        android:text="Nastavení"
+        android:text="NastavenÃ­"
         android:textColor="#FFFFFF"
         android:backgroundTint="#3B82F6"
         android:layout_marginBottom="12dp"/>

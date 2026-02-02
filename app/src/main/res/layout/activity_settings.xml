@@ -10,7 +10,7 @@
         android:layout_height="wrap_content">
 
         <TextView
-            android:text="Detekèní režim"
+            android:text="DetekÄnÃ­ reÅ¾im"
             android:textSize="18sp"
             android:layout_marginBottom="8dp"/>
 
@@ -21,7 +21,7 @@
             android:entries="@array/modes"/>
 
         <TextView
-            android:text="Výbìr modelu"
+            android:text="VÃ½bÄ›r modelu"
             android:layout_marginTop="20dp"
             android:layout_marginBottom="8dp"/>
 
@@ -32,7 +32,7 @@
             android:entries="@array/models"/>
 
         <TextView
-            android:text="Upozornìní"
+            android:text="UpozornÄ›nÃ­"
             android:layout_marginTop="20dp"
             android:layout_marginBottom="8dp"/>
 
@@ -46,7 +46,7 @@
 
         <Switch
             android:id="@+id/swVoice"
-            android:text="Hlasové varování"/>
+            android:text="HlasovÃ© varovÃ¡nÃ­"/>
 
         <Switch
             android:id="@+id/swDebug"
