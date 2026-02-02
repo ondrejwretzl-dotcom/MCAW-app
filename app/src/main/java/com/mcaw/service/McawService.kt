@@ -7,23 +7,24 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
-import androidx.camera.core.CameraSelector
-import androidx.camera.core.ImageAnalysis
-import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.LifecycleService
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.CameraSelector
 import com.mcaw.app.R
 import java.util.concurrent.Executors
 
-class McawService : Service() {
-
-    override fun onBind(intent: Intent?): IBinder? = null
+class McawService : LifecycleService() {
 
     override fun onCreate() {
         super.onCreate()
         startForegroundWithNotification()
         initCamera()
     }
+
+    override fun onBind(intent: Intent?): IBinder? = null
 
     private fun startForegroundWithNotification() {
         val channelId = "mcaw_fg"
@@ -53,26 +54,20 @@ class McawService : Service() {
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .build()
 
-            analysis.setAnalyzer(Executors.newSingleThreadExecutor()) { image ->
-                // ZDE BUDE TVÁ ANALÝZA
+            analysis.setAnalyzer(
+                Executors.newSingleThreadExecutor()
+            ) { image ->
+                // sem půjde tvoje analýza
                 image.close()
             }
 
             provider.unbindAll()
 
-            // POZOR: Service NENÍ LifecycleOwner
-            // Musíme použít "bindToLifecycle" přes "ProcessCameraProvider", NE přes LifecycleOwner.
-            // Správně CameraX vyžaduje lifecycle -> zde použijeme workaround:
-            // přijmeme, že analýza běží bez lifecycle bindingu pomocí use-case group:
-            try {
-                provider.bindToLifecycle(
-                    this@McawService,
-                    CameraSelector.DEFAULT_BACK_CAMERA,
-                    analysis
-                )
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
+            provider.bindToLifecycle(
+                this, // LifecycleOwner = LifecycleService → OK
+                CameraSelector.DEFAULT_BACK_CAMERA,
+                analysis
+            )
 
         }, ContextCompat.getMainExecutor(this))
     }
