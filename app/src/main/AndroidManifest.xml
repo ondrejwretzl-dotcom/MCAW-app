@@ -10,6 +10,7 @@
 
     <!-- Android 11+: foreground service that interacts with camera (even když kamera běží v Activity) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
 
     <application
         android:name=".MCAWApp"
@@ -44,4 +45,3 @@
     </application>
 
 </manifest>
-

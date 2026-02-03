@@ -27,6 +27,88 @@
             android:layout_marginTop="20dp"
             android:layout_marginBottom="8dp" />
 
+        <Spinner
+            android:id="@+id/spModel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:entries="@array/models" />
+
+        <!-- Uživatelské prahy -->
+        <TextView
+            android:id="@+id/txtUserThresholds"
+            android:text="Uživatelské prahy (TTC / vzdálenost / rychlost)"
+            android:layout_marginTop="20dp"
+            android:layout_marginBottom="8dp" />
+
+        <LinearLayout
+            android:id="@+id/groupUserThresholds"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <TextView
+                android:text="TTC (s) – oranžová / červená" />
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+                <EditText
+                    android:id="@+id/etTtcOrange"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:inputType="numberDecimal" />
+                <EditText
+                    android:id="@+id/etTtcRed"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:inputType="numberDecimal" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_marginTop="10dp"
+                android:text="Vzdálenost (m) – oranžová / červená" />
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+                <EditText
+                    android:id="@+id/etDistOrange"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:inputType="numberDecimal" />
+                <EditText
+                    android:id="@+id/etDistRed"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:inputType="numberDecimal" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_marginTop="10dp"
+                android:text="Rychlost přiblížení (m/s) – oranžová / červená" />
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+                <EditText
+                    android:id="@+id/etSpeedOrange"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:inputType="numberDecimal" />
+                <EditText
+                    android:id="@+id/etSpeedRed"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:inputType="numberDecimal" />
+            </LinearLayout>
+        </LinearLayout>
+
         <!-- Upozornění -->
         <TextView
             android:text="Upozornění"

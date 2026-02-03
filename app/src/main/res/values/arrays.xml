@@ -1,14 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string-array name="modes">
-        <item>TTC</item>
-        <item>Distance</item>
-        <item>Approach Speed</item>
-        <item>Full Detect</item>
-        <item>Debug Camera</item>
+        <item>Město</item>
+        <item>Sport</item>
+        <item>Uživatel</item>
     </string-array>
 
     <string-array name="models">
-        <item>YOLOv8n (ONNX)</item>
-        <item>EfficientDet Lite0 (TFLite)</item>
+        <item>YOLOv8 (ONNX)</item>
+        <item>EfficientDet (TFLite)</item>
     </string-array>
 </resources>
