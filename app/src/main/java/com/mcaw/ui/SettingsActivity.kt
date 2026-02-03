@@ -39,8 +39,8 @@ class SettingsActivity : ComponentActivity() {
         val swDebug = findViewById<SwitchMaterial>(R.id.swDebug)
         val swLaneFilter = findViewById<SwitchMaterial>(R.id.swLaneFilter)
 
-        val modeSelection = AppPreferences.detectionMode.coerceIn(0, spMode.count - 1)
-        val modelSelection = AppPreferences.selectedModel.coerceIn(0, spModel.count - 1)
+        val modeSelection = normalizeSelection(AppPreferences.detectionMode, spMode)
+        val modelSelection = normalizeSelection(AppPreferences.selectedModel, spModel)
         if (modeSelection != AppPreferences.detectionMode) {
             AppPreferences.detectionMode = modeSelection
         }
@@ -159,6 +159,12 @@ class SettingsActivity : ComponentActivity() {
             }
             else -> "Uživatel: nastavte vlastní prahy TTC, vzdálenosti a rychlosti."
         }
+    }
+
+    private fun normalizeSelection(value: Int, spinner: Spinner): Int {
+        val count = spinner.adapter?.count ?: 0
+        if (count <= 0) return 0
+        return value.coerceIn(0, count - 1)
     }
 
     private fun writeSessionLog(event: String) {
