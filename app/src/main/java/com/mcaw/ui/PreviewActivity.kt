@@ -64,6 +64,7 @@ class PreviewActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AppPreferences.ensureInit(this)
         setContentView(R.layout.activity_preview)
 
         previewView = findViewById(R.id.previewView)
@@ -112,6 +113,9 @@ class PreviewActivity : ComponentActivity() {
         val yolo = runCatching { YoloOnnxDetector(this, "yolov8n.onnx") }.getOrNull()
         val eff = runCatching { EfficientDetTFLiteDetector(this, "efficientdet_lite0.tflite") }
             .getOrNull()
+        if (yolo == null && eff == null) {
+            txtDetectionLabel.text = "Detekce: nelze načíst modely"
+        }
         analyzer = DetectionAnalyzer(this, yolo, eff)
         startCamera()
     }
