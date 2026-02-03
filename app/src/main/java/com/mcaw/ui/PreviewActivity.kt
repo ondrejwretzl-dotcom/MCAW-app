@@ -19,6 +19,7 @@ import com.mcaw.ai.DetectionAnalyzer
 import com.mcaw.ai.EfficientDetTFLiteDetector
 import com.mcaw.ai.YoloOnnxDetector
 import com.mcaw.app.R
+import com.mcaw.location.SpeedMonitor
 import java.util.concurrent.Executors
 
 class PreviewActivity : ComponentActivity() {
@@ -26,6 +27,7 @@ class PreviewActivity : ComponentActivity() {
     private lateinit var previewView: PreviewView
     private lateinit var overlay: OverlayView
     private lateinit var analyzer: DetectionAnalyzer
+    private lateinit var speedMonitor: SpeedMonitor
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(ctx: Context?, i: Intent?) {
@@ -48,6 +50,7 @@ class PreviewActivity : ComponentActivity() {
 
         previewView = findViewById(R.id.previewView)
         overlay = findViewById(R.id.overlay)
+        speedMonitor = SpeedMonitor(this)
 
         val filter = IntentFilter("MCAW_DEBUG_UPDATE")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -115,6 +118,21 @@ class PreviewActivity : ComponentActivity() {
 
     override fun onDestroy() {
         unregisterReceiver(receiver)
+        speedMonitor.stop()
         super.onDestroy()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+            == PackageManager.PERMISSION_GRANTED
+        ) {
+            speedMonitor.start()
+        }
+    }
+
+    override fun onStop() {
+        speedMonitor.stop()
+        super.onStop()
     }
 }
