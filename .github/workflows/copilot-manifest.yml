@@ -1,0 +1,103 @@
+name: Build Copilot Manifest
+
+on:
+  push:
+    branches: [ "main", "develop", "preview", "*" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  manifest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # potøebujeme tagy a historii
+      - name: Ensure tag copilot-latest points to HEAD of default branch
+        if: ${{ github.ref_type == 'branch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # pøepíše/anotuje tag na aktuální commit default branch
+          git tag -fa copilot-latest -m "Latest for Copilot" || true
+          git push -f origin refs/tags/copilot-latest
+
+      - name: Detect current commit
+        id: meta
+        run: |
+          echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+          echo "default_branch=${{ github.event.repository.default_branch }}" >> $GITHUB_OUTPUT
+
+      - name: Generate manifest (JSON)
+        run: |
+          mkdir -p copilot
+          SHA="${{ steps.meta.outputs.sha }}"
+          OWNER="${{ github.repository_owner }}"
+          REPO="$(basename $GITHUB_REPOSITORY)"
+
+          # Výbìr souborù – uprav dle potøeby
+          include_patterns=(
+            "*.md"
+            "app/src/**/*.kt"
+            "app/src/**/*.java"
+            "app/src/**/*.xml"
+            "app/src/**/AndroidManifest.xml"
+            "**/*.gradle"
+            "**/*.gradle.kts"
+            "gradle/**/*.gradle"
+            "build.gradle"
+            "settings.gradle"
+            "settings.gradle.kts"
+            "gradle.properties"
+            "app/proguard-rules.pro"
+            "app/src/**/assets/**/*.json"
+            "app/src/**/res/**/*.xml"
+            "app/src/**/jniLibs/**/*.so"
+            "app/src/**/resources/**/*"
+            "app/src/**/ml/**/*"
+          )
+
+          # Najdi soubory, odfiltruj .git a build výstupy
+          files=$(git ls-files "${include_patterns[@]}" | grep -vE '(^\.git/|/build/|/out/|/\.idea/|/\.gradle/)')
+
+          # Sestav JSON s permalinkem (konkrétní commit) i s "moving" linkem (tag copilot-latest)
+          {
+            echo "{"
+            echo "  \"repo\": \"https://github.com/${OWNER}/${REPO}\","
+            echo "  \"commit\": \"${SHA}\","
+            echo "  \"tag\": \"copilot-latest\","
+            echo "  \"generated_at\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\","
+            echo "  \"files\": ["
+            first=1
+            while IFS= read -r f; do
+              # URL encode jednoduchá (mezery se nevyskytují), escapujeme uvozovky
+              raw_commit_url="https://raw.githubusercontent.com/${OWNER}/${REPO}/${SHA}/${f}"
+              raw_tag_url="https://raw.githubusercontent.com/${OWNER}/${REPO}/copilot-latest/${f}"
+              display=$(echo "$f" | sed 's/"/\\"/g')
+              if [ $first -eq 0 ]; then echo ","; fi
+              echo "    {"
+              echo "      \"path\": \"${display}\","
+              echo "      \"raw_commit\": \"${raw_commit_url}\","
+              echo "      \"raw_tag\": \"${raw_tag_url}\""
+              echo -n "    }"
+              first=0
+            done <<< "$files"
+            echo
+            echo "  ]"
+            echo "}"
+          } > copilot/manifest.json
+
+      - name: Commit manifest into repo
+        run: |
+          if [ -n "$(git status --porcelain copilot/manifest.json)" ]; then
+            git add copilot/manifest.json
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "chore(copilot): update manifest for ${{ steps.meta.outputs.sha }}"
+            git push
+          else
+            echo "No manifest changes."
+          fi
