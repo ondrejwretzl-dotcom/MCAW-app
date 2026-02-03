@@ -4,6 +4,8 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.widget.Button
 import android.widget.TextView
 import androidx.activity.ComponentActivity
@@ -23,11 +25,14 @@ class MainActivity : ComponentActivity() {
     private lateinit var txtDistance: TextView
     private lateinit var txtSpeed: TextView
     private lateinit var txtObjectSpeed: TextView
+    private lateinit var txtRiderSpeed: TextView
     private lateinit var txtActivityLog: TextView
     private lateinit var txtBuildInfo: TextView
     private var pendingAction: PendingAction? = null
     private lateinit var speedMonitor: SpeedMonitor
     private val logLines: ArrayDeque<String> = ArrayDeque()
+    private val speedHandler = Handler(Looper.getMainLooper())
+    private var activityLogFileName: String = ""
 
     private val metricsReceiver = object : android.content.BroadcastReceiver() {
         override fun onReceive(context: android.content.Context?, intent: android.content.Intent?) {
@@ -62,6 +67,11 @@ class MainActivity : ComponentActivity() {
                     "Vzdálenost ${formatMetric(distance, "m")} · " +
                     "Rel ${formatMetric(speed, "m/s")}"
             )
+            logActivity(
+                "metrics ttc=${formatMetric(ttc, "s")} dist=${formatMetric(distance, "m")} " +
+                    "rel=${formatMetric(speed, "m/s")} obj=${formatMetric(objectSpeed, "m/s")} " +
+                    "level=$level"
+            )
         }
     }
 
@@ -79,14 +89,17 @@ class MainActivity : ComponentActivity() {
         txtDistance = findViewById(R.id.txtDistance)
         txtSpeed = findViewById(R.id.txtSpeed)
         txtObjectSpeed = findViewById(R.id.txtObjectSpeed)
+        txtRiderSpeed = findViewById(R.id.txtRiderSpeed)
         txtActivityLog = findViewById(R.id.txtActivityLog)
         txtBuildInfo = findViewById(R.id.txtBuildInfo)
         speedMonitor = SpeedMonitor(this)
+        activityLogFileName = "mcaw_activity_${sessionStamp()}.txt"
 
         txtBuildInfo.text =
             "MCAW ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) · ${BuildConfig.BUILD_ID}"
         addLog("Aplikace spuštěna")
         writeSessionLog("App start")
+        logActivity("app_start build=${BuildConfig.VERSION_NAME}(${BuildConfig.VERSION_CODE})")
 
         findViewById<Button>(R.id.btnStart).setOnClickListener {
             ensurePermissions(PendingAction.START_ENGINE)
@@ -94,6 +107,7 @@ class MainActivity : ComponentActivity() {
         findViewById<Button>(R.id.btnStop).setOnClickListener { stopEngine() }
         findViewById<Button>(R.id.btnSettings).setOnClickListener {
             writeSessionLog("Open settings")
+            logActivity("open_settings")
             startActivity(Intent(this, SettingsActivity::class.java))
         }
         findViewById<Button>(R.id.btnCamera).setOnClickListener {
@@ -128,11 +142,13 @@ class MainActivity : ComponentActivity() {
             runAction(action)
             speedMonitor.start()
             addLog("Ověřeno oprávnění: vše v pořádku")
+            logActivity("permissions_ok")
             return
         }
         pendingAction = action
         ActivityCompat.requestPermissions(this, requiredPerms, 1001)
         addLog("Žádost o oprávnění: kamera + poloha")
+        logActivity("permissions_request")
     }
 
     private fun startEngine() {
@@ -140,12 +156,14 @@ class MainActivity : ComponentActivity() {
         ContextCompat.startForegroundService(this, intent)
         txtStatus.text = "Služba: BĚŽÍ"
         addLog("Služba spuštěna")
+        logActivity("service_start")
     }
 
     private fun stopEngine() {
         stopService(Intent(this, McawService::class.java))
         txtStatus.text = "Služba: ZASTAVENA"
         addLog("Služba zastavena")
+        logActivity("service_stop")
     }
 
     override fun onRequestPermissionsResult(
@@ -164,8 +182,10 @@ class MainActivity : ComponentActivity() {
             }
             speedMonitor.start()
             addLog("Oprávnění udělena")
+            logActivity("permissions_granted")
         } else {
             addLog("Oprávnění zamítnuta")
+            logActivity("permissions_denied")
         }
     }
 
@@ -182,13 +202,17 @@ class MainActivity : ComponentActivity() {
             }) {
             speedMonitor.start()
             addLog("GPS monitor spuštěn")
+            logActivity("gps_monitor_start")
         }
+        startSpeedUpdates()
     }
 
     override fun onStop() {
         unregisterReceiver(metricsReceiver)
         speedMonitor.stop()
         addLog("GPS monitor zastaven")
+        logActivity("gps_monitor_stop")
+        stopSpeedUpdates()
         super.onStop()
     }
 
@@ -197,6 +221,7 @@ class MainActivity : ComponentActivity() {
             PendingAction.START_ENGINE -> startEngine()
             PendingAction.OPEN_CAMERA -> {
                 addLog("Otevírám kameru")
+                logActivity("open_camera")
                 startActivity(Intent(this, PreviewActivity::class.java))
             }
         }
@@ -217,10 +242,39 @@ class MainActivity : ComponentActivity() {
                 append('\n')
             }
         }.trimEnd()
+        logActivity("ui_log $message")
     }
 
     private fun formatMetric(value: Float, unit: String): String {
         return if (value.isFinite()) "%.2f %s".format(value, unit) else "--.- $unit"
+    }
+
+    private fun startSpeedUpdates() {
+        speedHandler.post(object : Runnable {
+            override fun run() {
+                val speedMps = com.mcaw.config.AppPreferences.lastSpeedMps
+                val speedKmh = speedMps * 3.6f
+                txtRiderSpeed.text = "Rychlost jezdce: %.1f km/h".format(speedKmh)
+                speedHandler.postDelayed(this, 1000L)
+            }
+        })
+    }
+
+    private fun stopSpeedUpdates() {
+        speedHandler.removeCallbacksAndMessages(null)
+    }
+
+    private fun logActivity(message: String) {
+        val timestamp =
+            java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US)
+                .format(System.currentTimeMillis())
+        val content = "ts=$timestamp $message"
+        PublicLogWriter.appendLogLine(this, activityLogFileName, content)
+    }
+
+    private fun sessionStamp(): String {
+        return java.text.SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", java.util.Locale.US)
+            .format(System.currentTimeMillis())
     }
 
     private enum class PendingAction {
