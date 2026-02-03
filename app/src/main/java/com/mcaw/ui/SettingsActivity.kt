@@ -11,6 +11,7 @@ import androidx.activity.ComponentActivity
 import com.mcaw.app.R
 import com.mcaw.config.AppPreferences
 import com.google.android.material.switchmaterial.SwitchMaterial
+import com.mcaw.util.PublicLogWriter
 
 class SettingsActivity : ComponentActivity() {
 
@@ -18,6 +19,7 @@ class SettingsActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         AppPreferences.ensureInit(this)
         setContentView(R.layout.activity_settings)
+        writeSessionLog("Settings opened")
 
         val spMode = findViewById<Spinner>(R.id.spMode)
         val spModel = findViewById<Spinner>(R.id.spModel)
@@ -157,5 +159,16 @@ class SettingsActivity : ComponentActivity() {
             }
             else -> "Uživatel: nastavte vlastní prahy TTC, vzdálenosti a rychlosti."
         }
+    }
+
+    private fun writeSessionLog(event: String) {
+        val timestamp = java.text.SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", java.util.Locale.US)
+            .format(System.currentTimeMillis())
+        val content = buildString {
+            append("event=")
+            append(event)
+            append('\n')
+        }
+        PublicLogWriter.writeTextFile(this, "mcaw_settings_$timestamp.txt", content)
     }
 }

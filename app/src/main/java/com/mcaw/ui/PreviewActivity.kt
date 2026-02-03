@@ -73,7 +73,8 @@ class PreviewActivity : ComponentActivity() {
         txtDetectionLabel = findViewById(R.id.txtDetectionLabel)
         speedMonitor = SpeedMonitor(this)
         overlay.showTelemetry = AppPreferences.debugOverlay
-        txtPreviewBuild.text = "MCAW ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"
+        txtPreviewBuild.text =
+            "MCAW ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) · ${BuildConfig.BUILD_ID}"
         txtDetectionLabel.text = "Detekce: --"
 
         val filter = IntentFilter("MCAW_DEBUG_UPDATE")

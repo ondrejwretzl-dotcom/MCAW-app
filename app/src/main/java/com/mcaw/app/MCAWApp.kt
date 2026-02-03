@@ -3,6 +3,7 @@ package com.mcaw.app
 import android.app.Application
 import android.speech.tts.TextToSpeech
 import android.util.Log
+import com.mcaw.util.PublicLogWriter
 import com.mcaw.config.AppPreferences
 import java.io.File
 import java.io.PrintWriter
@@ -13,10 +14,10 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 /**
- * Plnohodnotn· App t¯Ìda:
+ * Plnohodnotn√° App t√∏√≠da:
  * - Init AppPreferences
- * - Glob·lnÌ IO executor
- * - TTS (volitelnÏ dle nastavenÌ)
+ * - Glob√°ln√≠ IO executor
+ * - TTS (voliteln√¨ dle nastaven√≠)
  * - Uncaught crash handler (log do files/logs/)
  */
 class MCAWApp : Application(), TextToSpeech.OnInitListener {
@@ -28,7 +29,7 @@ class MCAWApp : Application(), TextToSpeech.OnInitListener {
         lateinit var ioExecutor: ExecutorService
             private set
 
-        /** Spusù ˙lohu na IO vl·knÏ. */
+        /** Spus¬ù √∫lohu na IO vl√°kn√¨. */
         fun runIO(task: Runnable) = ioExecutor.execute(task)
     }
 
@@ -79,11 +80,11 @@ class MCAWApp : Application(), TextToSpeech.OnInitListener {
     }
 
     override fun onInit(status: Int) {
-        // M˘ûeö nastavit jazyk, rychlost atd. Dle pot¯eby.
+        // M√π¬ûe¬ö nastavit jazyk, rychlost atd. Dle pot√∏eby.
         // tts?.language = Locale.getDefault()
     }
 
-    /** BezpeËnÈ pouûitÌ TTS z app vrstvy. */
+    /** Bezpe√®n√© pou¬ûit√≠ TTS z app vrstvy. */
     fun speakNow(text: String) {
         try {
             tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "app_say")
@@ -104,6 +105,11 @@ class MCAWApp : Application(), TextToSpeech.OnInitListener {
             val stamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US)
                 .format(System.currentTimeMillis())
             File(dir, "crash_$stamp.txt").writeText(stack)
+            PublicLogWriter.writeTextFile(
+                this,
+                "mcaw_crash_$stamp.txt",
+                stack
+            )
         } catch (_: Exception) {
             // ignore
         }
