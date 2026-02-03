@@ -51,6 +51,15 @@
             android:gravity="center" />
 
         <TextView
+            android:id="@+id/txtRiderSpeed"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Rychlost jezdce: 0.0 km/h"
+            android:textColor="#FFFFFF"
+            android:textSize="22sp"
+            android:gravity="center" />
+
+        <TextView
             android:id="@+id/txtSpeed"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

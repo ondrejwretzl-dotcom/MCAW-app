@@ -39,6 +39,7 @@ class DetectionAnalyzer(
     private var lastRelativeSpeed = 0f
     private var lastAlertLevel = 0
     private var lastAlertTimestamp = 0L
+    private var lastLogTimestamp = 0L
 
     private var tts: TextToSpeech? = null
 
@@ -70,15 +71,17 @@ class DetectionAnalyzer(
                 else -> emptyList()
             }
 
+            val vehicleDetections = detList.filter { isVehicleLabel(it.label) }
             val frameW = bitmap.width.toFloat()
             val frameH = bitmap.height.toFloat()
             val filtered = if (AppPreferences.laneFilter) {
-                detList.filter { isRelevantForLane(it.box, frameW, frameH) }
+                vehicleDetections.filter { isRelevantForLane(it.box, frameW, frameH) }
             } else {
-                detList
+                vehicleDetections
             }
 
             if (filtered.isEmpty()) {
+                logDetection(ts, "no_vehicle_detected", null, 0f)
                 sendOverlayClear()
                 return
             }
@@ -86,6 +89,7 @@ class DetectionAnalyzer(
             // Nejlepší (největší score)
             val best: Detection? = filtered.maxByOrNull { it.score }
             if (best == null) {
+                logDetection(ts, "no_best_detection", null, 0f)
                 sendOverlayClear()
                 return
             }
@@ -133,8 +137,10 @@ class DetectionAnalyzer(
             sendOverlayUpdate(best.box, frameW, frameH, distance, relSpeed, objectSpeed, ttc, label)
 
             sendMetricsUpdate(distance, relSpeed, objectSpeed, ttc, level)
+            logDetection(ts, "detection", label, best.score)
         } catch (e: Exception) {
             Log.e("DetectionAnalyzer", "Detection failed", e)
+            logDetection(System.currentTimeMillis(), "detection_error", e.javaClass.simpleName, 0f)
             sendOverlayClear()
         } finally {
             image.close()
@@ -273,6 +279,50 @@ class DetectionAnalyzer(
         val inLane = centerXNorm in 0.2f..0.8f
         val largeEnough = area >= minArea && height >= frameH * 0.06f
         return inLane && largeEnough
+    }
+
+    private fun isVehicleLabel(label: String?): Boolean {
+        val normalized = label?.lowercase()?.trim() ?: return false
+        return normalized in setOf(
+            "car",
+            "auto",
+            "vehicle",
+            "truck",
+            "lorry",
+            "van",
+            "bus",
+            "motorcycle",
+            "motorbike",
+            "bike"
+        )
+    }
+
+    private fun logDetection(timestamp: Long, event: String, label: String?, score: Float) {
+        if (timestamp - lastLogTimestamp < 2000L) return
+        lastLogTimestamp = timestamp
+        val content = buildString {
+            append("ts=")
+            append(timestamp)
+            append(" event=")
+            append(event)
+            if (label != null) {
+                append(" label=")
+                append(label)
+            }
+            if (score > 0f) {
+                append(" score=")
+                append("%.3f".format(Locale.US, score))
+            }
+        }
+        com.mcaw.util.PublicLogWriter.appendLogLine(
+            ctx,
+            "mcaw_activity_detection_${dateStamp(timestamp)}.txt",
+            content
+        )
+    }
+
+    private fun dateStamp(timestamp: Long): String {
+        return java.text.SimpleDateFormat("yyyy-MM-dd", Locale.US).format(timestamp)
     }
 
     private data class AlertThresholds(
