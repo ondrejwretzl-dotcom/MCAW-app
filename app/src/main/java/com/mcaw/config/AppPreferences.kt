@@ -15,6 +15,12 @@ object AppPreferences {
         prefs = ctx.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
     }
 
+    fun ensureInit(ctx: Context) {
+        if (!::prefs.isInitialized) {
+            init(ctx)
+        }
+    }
+
     // MODE SETTINGS
     var detectionMode: Int
         get() = prefs.getInt("mode", 0)

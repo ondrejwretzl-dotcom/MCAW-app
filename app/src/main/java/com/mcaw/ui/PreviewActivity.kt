@@ -31,6 +31,7 @@ class PreviewActivity : ComponentActivity() {
     private lateinit var overlay: OverlayView
     private lateinit var analyzer: DetectionAnalyzer
     private lateinit var speedMonitor: SpeedMonitor
+    private lateinit var txtDetectionLabel: TextView
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(ctx: Context?, i: Intent?) {
@@ -41,6 +42,7 @@ class PreviewActivity : ComponentActivity() {
                 overlay.speed = -1f
                 overlay.objectSpeed = -1f
                 overlay.ttc = -1f
+                txtDetectionLabel.text = "Detekce: žádný objekt"
                 return
             }
             overlay.box = com.mcaw.model.Box(
@@ -53,6 +55,8 @@ class PreviewActivity : ComponentActivity() {
             overlay.speed = i.getFloatExtra("speed", -1f)
             overlay.objectSpeed = i.getFloatExtra("object_speed", -1f)
             overlay.ttc = i.getFloatExtra("ttc", -1f)
+            val label = i.getStringExtra("label")?.ifBlank { null } ?: "neznámý objekt"
+            txtDetectionLabel.text = "Detekce: $label"
         }
     }
 
@@ -63,9 +67,11 @@ class PreviewActivity : ComponentActivity() {
         previewView = findViewById(R.id.previewView)
         overlay = findViewById(R.id.overlay)
         val txtPreviewBuild = findViewById<TextView>(R.id.txtPreviewBuild)
+        txtDetectionLabel = findViewById(R.id.txtDetectionLabel)
         speedMonitor = SpeedMonitor(this)
         overlay.showTelemetry = AppPreferences.debugOverlay
         txtPreviewBuild.text = "MCAW ${BuildConfig.VERSION_NAME}"
+        txtDetectionLabel.text = "Detekce: --"
 
         val filter = IntentFilter("MCAW_DEBUG_UPDATE")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {

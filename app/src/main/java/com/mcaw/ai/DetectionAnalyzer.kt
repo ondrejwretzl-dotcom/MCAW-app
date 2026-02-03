@@ -125,7 +125,7 @@ class DetectionAnalyzer(
         // -------------------------
         // DEBUG OVERLAY
         // -------------------------
-        sendOverlayUpdate(best.box, distance, relSpeed, objectSpeed, ttc)
+        sendOverlayUpdate(best.box, distance, relSpeed, objectSpeed, ttc, best.label)
 
         sendMetricsUpdate(distance, relSpeed, objectSpeed, ttc, level)
 
@@ -160,7 +160,8 @@ class DetectionAnalyzer(
         dist: Float,
         relSpeed: Float,
         objectSpeed: Float,
-        ttc: Float
+        ttc: Float,
+        label: String
     ) {
         val i = Intent("MCAW_DEBUG_UPDATE")
         i.putExtra("clear", false)
@@ -172,6 +173,13 @@ class DetectionAnalyzer(
         i.putExtra("speed", relSpeed)
         i.putExtra("object_speed", objectSpeed)
         i.putExtra("ttc", ttc)
+        i.putExtra("label", label)
+        ctx.sendBroadcast(i)
+    }
+
+    private fun sendOverlayClear() {
+        val i = Intent("MCAW_DEBUG_UPDATE")
+        i.putExtra("clear", true)
         ctx.sendBroadcast(i)
     }
 

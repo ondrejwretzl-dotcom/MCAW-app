@@ -16,6 +16,7 @@ class SettingsActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AppPreferences.ensureInit(this)
         setContentView(R.layout.activity_settings)
 
         val spMode = findViewById<Spinner>(R.id.spMode)

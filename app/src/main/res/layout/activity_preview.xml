@@ -27,6 +27,19 @@
         android:layout_margin="12dp" />
 
     <TextView
+        android:id="@+id/txtDetectionLabel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Detekce: --"
+        android:textColor="#FFFFFF"
+        android:textSize="12sp"
+        android:padding="8dp"
+        android:background="#80000000"
+        android:layout_gravity="top|start"
+        android:layout_marginStart="12dp"
+        android:layout_marginTop="48dp" />
+
+    <TextView
         android:id="@+id/txtPreviewBuild"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
