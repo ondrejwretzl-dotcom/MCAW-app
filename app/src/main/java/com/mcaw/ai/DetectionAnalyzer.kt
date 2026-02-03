@@ -125,7 +125,8 @@ class DetectionAnalyzer(
         // -------------------------
         // DEBUG OVERLAY
         // -------------------------
-        sendOverlayUpdate(best.box, distance, relSpeed, objectSpeed, ttc, best.label)
+        val label = best.label ?: "unknown"
+        sendOverlayUpdate(best.box, distance, relSpeed, objectSpeed, ttc, label)
 
         sendMetricsUpdate(distance, relSpeed, objectSpeed, ttc, level)
 
@@ -174,12 +175,6 @@ class DetectionAnalyzer(
         i.putExtra("object_speed", objectSpeed)
         i.putExtra("ttc", ttc)
         i.putExtra("label", label)
-        ctx.sendBroadcast(i)
-    }
-
-    private fun sendOverlayClear() {
-        val i = Intent("MCAW_DEBUG_UPDATE")
-        i.putExtra("clear", true)
         ctx.sendBroadcast(i)
     }
 

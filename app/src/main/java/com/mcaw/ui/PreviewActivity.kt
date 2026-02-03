@@ -56,7 +56,7 @@ class PreviewActivity : ComponentActivity() {
             overlay.objectSpeed = i.getFloatExtra("object_speed", -1f)
             overlay.ttc = i.getFloatExtra("ttc", -1f)
             val label = i.getStringExtra("label")?.ifBlank { null } ?: "neznámý objekt"
-            txtDetectionLabel.text = "Detekce: $label"
+            txtDetectionLabel.text = "Detekce: ${mapLabel(label)}"
         }
     }
 
@@ -156,5 +156,17 @@ class PreviewActivity : ComponentActivity() {
     override fun onStop() {
         speedMonitor.stop()
         super.onStop()
+    }
+
+    private fun mapLabel(label: String): String {
+        return when (label.lowercase()) {
+            "car", "auto", "vehicle" -> "auto"
+            "motorcycle", "motorbike", "bike", "motorka" -> "motorka"
+            "truck", "lorry", "nákladák", "nakladak" -> "nákladák"
+            "van", "dodavka", "dodávka" -> "dodávka"
+            "bus" -> "autobus"
+            "unknown" -> "neznámý objekt"
+            else -> label
+        }
     }
 }
