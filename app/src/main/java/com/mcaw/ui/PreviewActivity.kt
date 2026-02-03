@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.camera.core.CameraSelector
@@ -48,7 +49,12 @@ class PreviewActivity : ComponentActivity() {
         previewView = findViewById(R.id.previewView)
         overlay = findViewById(R.id.overlay)
 
-        registerReceiver(receiver, IntentFilter("MCAW_DEBUG_UPDATE"))
+        val filter = IntentFilter("MCAW_DEBUG_UPDATE")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(receiver, filter, RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(receiver, filter)
+        }
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
             != PackageManager.PERMISSION_GRANTED
@@ -112,4 +118,3 @@ class PreviewActivity : ComponentActivity() {
         super.onDestroy()
     }
 }
-
