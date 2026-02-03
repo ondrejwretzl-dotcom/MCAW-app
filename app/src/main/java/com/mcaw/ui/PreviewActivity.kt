@@ -29,7 +29,6 @@ class PreviewActivity : ComponentActivity() {
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(ctx: Context?, i: Intent?) {
             if (i == null) return
-
             overlay.box = com.mcaw.model.Box(
                 i.getFloatExtra("left", 0f),
                 i.getFloatExtra("top", 0f),
@@ -51,33 +50,27 @@ class PreviewActivity : ComponentActivity() {
 
         registerReceiver(receiver, IntentFilter("MCAW_DEBUG_UPDATE"))
 
-        if (hasCameraPermission()) {
-            initAndStart()
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CAMERA), 2001)
         } else {
-            ActivityCompat.requestPermissions(
-                this,
-                arrayOf(Manifest.permission.CAMERA),
-                2001
-            )
+            initAndStart()
         }
     }
-
-    private fun hasCameraPermission(): Boolean =
-        ContextCompat.checkSelfPermission(
-            this,
-            Manifest.permission.CAMERA
-        ) == PackageManager.PERMISSION_GRANTED
 
     override fun onRequestPermissionsResult(
         requestCode: Int,
         permissions: Array<out String>,
         grantResults: IntArray
     ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == 2001 && grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
+        if (requestCode == 2001 &&
+            grantResults.isNotEmpty() &&
+            grantResults[0] == PackageManager.PERMISSION_GRANTED
+        ) {
             initAndStart()
         } else {
-            finish() // bez kamery nemá smysl pokraèovat
+            finish()
         }
     }
 
@@ -90,7 +83,6 @@ class PreviewActivity : ComponentActivity() {
 
     private fun startCamera() {
         val providerFuture = ProcessCameraProvider.getInstance(this)
-
         providerFuture.addListener({
             val provider = providerFuture.get()
             provider.unbindAll()

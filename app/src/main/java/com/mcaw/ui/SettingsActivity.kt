@@ -13,17 +13,6 @@ class SettingsActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_settings)
     }
-
-    fun getSelectedModel(): String {
-        return getSharedPreferences(PREFS, MODE_PRIVATE)
-            .getString(KEY_MODEL, "yolo") ?: "yolo"
-    }
-
-    fun setSelectedModel(model: String) {
-        getSharedPreferences(PREFS, MODE_PRIVATE)
-            .edit()
-            .putString(KEY_MODEL, model)
-            .apply()
-    }
 }
+
 
