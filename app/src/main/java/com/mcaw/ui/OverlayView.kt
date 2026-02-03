@@ -36,6 +36,13 @@ class OverlayView @JvmOverloads constructor(
         typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
     }
 
+    private val zonePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.argb(120, 0, 229, 168)
+        style = Paint.Style.STROKE
+        strokeWidth = 3f
+        pathEffect = DashPathEffect(floatArrayOf(16f, 10f), 0f)
+    }
+
     // ---- DATA K ZOBRAZENÍ ------------------------------------------------------
 
     /**
@@ -88,6 +95,8 @@ class OverlayView @JvmOverloads constructor(
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
 
+        drawDetectionZone(canvas)
+
         val b = box ?: return
 
         // Vykreslení obdélníku
@@ -129,5 +138,16 @@ class OverlayView @JvmOverloads constructor(
             canvas.drawText(ln, bgLeft + padding, y, textPaint)
             y += lineH
         }
+    }
+
+    private fun drawDetectionZone(canvas: Canvas) {
+        val w = width.toFloat()
+        val h = height.toFloat()
+        if (w <= 0f || h <= 0f) return
+        val left = w * 0.3f
+        val right = w * 0.7f
+        val top = h * 0.15f
+        val bottom = h * 0.9f
+        canvas.drawRoundRect(left, top, right, bottom, 16f, 16f, zonePaint)
     }
 }

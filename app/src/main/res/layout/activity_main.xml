@@ -120,6 +120,29 @@
         android:text="Kamera"
         android:textAllCaps="false"
         android:textColor="#FFFFFF"
-        android:backgroundTint="#8E44AD" />
+        android:backgroundTint="#8E44AD"
+        android:layout_marginBottom="12dp" />
+
+    <!-- Aktivita aplikace -->
+    <TextView
+        android:id="@+id/txtActivityLog"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Aktivity:\n- Aplikace spuštěna"
+        android:textColor="#C9D1D9"
+        android:textSize="14sp"
+        android:background="#14181E"
+        android:padding="10dp"
+        android:layout_marginBottom="12dp" />
+
+    <!-- Build info -->
+    <TextView
+        android:id="@+id/txtBuildInfo"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Build: -"
+        android:textColor="#6B7280"
+        android:textSize="12sp"
+        android:gravity="end" />
 
 </LinearLayout>
