@@ -8,16 +8,16 @@ import com.mcaw.model.Box
 import kotlin.math.max
 
 /**
- * Jednoduchý overlay, který vykreslí jeden detekèní box a související telemetrii.
- * - Vstupní data se nastavují pøes veøejné properties: [box], [distance], [speed], [ttc]
- * - Kreslí rámeèek a popisek v levém horním rohu boxu.
+ * JednoduchÃ½ overlay, kterÃ½ vykreslÃ­ jeden detekÄnÃ­ box a souvisejÃ­cÃ­ telemetrii.
+ * - VstupnÃ­ data se nastavujÃ­ pÅ™es veÅ™ejnÃ© properties: [box], [distance], [speed], [ttc]
+ * - KreslÃ­ rÃ¡meÄek a popisek v levÃ©m hornÃ­m rohu boxu.
  */
 class OverlayView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null
 ) : View(context, attrs) {
 
-    // ---- VYKRESLOVACÍ NÁSTROJE ------------------------------------------------
+    // ---- VYKRESLOVACÃ NÃSTROJE ------------------------------------------------
 
     private val boxPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.GREEN
@@ -36,10 +36,10 @@ class OverlayView @JvmOverloads constructor(
         typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
     }
 
-    // ---- DATA K ZOBRAZENÍ ------------------------------------------------------
+    // ---- DATA K ZOBRAZENÃ ------------------------------------------------------
 
     /**
-     * Jediný box, který se má vykreslit (nastavuje PreviewActivity).
+     * JedinÃ½ box, kterÃ½ se mÃ¡ vykreslit (nastavuje PreviewActivity).
      */
     var box: Box? = null
         set(value) {
@@ -48,7 +48,7 @@ class OverlayView @JvmOverloads constructor(
         }
 
     /**
-     * Odhad vzdálenosti v metrech (mùže být -1f, pokud není známá).
+     * Odhad vzdÃ¡lenosti v metrech (mÅ¯Å¾e bÃ½t -1f, pokud nenÃ­ znÃ¡mÃ¡).
      */
     var distance: Float = -1f
         set(value) {
@@ -57,7 +57,7 @@ class OverlayView @JvmOverloads constructor(
         }
 
     /**
-     * Relativní rychlost pøibližování (m/s). Pokud nepoužíváš, nech -1f.
+     * RelativnÃ­ rychlost pÅ™ibliÅ¾ovÃ¡nÃ­ (m/s). Pokud nepouÅ¾Ã­vÃ¡Å¡, nech -1f.
      */
     var speed: Float = -1f
         set(value) {
@@ -66,7 +66,16 @@ class OverlayView @JvmOverloads constructor(
         }
 
     /**
-     * Time-To-Collision v sekundách. Pokud nepoužíváš, nech -1f.
+     * Odhad rychlosti objektu (m/s). Pokud nepouÅ¾Ã­vÃ¡Å¡, nech -1f.
+     */
+    var objectSpeed: Float = -1f
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    /**
+     * Time-To-Collision v sekundÃ¡ch. Pokud nepouÅ¾Ã­vÃ¡Å¡, nech -1f.
      */
     var ttc: Float = -1f
         set(value) {
@@ -74,27 +83,30 @@ class OverlayView @JvmOverloads constructor(
             invalidate()
         }
 
-    // ---- KRESLENÍ --------------------------------------------------------------
+    // ---- KRESLENÃ --------------------------------------------------------------
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
 
         val b = box ?: return
 
-        // Vykreslení obdélníku
+        // VykreslenÃ­ obdÃ©lnÃ­ku
         canvas.drawRect(b.x1, b.y1, b.x2, b.y2, boxPaint)
 
-        // Sestavení popiskù
+        // SestavenÃ­ popiskÅ¯
         val lines = buildList {
-            add("BOX  [%.0f×%.0f]".format((b.x2 - b.x1), (b.y2 - b.y1)))
+            add("BOX  [%.0fÃ—%.0f]".format((b.x2 - b.x1), (b.y2 - b.y1)))
             if (distance >= 0f && distance.isFinite()) add("DIST %.2f m".format(distance))
-            if (speed >= 0f && speed.isFinite()) add("SPEED %.2f m/s".format(speed))
+            if (speed >= 0f && speed.isFinite()) add("REL  %.2f m/s".format(speed))
+            if (objectSpeed >= 0f && objectSpeed.isFinite()) {
+                add("OBJ  %.2f m/s".format(objectSpeed))
+            }
             if (ttc >= 0f && ttc.isFinite()) add("TTC  %.2f s".format(ttc))
         }
 
         if (lines.isEmpty()) return
 
-        // Mìøení textu – šíøka nejdelšího øádku, výška øádku
+        // MÄ›Å™enÃ­ textu â€“ Å¡Ã­Å™ka nejdelÅ¡Ã­ho Å™Ã¡dku, vÃ½Å¡ka Å™Ã¡dku
         var textW = 0f
         val fm = textPaint.fontMetrics
         val lineH = (fm.bottom - fm.top)
@@ -106,12 +118,12 @@ class OverlayView @JvmOverloads constructor(
         val bgTop = bgBottom - (lineH * lines.size) - (2 * padding)
         val bgRight = bgLeft + textW + (2 * padding)
 
-        // Oøez proti hranám plátna (pokud by byl box u kraje)
+        // OÅ™ez proti hranÃ¡m plÃ¡tna (pokud by byl box u kraje)
         val topClamped = max(0f, bgTop)
         val rect = RectF(bgLeft, topClamped, bgRight, bgBottom)
         canvas.drawRoundRect(rect, 10f, 10f, textBgPaint)
 
-        // Vykreslení textu po øádcích
+        // VykreslenÃ­ textu po Å™Ã¡dcÃ­ch
         var y = (bgBottom - padding) - (lines.size - 1) * lineH
         for (ln in lines) {
             canvas.drawText(ln, bgLeft + padding, y, textPaint)
