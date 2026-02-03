@@ -1,0 +1,128 @@
+{
+  "repo": "https://github.com/ondrejwretzl-dotcom/MCAW-app",
+  "commit": "1f1e42bf7f3b0a11ef9029380e1cf033f81118ab",
+  "tag": "copilot-latest",
+  "generated_at": "2026-02-03T11:44:56Z",
+  "files": [
+    {
+      "path": "app/build.gradle.kts",
+      "raw_commit": "https://raw.githubusercontent.com/ondrejwretzl-dotcom/MCAW-app/1f1e42bf7f3b0a11ef9029380e1cf033f81118ab/app/build.gradle.kts",
+      "raw_tag": "https://raw.githubusercontent.com/ondrejwretzl-dotcom/MCAW-app/copilot-latest/app/build.gradle.kts"
+    },
+    {
+      "path": "app/src/main/AndroidManifest.xml",
+      "raw_commit": "https://raw.githubusercontent.com/ondrejwretzl-dotcom/MCAW-app/1f1e42bf7f3b0a11ef9029380e1cf033f81118ab/app/src/main/AndroidManifest.xml",
+      "raw_tag": "https://raw.githubusercontent.com/ondrejwretzl-dotcom/MCAW-app/copilot-latest/app/src/main/AndroidManifest.xml"
+    },
+    {
+      "path": "app/src/main/java/com/mcaw/ai/DetectionAnalyzer.kt",
+      "raw_commit": "https://raw.githubusercontent.com/ondrejwretzl-dotcom/MCAW-app/1f1e42bf7f3b0a11ef9029380e1cf033f81118ab/app/src/main/java/com/mcaw/ai/DetectionAnalyzer.kt",
+      "raw_tag": "https://raw.githubusercontent.com/ondrejwretzl-dotcom/MCAW-app/copilot-latest/app/src/main/java/com/mcaw/ai/DetectionAnalyzer.kt"
+    },
+    {
+      "path": "app/src/main/java/com/mcaw/ai/DetectionPhysics.kt",
+      "raw_commit": "https://raw.githubusercontent.com/ondrejwretzl-dotcom/MCAW-app/1f1e42bf7f3b0a11ef9029380e1cf033f81118ab/app/src/main/java/com/mcaw/ai/DetectionPhysics.kt",
+      "raw_tag": "https://raw.githubusercontent.com/ondrejwretzl-dotcom/MCAW-app/copilot-latest/app/src/main/java/com/mcaw/ai/DetectionPhysics.kt"
+    },
+    {
+      "path": "app/src/main/java/com/mcaw/ai/EfficientDetTFLiteDetector.kt",
+      "raw_commit": "https://raw.githubusercontent.com/ondrejwretzl-dotcom/MCAW-app/1f1e42bf7f3b0a11ef9029380e1cf033f81118ab/app/src/main/java/com/mcaw/ai/EfficientDetTFLiteDetector.kt",
+      "raw_tag": "https://raw.githubusercontent.com/ondrejwretzl-dotcom/MCAW-app/copilot-latest/app/src/main/java/com/mcaw/ai/EfficientDetTFLiteDetector.kt"
+    },
+    {
+      "path": "app/src/main/java/com/mcaw/ai/ImageUtils.kt",
+      "raw_commit": "https://raw.githubusercontent.com/ondrejwretzl-dotcom/MCAW-app/1f1e42bf7f3b0a11ef9029380e1cf033f81118ab/app/src/main/java/com/mcaw/ai/ImageUtils.kt",
+      "raw_tag": "https://raw.githubusercontent.com/ondrejwretzl-dotcom/MCAW-app/copilot-latest/app/src/main/java/com/mcaw/ai/ImageUtils.kt"
+    },
+    {
+      "path": "app/src/main/java/com/mcaw/ai/OnnxInput.kt",
+      "raw_commit": "https://raw.githubusercontent.com/ondrejwretzl-dotcom/MCAW-app/1f1e42bf7f3b0a11ef9029380e1cf033f81118ab/app/src/main/java/com/mcaw/ai/OnnxInput.kt",
+      "raw_tag": "https://raw.githubusercontent.com/ondrejwretzl-dotcom/MCAW-app/copilot-latest/app/src/main/java/com/mcaw/ai/OnnxInput.kt"
+    },
+    {
+      "path": "app/src/main/java/com/mcaw/ai/YoloOnnxDetector.kt",
+      "raw_commit": "https://raw.githubusercontent.com/ondrejwretzl-dotcom/MCAW-app/1f1e42bf7f3b0a11ef9029380e1cf033f81118ab/app/src/main/java/com/mcaw/ai/YoloOnnxDetector.kt",
+      "raw_tag": "https://raw.githubusercontent.com/ondrejwretzl-dotcom/MCAW-app/copilot-latest/app/src/main/java/com/mcaw/ai/YoloOnnxDetector.kt"
+    },
+    {
+      "path": "app/src/main/java/com/mcaw/app/MCAWApp.kt",
+      "raw_commit": "https://raw.githubusercontent.com/ondrejwretzl-dotcom/MCAW-app/1f1e42bf7f3b0a11ef9029380e1cf033f81118ab/app/src/main/java/com/mcaw/app/MCAWApp.kt",
+      "raw_tag": "https://raw.githubusercontent.com/ondrejwretzl-dotcom/MCAW-app/copilot-latest/app/src/main/java/com/mcaw/app/MCAWApp.kt"
+    },
+    {
+      "path": "app/src/main/java/com/mcaw/config/AppPreferences.kt",
+      "raw_commit": "https://raw.githubusercontent.com/ondrejwretzl-dotcom/MCAW-app/1f1e42bf7f3b0a11ef9029380e1cf033f81118ab/app/src/main/java/com/mcaw/config/AppPreferences.kt",
+      "raw_tag": "https://raw.githubusercontent.com/ondrejwretzl-dotcom/MCAW-app/copilot-latest/app/src/main/java/com/mcaw/config/AppPreferences.kt"
+    },
+    {
+      "path": "app/src/main/java/com/mcaw/model/Box.kt",
+      "raw_commit": "https://raw.githubusercontent.com/ondrejwretzl-dotcom/MCAW-app/1f1e42bf7f3b0a11ef9029380e1cf033f81118ab/app/src/main/java/com/mcaw/model/Box.kt",
+      "raw_tag": "https://raw.githubusercontent.com/ondrejwretzl-dotcom/MCAW-app/copilot-latest/app/src/main/java/com/mcaw/model/Box.kt"
+    },
+    {
+      "path": "app/src/main/java/com/mcaw/model/Detection.kt",
+      "raw_commit": "https://raw.githubusercontent.com/ondrejwretzl-dotcom/MCAW-app/1f1e42bf7f3b0a11ef9029380e1cf033f81118ab/app/src/main/java/com/mcaw/model/Detection.kt",
+      "raw_tag": "https://raw.githubusercontent.com/ondrejwretzl-dotcom/MCAW-app/copilot-latest/app/src/main/java/com/mcaw/model/Detection.kt"
+    },
+    {
+      "path": "app/src/main/java/com/mcaw/service/McawService.kt",
+      "raw_commit": "https://raw.githubusercontent.com/ondrejwretzl-dotcom/MCAW-app/1f1e42bf7f3b0a11ef9029380e1cf033f81118ab/app/src/main/java/com/mcaw/service/McawService.kt",
+      "raw_tag": "https://raw.githubusercontent.com/ondrejwretzl-dotcom/MCAW-app/copilot-latest/app/src/main/java/com/mcaw/service/McawService.kt"
+    },
+    {
+      "path": "app/src/main/java/com/mcaw/ui/MainActivity.kt",
+      "raw_commit": "https://raw.githubusercontent.com/ondrejwretzl-dotcom/MCAW-app/1f1e42bf7f3b0a11ef9029380e1cf033f81118ab/app/src/main/java/com/mcaw/ui/MainActivity.kt",
+      "raw_tag": "https://raw.githubusercontent.com/ondrejwretzl-dotcom/MCAW-app/copilot-latest/app/src/main/java/com/mcaw/ui/MainActivity.kt"
+    },
+    {
+      "path": "app/src/main/java/com/mcaw/ui/OverlayView.kt",
+      "raw_commit": "https://raw.githubusercontent.com/ondrejwretzl-dotcom/MCAW-app/1f1e42bf7f3b0a11ef9029380e1cf033f81118ab/app/src/main/java/com/mcaw/ui/OverlayView.kt",
+      "raw_tag": "https://raw.githubusercontent.com/ondrejwretzl-dotcom/MCAW-app/copilot-latest/app/src/main/java/com/mcaw/ui/OverlayView.kt"
+    },
+    {
+      "path": "app/src/main/java/com/mcaw/ui/PreviewActivity.kt",
+      "raw_commit": "https://raw.githubusercontent.com/ondrejwretzl-dotcom/MCAW-app/1f1e42bf7f3b0a11ef9029380e1cf033f81118ab/app/src/main/java/com/mcaw/ui/PreviewActivity.kt",
+      "raw_tag": "https://raw.githubusercontent.com/ondrejwretzl-dotcom/MCAW-app/copilot-latest/app/src/main/java/com/mcaw/ui/PreviewActivity.kt"
+    },
+    {
+      "path": "app/src/main/java/com/mcaw/ui/SettingsActivity.kt",
+      "raw_commit": "https://raw.githubusercontent.com/ondrejwretzl-dotcom/MCAW-app/1f1e42bf7f3b0a11ef9029380e1cf033f81118ab/app/src/main/java/com/mcaw/ui/SettingsActivity.kt",
+      "raw_tag": "https://raw.githubusercontent.com/ondrejwretzl-dotcom/MCAW-app/copilot-latest/app/src/main/java/com/mcaw/ui/SettingsActivity.kt"
+    },
+    {
+      "path": "app/src/main/res/layout/activity_main.xml",
+      "raw_commit": "https://raw.githubusercontent.com/ondrejwretzl-dotcom/MCAW-app/1f1e42bf7f3b0a11ef9029380e1cf033f81118ab/app/src/main/res/layout/activity_main.xml",
+      "raw_tag": "https://raw.githubusercontent.com/ondrejwretzl-dotcom/MCAW-app/copilot-latest/app/src/main/res/layout/activity_main.xml"
+    },
+    {
+      "path": "app/src/main/res/layout/activity_preview.xml",
+      "raw_commit": "https://raw.githubusercontent.com/ondrejwretzl-dotcom/MCAW-app/1f1e42bf7f3b0a11ef9029380e1cf033f81118ab/app/src/main/res/layout/activity_preview.xml",
+      "raw_tag": "https://raw.githubusercontent.com/ondrejwretzl-dotcom/MCAW-app/copilot-latest/app/src/main/res/layout/activity_preview.xml"
+    },
+    {
+      "path": "app/src/main/res/layout/activity_settings.xml",
+      "raw_commit": "https://raw.githubusercontent.com/ondrejwretzl-dotcom/MCAW-app/1f1e42bf7f3b0a11ef9029380e1cf033f81118ab/app/src/main/res/layout/activity_settings.xml",
+      "raw_tag": "https://raw.githubusercontent.com/ondrejwretzl-dotcom/MCAW-app/copilot-latest/app/src/main/res/layout/activity_settings.xml"
+    },
+    {
+      "path": "app/src/main/res/values/arrays.xml",
+      "raw_commit": "https://raw.githubusercontent.com/ondrejwretzl-dotcom/MCAW-app/1f1e42bf7f3b0a11ef9029380e1cf033f81118ab/app/src/main/res/values/arrays.xml",
+      "raw_tag": "https://raw.githubusercontent.com/ondrejwretzl-dotcom/MCAW-app/copilot-latest/app/src/main/res/values/arrays.xml"
+    },
+    {
+      "path": "app/src/main/res/values/strings.xml",
+      "raw_commit": "https://raw.githubusercontent.com/ondrejwretzl-dotcom/MCAW-app/1f1e42bf7f3b0a11ef9029380e1cf033f81118ab/app/src/main/res/values/strings.xml",
+      "raw_tag": "https://raw.githubusercontent.com/ondrejwretzl-dotcom/MCAW-app/copilot-latest/app/src/main/res/values/strings.xml"
+    },
+    {
+      "path": "gradle.properties",
+      "raw_commit": "https://raw.githubusercontent.com/ondrejwretzl-dotcom/MCAW-app/1f1e42bf7f3b0a11ef9029380e1cf033f81118ab/gradle.properties",
+      "raw_tag": "https://raw.githubusercontent.com/ondrejwretzl-dotcom/MCAW-app/copilot-latest/gradle.properties"
+    },
+    {
+      "path": "settings.gradle.kts",
+      "raw_commit": "https://raw.githubusercontent.com/ondrejwretzl-dotcom/MCAW-app/1f1e42bf7f3b0a11ef9029380e1cf033f81118ab/settings.gradle.kts",
+      "raw_tag": "https://raw.githubusercontent.com/ondrejwretzl-dotcom/MCAW-app/copilot-latest/settings.gradle.kts"
+    }
+  ]
+}
