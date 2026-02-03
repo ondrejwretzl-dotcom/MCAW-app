@@ -8,6 +8,8 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.camera.core.CameraSelector
@@ -32,6 +34,10 @@ class PreviewActivity : ComponentActivity() {
     private lateinit var analyzer: DetectionAnalyzer
     private lateinit var speedMonitor: SpeedMonitor
     private lateinit var txtDetectionLabel: TextView
+    private val searchHandler = Handler(Looper.getMainLooper())
+    private var searching = true
+    private var searchDots = 0
+    private var activityLogFileName: String = ""
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(ctx: Context?, i: Intent?) {
@@ -42,9 +48,12 @@ class PreviewActivity : ComponentActivity() {
                 overlay.speed = -1f
                 overlay.objectSpeed = -1f
                 overlay.ttc = -1f
-                txtDetectionLabel.text = "Detekce: žádný objekt"
+                searching = true
+                updateSearchingLabel()
+                logActivity("detection_clear")
                 return
             }
+            searching = false
             overlay.frameWidth = i.getFloatExtra("frame_w", 0f)
             overlay.frameHeight = i.getFloatExtra("frame_h", 0f)
             overlay.box = com.mcaw.model.Box(
@@ -58,7 +67,9 @@ class PreviewActivity : ComponentActivity() {
             overlay.objectSpeed = i.getFloatExtra("object_speed", -1f)
             overlay.ttc = i.getFloatExtra("ttc", -1f)
             val label = i.getStringExtra("label")?.ifBlank { null } ?: "neznámý objekt"
-            txtDetectionLabel.text = "Detekce: ${mapLabel(label)}"
+            val mapped = mapLabel(label)
+            txtDetectionLabel.text = "Detekce: $mapped"
+            logActivity("detection_found label=$mapped")
         }
     }
 
@@ -73,10 +84,12 @@ class PreviewActivity : ComponentActivity() {
         val txtPreviewBuild = findViewById<TextView>(R.id.txtPreviewBuild)
         txtDetectionLabel = findViewById(R.id.txtDetectionLabel)
         speedMonitor = SpeedMonitor(this)
+        activityLogFileName = "mcaw_activity_${sessionStamp()}.txt"
         overlay.showTelemetry = AppPreferences.debugOverlay
         txtPreviewBuild.text =
             "MCAW ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) · ${BuildConfig.BUILD_ID}"
-        txtDetectionLabel.text = "Detekce: --"
+        updateSearchingLabel()
+        logActivity("preview_open build=${BuildConfig.VERSION_NAME}(${BuildConfig.VERSION_CODE})")
 
         val filter = IntentFilter("MCAW_DEBUG_UPDATE")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -103,8 +116,10 @@ class PreviewActivity : ComponentActivity() {
             grantResults.isNotEmpty() &&
             grantResults[0] == PackageManager.PERMISSION_GRANTED
         ) {
+            logActivity("camera_permission_granted")
             initAndStart()
         } else {
+            logActivity("camera_permission_denied")
             finish()
         }
     }
@@ -115,6 +130,9 @@ class PreviewActivity : ComponentActivity() {
             .getOrNull()
         if (yolo == null && eff == null) {
             txtDetectionLabel.text = "Detekce: nelze načíst modely"
+            logActivity("models_failed")
+        } else {
+            logActivity("models_loaded yolo=${yolo != null} efficient=${eff != null}")
         }
         analyzer = DetectionAnalyzer(this, yolo, eff)
         startCamera()
@@ -149,6 +167,7 @@ class PreviewActivity : ComponentActivity() {
     override fun onDestroy() {
         unregisterReceiver(receiver)
         speedMonitor.stop()
+        stopSearching()
         super.onDestroy()
     }
 
@@ -160,10 +179,12 @@ class PreviewActivity : ComponentActivity() {
         ) {
             speedMonitor.start()
         }
+        startSearching()
     }
 
     override fun onStop() {
         speedMonitor.stop()
+        stopSearching()
         super.onStop()
     }
 
@@ -177,5 +198,41 @@ class PreviewActivity : ComponentActivity() {
             "unknown" -> "neznámý objekt"
             else -> label
         }
+    }
+
+    private fun startSearching() {
+        searchHandler.post(searchRunnable)
+    }
+
+    private fun stopSearching() {
+        searchHandler.removeCallbacksAndMessages(null)
+    }
+
+    private fun updateSearchingLabel() {
+        val dots = ".".repeat(searchDots)
+        txtDetectionLabel.text = "Hledám objekt$dots"
+    }
+
+    private val searchRunnable = object : Runnable {
+        override fun run() {
+            if (searching) {
+                searchDots = (searchDots + 1) % 4
+                updateSearchingLabel()
+            }
+            searchHandler.postDelayed(this, 500L)
+        }
+    }
+
+    private fun logActivity(message: String) {
+        val timestamp =
+            java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US)
+                .format(System.currentTimeMillis())
+        val content = "ts=$timestamp $message"
+        com.mcaw.util.PublicLogWriter.appendLogLine(this, activityLogFileName, content)
+    }
+
+    private fun sessionStamp(): String {
+        return java.text.SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", java.util.Locale.US)
+            .format(System.currentTimeMillis())
     }
 }
