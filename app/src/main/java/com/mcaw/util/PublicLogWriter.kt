@@ -12,19 +12,33 @@ object PublicLogWriter {
         fileName: String,
         content: String
     ): Uri? {
-        val resolver = context.contentResolver
-        val values = ContentValues().apply {
-            put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
-            put(MediaStore.MediaColumns.MIME_TYPE, "text/plain")
-            put(
-                MediaStore.MediaColumns.RELATIVE_PATH,
-                Environment.DIRECTORY_DOWNLOADS + "/MCAW"
-            )
+        return runCatching {
+            val resolver = context.contentResolver
+            val values = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                put(MediaStore.MediaColumns.MIME_TYPE, "text/plain")
+                put(
+                    MediaStore.MediaColumns.RELATIVE_PATH,
+                    Environment.DIRECTORY_DOWNLOADS + "/MCAW"
+                )
+            }
+            val uri =
+                resolver.insert(MediaStore.Files.getContentUri("external"), values) ?: return null
+            resolver.openOutputStream(uri, "w")?.use { out ->
+                out.write(content.toByteArray())
+            }
+            uri
+        }.getOrElse {
+            writeInternalFallback(context, fileName, content)
+            null
         }
-        val uri = resolver.insert(MediaStore.Files.getContentUri("external"), values) ?: return null
-        resolver.openOutputStream(uri, "w")?.use { out ->
-            out.write(content.toByteArray())
+    }
+
+    private fun writeInternalFallback(context: Context, fileName: String, content: String) {
+        runCatching {
+            context.openFileOutput(fileName, Context.MODE_PRIVATE).use { out ->
+                out.write(content.toByteArray())
+            }
         }
-        return uri
     }
 }
