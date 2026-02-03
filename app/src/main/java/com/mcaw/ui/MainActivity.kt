@@ -37,13 +37,19 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startEngine() {
-        if (!requiredPerms.all { ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED }) {
+        if (!requiredPerms.all {
+                ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
+            }) {
             ActivityCompat.requestPermissions(this, requiredPerms, 1001)
             return
         }
-        startService(Intent(this, McawService::class.java))
+
+        val intent = Intent(this, McawService::class.java)
+        ContextCompat.startForegroundService(this, intent)
+
         txtStatus.text = "Služba: BÌŽÍ"
     }
+
 
     private fun stopEngine() {
         stopService(Intent(this, McawService::class.java))

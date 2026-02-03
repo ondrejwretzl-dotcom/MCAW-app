@@ -1,16 +1,18 @@
 package com.mcaw.ui
 
+import android.Manifest
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.os.Bundle
-import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.mcaw.ai.DetectionAnalyzer
 import com.mcaw.ai.EfficientDetTFLiteDetector
@@ -49,14 +51,41 @@ class PreviewActivity : ComponentActivity() {
 
         registerReceiver(receiver, IntentFilter("MCAW_DEBUG_UPDATE"))
 
-        initAnalyzer()
-        startCamera()
+        if (hasCameraPermission()) {
+            initAndStart()
+        } else {
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.CAMERA),
+                2001
+            )
+        }
     }
 
-    private fun initAnalyzer() {
+    private fun hasCameraPermission(): Boolean =
+        ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.CAMERA
+        ) == PackageManager.PERMISSION_GRANTED
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 2001 && grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
+            initAndStart()
+        } else {
+            finish() // bez kamery nemá smysl pokraèovat
+        }
+    }
+
+    private fun initAndStart() {
         val yolo = YoloOnnxDetector(this, "yolov8n.onnx")
         val eff = EfficientDetTFLiteDetector(this, "efficientdet_lite0.tflite")
         analyzer = DetectionAnalyzer(this, yolo, eff)
+        startCamera()
     }
 
     private fun startCamera() {
@@ -83,7 +112,6 @@ class PreviewActivity : ComponentActivity() {
                 preview,
                 analysis
             )
-
         }, ContextCompat.getMainExecutor(this))
     }
 
@@ -92,3 +120,4 @@ class PreviewActivity : ComponentActivity() {
         super.onDestroy()
     }
 }
+
