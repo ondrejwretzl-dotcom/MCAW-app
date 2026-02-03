@@ -1,4 +1,4 @@
-name: Android CI
+name: Android CI (no-wrapper)
 
 on:
   push:
@@ -21,16 +21,19 @@ jobs:
           distribution: temurin
           java-version: 17
 
+      # Provision Gradle (bez wrapperu) + cache
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
         with:
+          gradle-version: 8.7
           cache-enabled: true
 
-      - name: Set executable permission for gradlew
-        run: chmod +x ./gradlew
+      - name: Verify Gradle
+        run: gradle -v
 
+      # Build bez wrapperu
       - name: Build Debug
-        run: ./gradlew --no-daemon assembleDebug
+        run: gradle --no-daemon assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
