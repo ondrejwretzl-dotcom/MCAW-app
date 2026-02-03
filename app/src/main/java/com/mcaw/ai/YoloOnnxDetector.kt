@@ -11,15 +11,6 @@ import java.nio.FloatBuffer
 import kotlin.math.max
 import kotlin.math.min
 
-/**
- * YOLOv8 ONNX Detector
- * --------------------
- * - ONNX Runtime na Androidu
- * - Vstup: 640x640 RGB, normalizace 0..1 (NCHW)
- * - TypickÈ v˝stupy: [1, 84, 8400] (D,N) nebo [1, 8400, 84] (N,D)
- *   - prvnÌch 4 sloûek: cx, cy, w, h
- *   - zbytek: skÛre t¯Ìd (bereme maximum jako konf.)
- */
 class YoloOnnxDetector(
     private val context: Context,
     private val modelName: String = "yolov8n.onnx",
@@ -32,209 +23,77 @@ class YoloOnnxDetector(
     private val session: OrtSession
 
     init {
-        val modelBytes = context.assets.open("models/$modelName").readBytes()
-        session = env.createSession(modelBytes)
+        val bytes = context.assets.open("models/$modelName").readBytes()
+        session = env.createSession(bytes)
     }
 
     fun detect(bitmap: Bitmap): List<Detection> {
-        // 1) Resize + normalize -> Tensor (NCHW: 1x3xH xW)
         val resized = Bitmap.createScaledBitmap(bitmap, inputSize, inputSize, false)
-        val inputTensor = preprocess(resized)
+        val input = preprocess(resized)
 
-        // 2) Inference
         val inputName = session.inputNames.iterator().next()
-        val outputs = session.run(mapOf(inputName to inputTensor))
+        val outputs = session.run(mapOf(inputName to input))
 
-        // 3) V˝stupnÌ tensor + shape + buffer
-        val out0 = outputs[0] as OnnxTensor
-        val shape = out0.info.shape // nap¯. [1,84,8400] nebo [1,8400,84]
-        val fb: FloatBuffer = out0.floatBuffer
-        val total = fb.remaining()
-        val flat = FloatArray(total)
-        fb.get(flat)
+        val out = outputs[0] as OnnxTensor
+        val fb = out.floatBuffer
+        val arr = FloatArray(fb.remaining())
+        fb.get(arr)
 
-        // 4) Post-process podle shape
-        val detections = when (shape.size) {
-            3 -> postprocess3D(flat, shape) // [1, D, N] nebo [1, N, D]
-            2 -> postprocess2D(flat, shape) // [N, 5(+C)]
-            1 -> postprocess1D(flat)        // [k*5]
-            else -> emptyList()
-        }
-
-        // 5) NMS
-        return nonMaxSuppression(detections.toMutableList())
+        return parseFlatArray(arr)
     }
 
-    // ---------------------------------------------------------------------------
-    // PREPROCESS (NCHW, bez mean/std ó doplÚ dle tvÈho modelu pokud je t¯eba)
-    // ---------------------------------------------------------------------------
-    private fun preprocess(bitmap: Bitmap): OnnxTensor {
-        val imgData = FloatArray(1 * 3 * inputSize * inputSize)
-        var idx = 0
+    private fun preprocess(bmp: Bitmap): OnnxTensor {
+        val data = FloatArray(1 * 3 * inputSize * inputSize)
+        var i = 0
         for (y in 0 until inputSize) {
             for (x in 0 until inputSize) {
-                val px = bitmap.getPixel(x, y)
-                val r = ((px shr 16) and 0xFF) / 255f
-                val g = ((px shr 8) and 0xFF) / 255f
-                val b = (px and 0xFF) / 255f
-                imgData[idx++] = r
-                imgData[idx++] = g
-                imgData[idx++] = b
+                val px = bmp.getPixel(x, y)
+                data[i++] = ((px shr 16) and 0xFF) / 255f
+                data[i++] = ((px shr 8) and 0xFF) / 255f
+                data[i++] = (px and 0xFF) / 255f
             }
         }
         val shape = longArrayOf(1, 3, inputSize.toLong(), inputSize.toLong())
-        return OnnxTensor.createTensor(env, FloatBuffer.wrap(imgData), shape)
+        return OnnxTensor.createTensor(env, FloatBuffer.wrap(data), shape)
     }
 
-    // ---------------------------------------------------------------------------
-    // POSTPROCESS ñ 3D v˝stup
-    // ---------------------------------------------------------------------------
-    private fun postprocess3D(flat: FloatArray, shape: LongArray): List<Detection> {
-        // shape: [1, A, B] ñ A a B mohou b˝t D a N v libovolnÈm po¯adÌ
-        val a = shape[1].toInt()
-        val b = shape[2].toInt()
-        val result = ArrayList<Detection>(max(a, b))
-
-        // Varianta A: [1, D, N] (D=5+C, N=count)
-        if (a >= 5) {
-            val d = a
-            val n = b
-            for (j in 0 until n) {
-                val cx = flat[j + 0 * n]
-                val cy = flat[j + 1 * n]
-                val w  = flat[j + 2 * n]
-                val h  = flat[j + 3 * n]
-                var conf = 0f
-                var cIdx = 4
-                while (cIdx < d) {
-                    val v = flat[j + cIdx * n]
-                    if (v > conf) conf = v
-                    cIdx++
-                }
-                if (conf > scoreThreshold) {
-                    val x1 = cx - w / 2f
-                    val y1 = cy - h / 2f
-                    val x2 = cx + w / 2f
-                    val y2 = cy + h / 2f
-                    result.add(Detection(box = Box(x1, y1, x2, y2), score = conf, label = "car"))
-                }
-            }
-            return result
-        }
-
-        // Varianta B: [1, N, D] (N=count, D=5+C)
-        if (b >= 5) {
-            val n = a
-            val d = b
-            var base = 0
-            for (nIdx in 0 until n) {
-                val cx = flat[base + 0]
-                val cy = flat[base + 1]
-                val w  = flat[base + 2]
-                val h  = flat[base + 3]
-                var conf = 0f
-                var c = 4
-                while (c < d) {
-                    val v = flat[base + c]
-                    if (v > conf) conf = v
-                    c++
-                }
-                if (conf > scoreThreshold) {
-                    val x1 = cx - w / 2f
-                    val y1 = cy - h / 2f
-                    val x2 = cx + w / 2f
-                    val y2 = cy + h / 2f
-                    result.add(Detection(box = Box(x1, y1, x2, y2), score = conf, label = "car"))
-                }
-                base += d
-            }
-            return result
-        }
-
-        return emptyList()
-    }
-
-    // ---------------------------------------------------------------------------
-    // POSTPROCESS ñ 2D v˝stup (¯·dky jsou detekce, sloupce 5(+C))
-    // ---------------------------------------------------------------------------
-    private fun postprocess2D(flat: FloatArray, shape: LongArray): List<Detection> {
-        val n = shape[0].toInt()
-        val d = shape[1].toInt()
-        if (d < 5) return emptyList()
-
-        val out = ArrayList<Detection>(n)
-        var base = 0
-        for (i in 0 until n) {
-            val cx = flat[base + 0]
-            val cy = flat[base + 1]
-            val w  = flat[base + 2]
-            val h  = flat[base + 3]
-            val conf = if (d == 5) flat[base + 4] else {
-                var mx = 0f
-                var c = 4
-                while (c < d) {
-                    val v = flat[base + c]
-                    if (v > mx) mx = v
-                    c++
-                }
-                mx
-            }
-            if (conf > scoreThreshold) {
-                val x1 = cx - w / 2f
-                val y1 = cy - h / 2f
-                val x2 = cx + w / 2f
-                val y2 = cy + h / 2f
-                out.add(Detection(box = Box(x1, y1, x2, y2), score = conf, label = "car"))
-            }
-            base += d
-        }
-        return out
-    }
-
-    // ---------------------------------------------------------------------------
-    // POSTPROCESS ñ 1D fallback: [k*5] => k detekcÌ (cx,cy,w,h,conf)
-    // ---------------------------------------------------------------------------
-    private fun postprocess1D(flat: FloatArray): List<Detection> {
-        if (flat.size < 5) return emptyList()
-        val out = ArrayList<Detection>(flat.size / 5)
+    // Jednoduch√Ω fallback parser:
+    // oƒçek√°v√° ≈ôady: cx, cy, w, h, conf, opakovanƒõ
+    private fun parseFlatArray(arr: FloatArray): List<Detection> {
+        val out = mutableListOf<Detection>()
         var i = 0
-        while (i + 4 < flat.size) {
-            val cx = flat[i]
-            val cy = flat[i + 1]
-            val w  = flat[i + 2]
-            val h  = flat[i + 3]
-            val conf = flat[i + 4]
+        while (i + 4 < arr.size) {
+            val cx = arr[i]
+            val cy = arr[i + 1]
+            val w  = arr[i + 2]
+            val h  = arr[i + 3]
+            val conf = arr[i + 4]
+
             if (conf > scoreThreshold) {
-                val x1 = cx - w / 2f
-                val y1 = cy - h / 2f
-                val x2 = cx + w / 2f
-                val y2 = cy + h / 2f
-                out.add(Detection(box = Box(x1, y1, x2, y2), score = conf, label = "car"))
+                val x1 = cx - w / 2
+                val y1 = cy - h / 2
+                val x2 = cx + w / 2
+                val y2 = cy + h / 2
+                out.add(Detection(Box(x1, y1, x2, y2), conf, "car"))
             }
             i += 5
         }
-        return out
+        return nonMaxSuppression(out)
     }
 
-    // ---------------------------------------------------------------------------
-    // NMS + IoU ñ pro com.mcaw.model.Box
-    // ---------------------------------------------------------------------------
-    private fun nonMaxSuppression(boxes: MutableList<Detection>): List<Detection> {
-        val picked = mutableListOf<Detection>()
-        boxes.sortByDescending { it.score }
-
-        while (boxes.isNotEmpty()) {
-            val best = boxes.removeAt(0)
-            picked.add(best)
-
-            val it = boxes.iterator()
+    private fun nonMaxSuppression(list: MutableList<Detection>): List<Detection> {
+        val out = mutableListOf<Detection>()
+        list.sortByDescending { it.score }
+        while (list.isNotEmpty()) {
+            val best = list.removeAt(0)
+            out.add(best)
+            val it = list.iterator()
             while (it.hasNext()) {
                 val other = it.next()
-                val iou = iou(best.box, other.box)
-                if (iou > iouThreshold) it.remove()
+                if (iou(best.box, other.box) > iouThreshold) it.remove()
             }
         }
-        return picked
+        return out
     }
 
     private fun iou(a: Box, b: Box): Float {
@@ -242,9 +101,8 @@ class YoloOnnxDetector(
         val y1 = max(a.y1, b.y1)
         val x2 = min(a.x2, b.x2)
         val y2 = min(a.y2, b.y2)
-
-        val interArea = max(0f, x2 - x1) * max(0f, y2 - y1)
-        val unionArea = a.area + b.area - interArea
-        return if (unionArea <= 0f) 0f else interArea / unionArea
+        val inter = max(0f, x2 - x1) * max(0f, y2 - y1)
+        val union = a.area + b.area - inter
+        return if (union <= 0f) 0f else inter / union
     }
 }
