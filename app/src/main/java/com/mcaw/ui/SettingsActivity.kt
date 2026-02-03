@@ -7,10 +7,10 @@ import android.view.View
 import android.widget.AdapterView
 import android.widget.EditText
 import android.widget.Spinner
-import android.widget.Switch
 import androidx.activity.ComponentActivity
 import com.mcaw.app.R
 import com.mcaw.config.AppPreferences
+import com.google.android.material.switchmaterial.SwitchMaterial
 
 class SettingsActivity : ComponentActivity() {
 
@@ -31,10 +31,10 @@ class SettingsActivity : ComponentActivity() {
         val etSpeedOrange = findViewById<EditText>(R.id.etSpeedOrange)
         val etSpeedRed = findViewById<EditText>(R.id.etSpeedRed)
 
-        val swSound = findViewById<Switch>(R.id.swSound)
-        val swVibration = findViewById<Switch>(R.id.swVibration)
-        val swVoice = findViewById<Switch>(R.id.swVoice)
-        val swDebug = findViewById<Switch>(R.id.swDebug)
+        val swSound = findViewById<SwitchMaterial>(R.id.swSound)
+        val swVibration = findViewById<SwitchMaterial>(R.id.swVibration)
+        val swVoice = findViewById<SwitchMaterial>(R.id.swVoice)
+        val swDebug = findViewById<SwitchMaterial>(R.id.swDebug)
 
         spMode.setSelection(AppPreferences.detectionMode)
         spModel.setSelection(AppPreferences.selectedModel)

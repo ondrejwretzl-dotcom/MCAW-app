@@ -124,20 +124,28 @@
             android:layout_marginTop="20dp"
             android:layout_marginBottom="8dp" />
 
-        <Switch
+        <com.google.android.material.switchmaterial.SwitchMaterial
             android:id="@+id/swSound"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
             android:text="Zvuk" />
 
-        <Switch
+        <com.google.android.material.switchmaterial.SwitchMaterial
             android:id="@+id/swVibration"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
             android:text="Vibrace" />
 
-        <Switch
+        <com.google.android.material.switchmaterial.SwitchMaterial
             android:id="@+id/swVoice"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
             android:text="Hlasové varování" />
 
-        <Switch
+        <com.google.android.material.switchmaterial.SwitchMaterial
             android:id="@+id/swDebug"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
             android:text="Debug overlay" />
 
     </LinearLayout>
