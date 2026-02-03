@@ -1,60 +1,61 @@
-name: Build Android APK
-
-concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref_name }}
-  cancel-in-progress: true
+name: Android CI
 
 on:
-  workflow_dispatch:
   push:
-    branches: [ main ]
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch: {}
 
 jobs:
   build:
+    # Stabilnější než ubuntu-latest (ta může mít výpadky)
     runs-on: ubuntu-22.04
 
+    permissions:
+      contents: read
+
     steps:
-      - name: Checkout repository
+      # -------------------------------
+      # 0) Checkout
+      # -------------------------------
+      - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
-      # 🔥 TOTÁLNÍ VYPNUTÍ CACHÍ
-      - name: Remove Gradle caches
-        run: |
-          rm -rf ~/.gradle/caches
-          rm -rf ~/.gradle/wrapper
-          rm -rf ~/.gradle/kotlin-dsl
-          rm -rf ~/.gradle/buildOutputCleanup
-
-      # 🔥 setup-java BEZ cache
+      # -------------------------------
+      # 1) Java 17 + Gradle cache
+      # -------------------------------
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
-          distribution: 'zulu'
-          java-version: '17'
-          cache: ''     # ← správný způsob jak vypnout cache
+          distribution: temurin
+          java-version: 17
+          cache: gradle
 
-      # 🔥 setup-gradle BEZ cache
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v5
+      # Extra cache pro ~/.gradle aby to nebrzdilo
+      - name: Setup Gradle cache
+        uses: gradle/gradle-build-action@v3
         with:
-          cache-disabled: true
+          gradle-home-cache-cleanup: true
 
-      # 🔥 Donutíme vygenerovat wrapper znovu
-      - name: Force-generate Gradle Wrapper
-        run: |
-          rm -rf gradle/wrapper
-          rm -f gradlew
-          rm -f gradlew.bat
-          gradle wrapper --gradle-version 8.7
+      # -------------------------------
+      # 2) Android SDK (API + Build Tools)
+      # -------------------------------
+      - name: Install Android SDK
+        uses: android-actions/setup-android@v3
 
-      - name: Make gradlew executable
-        run: chmod +x gradlew
+      # -------------------------------
+      # 3) Build (assembleDebug)
+      # -------------------------------
+      - name: Build Debug APK
+        run: ./gradlew --no-daemon --stacktrace --warning-mode all assembleDebug
 
-      # 🔥 Build BEZ build cache
-      - name: Build debug APK
-        run: ./gradlew --no-build-cache assembleDebug
-
-      - name: Upload debug APK artifact
+      # -------------------------------
+      # 4) Upload výsledného APK (artefakt)
+      # -------------------------------
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: MCAW-debug-apk
