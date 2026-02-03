@@ -15,14 +15,10 @@ import kotlin.math.min
  * YOLOv8 ONNX Detector
  * --------------------
  * - ONNX Runtime na Androidu
- * - Vstup: 640x640 RGB, normalizováno do 0..1 (NCHW)
-<<<<<<< HEAD
- * - Výstup: typicky [1, 84, 8400] (D,N) nebo [1, 8400, 84] (N,D)
-=======
- * - Výstup: nejèastìji [1, 84, 8400] (D,N) nebo [1, 8400, 84] (N,D)
->>>>>>> a2ea4604b3033a520b8bead7a61c50ce6754f059
+ * - Vstup: 640x640 RGB, normalizace 0..1 (NCHW)
+ * - Typické výstupy: [1, 84, 8400] (D,N) nebo [1, 8400, 84] (N,D)
  *   - prvních 4 složek: cx, cy, w, h
- *   - zbytek: class scores (bereme max class jako conf)
+ *   - zbytek: skóre tøíd (bereme maximum jako konf.)
  */
 class YoloOnnxDetector(
     private val context: Context,
@@ -32,7 +28,7 @@ class YoloOnnxDetector(
     private val iouThreshold: Float = 0.45f
 ) {
 
-    private val env = OrtEnvironment.getEnvironment()
+    private val env: OrtEnvironment = OrtEnvironment.getEnvironment()
     private val session: OrtSession
 
     init {
@@ -59,9 +55,9 @@ class YoloOnnxDetector(
 
         // 4) Post-process podle shape
         val detections = when (shape.size) {
-            3 -> postprocess3D(flat, shape)            // [1, D, N] nebo [1, N, D]
-            2 -> postprocess2D(flat, shape)            // [N, 5+C] nebo [N, 5]
-            1 -> postprocess1D(flat)                   // [k*5] fallback
+            3 -> postprocess3D(flat, shape) // [1, D, N] nebo [1, N, D]
+            2 -> postprocess2D(flat, shape) // [N, 5(+C)]
+            1 -> postprocess1D(flat)        // [k*5]
             else -> emptyList()
         }
 
@@ -70,11 +66,7 @@ class YoloOnnxDetector(
     }
 
     // ---------------------------------------------------------------------------
-<<<<<<< HEAD
-    // PREPROCESS (NCHW, bez mean/std – doplò dle modelu, pokud je potøeba)
-=======
-    // PREPROCESS (NCHW, bez mean/std normalizace – lze doplnit podle modelu)
->>>>>>> a2ea4604b3033a520b8bead7a61c50ce6754f059
+    // PREPROCESS (NCHW, bez mean/std — doplò dle tvého modelu pokud je tøeba)
     // ---------------------------------------------------------------------------
     private fun preprocess(bitmap: Bitmap): OnnxTensor {
         val imgData = FloatArray(1 * 3 * inputSize * inputSize)
@@ -82,10 +74,6 @@ class YoloOnnxDetector(
         for (y in 0 until inputSize) {
             for (x in 0 until inputSize) {
                 val px = bitmap.getPixel(x, y)
-<<<<<<< HEAD
-=======
-                // R, G, B v rozsahu 0..1
->>>>>>> a2ea4604b3033a520b8bead7a61c50ce6754f059
                 val r = ((px shr 16) and 0xFF) / 255f
                 val g = ((px shr 8) and 0xFF) / 255f
                 val b = (px and 0xFF) / 255f
@@ -95,7 +83,6 @@ class YoloOnnxDetector(
             }
         }
         val shape = longArrayOf(1, 3, inputSize.toLong(), inputSize.toLong())
-        // ? DÙLEŽITÉ: použijeme FloatBuffer overload › kompatibilní s vìtšinou verzí ORT
         return OnnxTensor.createTensor(env, FloatBuffer.wrap(imgData), shape)
     }
 
@@ -103,17 +90,13 @@ class YoloOnnxDetector(
     // POSTPROCESS – 3D výstup
     // ---------------------------------------------------------------------------
     private fun postprocess3D(flat: FloatArray, shape: LongArray): List<Detection> {
-        // shape: [1, A, B] – A a B jsou zamìnitelné, zjistíme, co dává smysl
+        // shape: [1, A, B] – A a B mohou být D a N v libovolném poøadí
         val a = shape[1].toInt()
         val b = shape[2].toInt()
-        val list = ArrayList<Detection>(max(a, b))
+        val result = ArrayList<Detection>(max(a, b))
 
-        // Pokus A: [1, D, N] (D=5+C, N=pøedpovìdi)
+        // Varianta A: [1, D, N] (D=5+C, N=count)
         if (a >= 5) {
-<<<<<<< HEAD
-=======
-            // indexování: (0, c, n) -> ((0*a + c)*b + n)
->>>>>>> a2ea4604b3033a520b8bead7a61c50ce6754f059
             val d = a
             val n = b
             for (j in 0 until n) {
@@ -121,10 +104,6 @@ class YoloOnnxDetector(
                 val cy = flat[j + 1 * n]
                 val w  = flat[j + 2 * n]
                 val h  = flat[j + 3 * n]
-<<<<<<< HEAD
-=======
-                // konf z klasí (max od indexu 4)
->>>>>>> a2ea4604b3033a520b8bead7a61c50ce6754f059
                 var conf = 0f
                 var cIdx = 4
                 while (cIdx < d) {
@@ -137,19 +116,14 @@ class YoloOnnxDetector(
                     val y1 = cy - h / 2f
                     val x2 = cx + w / 2f
                     val y2 = cy + h / 2f
-                    list.add(Detection(box = Box(x1, y1, x2, y2), score = conf, label = "car"))
+                    result.add(Detection(box = Box(x1, y1, x2, y2), score = conf, label = "car"))
                 }
             }
-            return list
+            return result
         }
 
-        // Pokus B: [1, N, D] (N=pøedpovìdi, D=5+C)
+        // Varianta B: [1, N, D] (N=count, D=5+C)
         if (b >= 5) {
-<<<<<<< HEAD
-=======
-            // indexování: (0, n, c) -> ((0*b + n)*b? != správnì) › pøepoèet:
-            // Pro [1, N, D]: lineární index (0*N + n)*D + c
->>>>>>> a2ea4604b3033a520b8bead7a61c50ce6754f059
             val n = a
             val d = b
             var base = 0
@@ -159,22 +133,22 @@ class YoloOnnxDetector(
                 val w  = flat[base + 2]
                 val h  = flat[base + 3]
                 var conf = 0f
-                var cIdx = 4
-                while (cIdx < d) {
-                    val v = flat[base + cIdx]
+                var c = 4
+                while (c < d) {
+                    val v = flat[base + c]
                     if (v > conf) conf = v
-                    cIdx++
+                    c++
                 }
                 if (conf > scoreThreshold) {
                     val x1 = cx - w / 2f
                     val y1 = cy - h / 2f
                     val x2 = cx + w / 2f
                     val y2 = cy + h / 2f
-                    list.add(Detection(box = Box(x1, y1, x2, y2), score = conf, label = "car"))
+                    result.add(Detection(box = Box(x1, y1, x2, y2), score = conf, label = "car"))
                 }
                 base += d
             }
-            return list
+            return result
         }
 
         return emptyList()
@@ -218,7 +192,7 @@ class YoloOnnxDetector(
     }
 
     // ---------------------------------------------------------------------------
-    // POSTPROCESS – 1D fallback: [k*5] => k detekcí (cx,cy,w,h,conf) opakovanì
+    // POSTPROCESS – 1D fallback: [k*5] => k detekcí (cx,cy,w,h,conf)
     // ---------------------------------------------------------------------------
     private fun postprocess1D(flat: FloatArray): List<Detection> {
         if (flat.size < 5) return emptyList()
