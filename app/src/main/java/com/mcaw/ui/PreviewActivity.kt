@@ -45,6 +45,8 @@ class PreviewActivity : ComponentActivity() {
                 txtDetectionLabel.text = "Detekce: žádný objekt"
                 return
             }
+            overlay.frameWidth = i.getFloatExtra("frame_w", 0f)
+            overlay.frameHeight = i.getFloatExtra("frame_h", 0f)
             overlay.box = com.mcaw.model.Box(
                 i.getFloatExtra("left", 0f),
                 i.getFloatExtra("top", 0f),
@@ -65,12 +67,14 @@ class PreviewActivity : ComponentActivity() {
         setContentView(R.layout.activity_preview)
 
         previewView = findViewById(R.id.previewView)
+        previewView.scaleType = PreviewView.ScaleType.FIT_CENTER
         overlay = findViewById(R.id.overlay)
         val txtPreviewBuild = findViewById<TextView>(R.id.txtPreviewBuild)
         txtDetectionLabel = findViewById(R.id.txtDetectionLabel)
         speedMonitor = SpeedMonitor(this)
         overlay.showTelemetry = AppPreferences.debugOverlay
-        txtPreviewBuild.text = "MCAW ${BuildConfig.VERSION_NAME}"
+        txtPreviewBuild.text =
+            "MCAW ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) · ${BuildConfig.BUILD_ID}"
         txtDetectionLabel.text = "Detekce: --"
 
         val filter = IntentFilter("MCAW_DEBUG_UPDATE")
@@ -105,8 +109,9 @@ class PreviewActivity : ComponentActivity() {
     }
 
     private fun initAndStart() {
-        val yolo = YoloOnnxDetector(this, "yolov8n.onnx")
-        val eff = EfficientDetTFLiteDetector(this, "efficientdet_lite0.tflite")
+        val yolo = runCatching { YoloOnnxDetector(this, "yolov8n.onnx") }.getOrNull()
+        val eff = runCatching { EfficientDetTFLiteDetector(this, "efficientdet_lite0.tflite") }
+            .getOrNull()
         analyzer = DetectionAnalyzer(this, yolo, eff)
         startCamera()
     }

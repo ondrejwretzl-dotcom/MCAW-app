@@ -14,6 +14,7 @@ import com.mcaw.app.BuildConfig
 import com.mcaw.app.R
 import com.mcaw.location.SpeedMonitor
 import com.mcaw.service.McawService
+import com.mcaw.util.PublicLogWriter
 
 class MainActivity : ComponentActivity() {
 
@@ -82,19 +83,42 @@ class MainActivity : ComponentActivity() {
         txtBuildInfo = findViewById(R.id.txtBuildInfo)
         speedMonitor = SpeedMonitor(this)
 
-        txtBuildInfo.text = "Build ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"
+        txtBuildInfo.text =
+            "MCAW ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) · ${BuildConfig.BUILD_ID}"
         addLog("Aplikace spuštěna")
+        writeSessionLog("App start")
 
         findViewById<Button>(R.id.btnStart).setOnClickListener {
             ensurePermissions(PendingAction.START_ENGINE)
         }
         findViewById<Button>(R.id.btnStop).setOnClickListener { stopEngine() }
         findViewById<Button>(R.id.btnSettings).setOnClickListener {
+            writeSessionLog("Open settings")
             startActivity(Intent(this, SettingsActivity::class.java))
         }
         findViewById<Button>(R.id.btnCamera).setOnClickListener {
             ensurePermissions(PendingAction.OPEN_CAMERA)
         }
+    }
+
+    private fun writeSessionLog(event: String) {
+        val timestamp = java.text.SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", java.util.Locale.US)
+            .format(System.currentTimeMillis())
+        val content = buildString {
+            append("event=")
+            append(event)
+            append('\n')
+            append("build_name=")
+            append(BuildConfig.VERSION_NAME)
+            append('\n')
+            append("build_code=")
+            append(BuildConfig.VERSION_CODE)
+            append('\n')
+            append("build_id=")
+            append(BuildConfig.BUILD_ID)
+            append('\n')
+        }
+        PublicLogWriter.writeTextFile(this, "mcaw_session_$timestamp.txt", content)
     }
 
     private fun ensurePermissions(action: PendingAction) {
