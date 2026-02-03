@@ -16,11 +16,13 @@ class SettingsActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AppPreferences.ensureInit(this)
         setContentView(R.layout.activity_settings)
 
         val spMode = findViewById<Spinner>(R.id.spMode)
         val spModel = findViewById<Spinner>(R.id.spModel)
         val groupUser = findViewById<View>(R.id.groupUserThresholds)
+        val txtModeDetails = findViewById<android.widget.TextView>(R.id.txtModeDetails)
 
         val etTtcOrange = findViewById<EditText>(R.id.etTtcOrange)
         val etTtcRed = findViewById<EditText>(R.id.etTtcRed)
@@ -38,6 +40,7 @@ class SettingsActivity : ComponentActivity() {
         spModel.setSelection(AppPreferences.selectedModel)
 
         groupUser.visibility = if (AppPreferences.detectionMode == 2) View.VISIBLE else View.GONE
+        txtModeDetails.text = modeSummary(AppPreferences.detectionMode)
 
         spMode.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(
@@ -48,6 +51,7 @@ class SettingsActivity : ComponentActivity() {
             ) {
                 AppPreferences.detectionMode = position
                 groupUser.visibility = if (position == 2) View.VISIBLE else View.GONE
+                txtModeDetails.text = modeSummary(position)
             }
 
             override fun onNothingSelected(parent: AdapterView<*>?) = Unit
@@ -123,5 +127,21 @@ class SettingsActivity : ComponentActivity() {
     private fun readFloat(editText: EditText, fallback: Float): Float {
         val value = editText.text?.toString()?.trim()
         return value?.toFloatOrNull() ?: fallback
+    }
+
+    private fun modeSummary(mode: Int): String {
+        return when (mode) {
+            0 -> {
+                "Město: OK > 4.0 s / 20 m / 3 m/s · " +
+                    "Upozornění ≤ 3.0 s / 15 m / 3 m/s · " +
+                    "Kritické ≤ 1.2 s / 6 m / 5 m/s"
+            }
+            1 -> {
+                "Sport: OK > 5.0 s / 40 m / 5 m/s · " +
+                    "Upozornění ≤ 4.0 s / 30 m / 5 m/s · " +
+                    "Kritické ≤ 1.5 s / 12 m / 9 m/s"
+            }
+            else -> "Uživatel: nastavte vlastní prahy TTC, vzdálenosti a rychlosti."
+        }
     }
 }

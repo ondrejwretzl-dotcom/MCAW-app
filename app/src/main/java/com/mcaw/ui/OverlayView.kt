@@ -90,6 +90,15 @@ class OverlayView @JvmOverloads constructor(
             invalidate()
         }
 
+    /**
+     * Když je true, zobrazí se telemetrie vedle boxu.
+     */
+    var showTelemetry: Boolean = true
+        set(value) {
+            field = value
+            invalidate()
+        }
+
     // ---- KRESLENÍ --------------------------------------------------------------
 
     override fun onDraw(canvas: Canvas) {
@@ -103,14 +112,18 @@ class OverlayView @JvmOverloads constructor(
         canvas.drawRect(b.x1, b.y1, b.x2, b.y2, boxPaint)
 
         // Sestavení popisků
-        val lines = buildList {
-            add("BOX  [%.0f×%.0f]".format((b.x2 - b.x1), (b.y2 - b.y1)))
-            if (distance >= 0f && distance.isFinite()) add("DIST %.2f m".format(distance))
-            if (speed >= 0f && speed.isFinite()) add("REL  %.2f m/s".format(speed))
-            if (objectSpeed >= 0f && objectSpeed.isFinite()) {
-                add("OBJ  %.2f m/s".format(objectSpeed))
+        val lines = if (showTelemetry) {
+            buildList {
+                add("BOX  [%.0f×%.0f]".format((b.x2 - b.x1), (b.y2 - b.y1)))
+                if (distance >= 0f && distance.isFinite()) add("DIST %.2f m".format(distance))
+                if (speed >= 0f && speed.isFinite()) add("REL  %.2f m/s".format(speed))
+                if (objectSpeed >= 0f && objectSpeed.isFinite()) {
+                    add("OBJ  %.2f m/s".format(objectSpeed))
+                }
+                if (ttc >= 0f && ttc.isFinite()) add("TTC  %.2f s".format(ttc))
             }
-            if (ttc >= 0f && ttc.isFinite()) add("TTC  %.2f s".format(ttc))
+        } else {
+            emptyList()
         }
 
         if (lines.isEmpty()) return

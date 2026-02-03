@@ -8,6 +8,7 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
@@ -18,7 +19,9 @@ import androidx.core.content.ContextCompat
 import com.mcaw.ai.DetectionAnalyzer
 import com.mcaw.ai.EfficientDetTFLiteDetector
 import com.mcaw.ai.YoloOnnxDetector
+import com.mcaw.app.BuildConfig
 import com.mcaw.app.R
+import com.mcaw.config.AppPreferences
 import com.mcaw.location.SpeedMonitor
 import java.util.concurrent.Executors
 
@@ -28,10 +31,20 @@ class PreviewActivity : ComponentActivity() {
     private lateinit var overlay: OverlayView
     private lateinit var analyzer: DetectionAnalyzer
     private lateinit var speedMonitor: SpeedMonitor
+    private lateinit var txtDetectionLabel: TextView
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(ctx: Context?, i: Intent?) {
             if (i == null) return
+            if (i.getBooleanExtra("clear", false)) {
+                overlay.box = null
+                overlay.distance = -1f
+                overlay.speed = -1f
+                overlay.objectSpeed = -1f
+                overlay.ttc = -1f
+                txtDetectionLabel.text = "Detekce: žádný objekt"
+                return
+            }
             overlay.box = com.mcaw.model.Box(
                 i.getFloatExtra("left", 0f),
                 i.getFloatExtra("top", 0f),
@@ -42,6 +55,8 @@ class PreviewActivity : ComponentActivity() {
             overlay.speed = i.getFloatExtra("speed", -1f)
             overlay.objectSpeed = i.getFloatExtra("object_speed", -1f)
             overlay.ttc = i.getFloatExtra("ttc", -1f)
+            val label = i.getStringExtra("label")?.ifBlank { null } ?: "neznámý objekt"
+            txtDetectionLabel.text = "Detekce: $label"
         }
     }
 
@@ -51,7 +66,12 @@ class PreviewActivity : ComponentActivity() {
 
         previewView = findViewById(R.id.previewView)
         overlay = findViewById(R.id.overlay)
+        val txtPreviewBuild = findViewById<TextView>(R.id.txtPreviewBuild)
+        txtDetectionLabel = findViewById(R.id.txtDetectionLabel)
         speedMonitor = SpeedMonitor(this)
+        overlay.showTelemetry = AppPreferences.debugOverlay
+        txtPreviewBuild.text = "MCAW ${BuildConfig.VERSION_NAME}"
+        txtDetectionLabel.text = "Detekce: --"
 
         val filter = IntentFilter("MCAW_DEBUG_UPDATE")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -125,6 +145,7 @@ class PreviewActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        overlay.showTelemetry = AppPreferences.debugOverlay
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
             == PackageManager.PERMISSION_GRANTED
         ) {

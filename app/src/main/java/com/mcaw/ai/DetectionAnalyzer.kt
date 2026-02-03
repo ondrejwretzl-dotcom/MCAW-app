@@ -73,6 +73,7 @@ class DetectionAnalyzer(
         val filtered = detList.filter { isRelevantForLane(it.box, frameW, frameH) }
 
         if (filtered.isEmpty()) {
+            sendOverlayClear()
             image.close()
             return
         }
@@ -80,6 +81,7 @@ class DetectionAnalyzer(
         // Nejlepší (největší score)
         val best: Detection? = filtered.maxByOrNull { it.score }
         if (best == null) {
+            sendOverlayClear()
             image.close()
             return
         }
@@ -123,9 +125,7 @@ class DetectionAnalyzer(
         // -------------------------
         // DEBUG OVERLAY
         // -------------------------
-        if (AppPreferences.debugOverlay) {
-            sendOverlayUpdate(best.box, distance, relSpeed, objectSpeed, ttc)
-        }
+        sendOverlayUpdate(best.box, distance, relSpeed, objectSpeed, ttc, best.label)
 
         sendMetricsUpdate(distance, relSpeed, objectSpeed, ttc, level)
 
@@ -160,9 +160,11 @@ class DetectionAnalyzer(
         dist: Float,
         relSpeed: Float,
         objectSpeed: Float,
-        ttc: Float
+        ttc: Float,
+        label: String
     ) {
         val i = Intent("MCAW_DEBUG_UPDATE")
+        i.putExtra("clear", false)
         i.putExtra("left", box.x1)
         i.putExtra("top", box.y1)
         i.putExtra("right", box.x2)
@@ -171,6 +173,13 @@ class DetectionAnalyzer(
         i.putExtra("speed", relSpeed)
         i.putExtra("object_speed", objectSpeed)
         i.putExtra("ttc", ttc)
+        i.putExtra("label", label)
+        ctx.sendBroadcast(i)
+    }
+
+    private fun sendOverlayClear() {
+        val i = Intent("MCAW_DEBUG_UPDATE")
+        i.putExtra("clear", true)
         ctx.sendBroadcast(i)
     }
 
@@ -208,8 +217,8 @@ class DetectionAnalyzer(
 
     private fun thresholdsForMode(mode: Int): AlertThresholds {
         return when (mode) {
-            0 -> AlertThresholds(2.0f, 1.2f, 8f, 4f, 4f, 7f)
-            1 -> AlertThresholds(2.6f, 1.6f, 14f, 8f, 7f, 12f)
+            0 -> AlertThresholds(3.0f, 1.2f, 15f, 6f, 3f, 5f)
+            1 -> AlertThresholds(4.0f, 1.5f, 30f, 12f, 5f, 9f)
             2 -> AlertThresholds(
                 AppPreferences.userTtcOrange,
                 AppPreferences.userTtcRed,
@@ -218,7 +227,7 @@ class DetectionAnalyzer(
                 AppPreferences.userSpeedOrange,
                 AppPreferences.userSpeedRed
             )
-            else -> AlertThresholds(2.0f, 1.2f, 8f, 4f, 4f, 7f)
+            else -> AlertThresholds(3.0f, 1.2f, 15f, 6f, 3f, 5f)
         }
     }
 

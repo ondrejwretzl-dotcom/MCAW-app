@@ -21,6 +21,15 @@
             android:layout_height="wrap_content"
             android:entries="@array/modes" />
 
+        <TextView
+            android:id="@+id/txtModeDetails"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Režim: Město"
+            android:textColor="#475569"
+            android:textSize="13sp"
+            android:layout_marginTop="6dp" />
+
         <!-- Výběr modelu -->
         <TextView
             android:text="Výběr modelu"

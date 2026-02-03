@@ -14,4 +14,41 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"/>
 
+    <TextView
+        android:id="@+id/txtPreviewStatus"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Živý náhled aktivní"
+        android:textColor="#FFFFFF"
+        android:textSize="12sp"
+        android:padding="8dp"
+        android:background="#80000000"
+        android:layout_gravity="top|start"
+        android:layout_margin="12dp" />
+
+    <TextView
+        android:id="@+id/txtDetectionLabel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Detekce: --"
+        android:textColor="#FFFFFF"
+        android:textSize="12sp"
+        android:padding="8dp"
+        android:background="#80000000"
+        android:layout_gravity="top|start"
+        android:layout_marginStart="12dp"
+        android:layout_marginTop="48dp" />
+
+    <TextView
+        android:id="@+id/txtPreviewBuild"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Build -"
+        android:textColor="#C9D1D9"
+        android:textSize="11sp"
+        android:padding="6dp"
+        android:background="#80000000"
+        android:layout_gravity="bottom|end"
+        android:layout_margin="12dp" />
+
 </FrameLayout>
