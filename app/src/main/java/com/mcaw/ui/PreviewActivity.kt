@@ -1,50 +1,116 @@
-package com.mcaw.ui
+package com.mcaw.service
 
-import android.content.BroadcastReceiver
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
-import android.os.Bundle
-import androidx.activity.ComponentActivity
-import androidx.camera.view.PreviewView
-import com.mcaw.app.R
-import com.mcaw.model.Box
+import android.graphics.Bitmap
+import android.os.Build
+import android.os.IBinder
+import androidx.core.app.NotificationCompat
+import com.mcaw.ai.DetectionAnalyzer
+import com.mcaw.ai.YoloOnnxDetector
+import com.mcaw.ai.EfficientDetTFLiteDetector
+import com.mcaw.config.AppPreferences
 
-class PreviewActivity : ComponentActivity() {
+/**
+ * McawService – èistý výpoèetní engine
+ * ------------------------------------
+ * - pøijímá zmenšené bitmapy (320×320) z PreviewActivity
+ * - provádí detekci pøes YOLO / EfficientDet
+ * - poèítá vzdálenost / rychlost / TTC
+ * - výsledek odesílá zpìt pøes Broadcast Intent
+ *
+ * Kamera NEbìží v této službì.
+ */
+class McawService : Service() {
 
-    private lateinit var previewView: PreviewView
-    private lateinit var overlay: OverlayView
+    private lateinit var yolo: YoloOnnxDetector
+    private lateinit var eff: EfficientDetTFLiteDetector
+    private lateinit var analyzer: DetectionAnalyzer
 
-    private val receiver = object : BroadcastReceiver() {
-        override fun onReceive(ctx: Context?, i: Intent?) {
-            if (i == null) return
+    override fun onBind(intent: Intent?): IBinder? = null
 
-            val left = i.getFloatExtra("left", 0f)
-            val top = i.getFloatExtra("top", 0f)
-            val right = i.getFloatExtra("right", 0f)
-            val bottom = i.getFloatExtra("bottom", 0f)
+    override fun onCreate() {
+        super.onCreate()
 
-            overlay.box = Box(left, top, right, bottom)
-            overlay.distance = i.getFloatExtra("dist", -1f)
-            overlay.speed = i.getFloatExtra("speed", -1f)
-            overlay.ttc = i.getFloatExtra("ttc", -1f)
+        AppPreferences.init(this)
+        startForegroundNotification()
 
-            overlay.invalidate()
+        // inicializace modelù
+        yolo = YoloOnnxDetector(
+            context = this,
+            modelName = "yolov8n.onnx"
+        )
+        eff = EfficientDetTFLiteDetector(
+            ctx = this,
+            modelName = "efficientdet_lite0.tflite"
+        )
+
+        analyzer = DetectionAnalyzer(this, yolo, eff)
+    }
+
+    // ---------------------------------------------------------
+    // FOREGROUND notification
+    // ---------------------------------------------------------
+    private fun startForegroundNotification() {
+        val channelId = "mcaw_fg"
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val ch = NotificationChannel(
+                channelId,
+                "MCAW Detection",
+                NotificationManager.IMPORTANCE_LOW
+            )
+            nm.createNotificationChannel(ch)
         }
+
+        val notif = NotificationCompat.Builder(this, channelId)
+            .setSmallIcon(android.R.drawable.ic_menu_camera)
+            .setContentTitle("MCAW bìží")
+            .setContentText("Detekce aktivní…")
+            .setOngoing(true)
+            .build()
+
+        startForeground(1, notif)
     }
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_preview)
+    // ---------------------------------------------------------
+    // PØÍJEM RÁMEÈKÙ OD PREVIEWACTIVITY
+    // ---------------------------------------------------------
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
 
-        previewView = findViewById(R.id.previewView)
-        overlay = findViewById(R.id.overlay)
+        if (intent?.action == "MCawFrame") {
+            val bmp = intent.getParcelableExtra<Bitmap>("frame")
+            if (bmp != null) processFrame(bmp)
+        }
 
-        registerReceiver(receiver, IntentFilter("MCAW_DEBUG_UPDATE"))
+        return START_STICKY
     }
 
-    override fun onDestroy() {
-        unregisterReceiver(receiver)
-        super.onDestroy()
+    // ---------------------------------------------------------
+    // DETEKCE + ODESLÁNÍ VÝSLEDKÙ
+    // ---------------------------------------------------------
+    private fun processFrame(bmp: Bitmap) {
+        // detekce
+        val result = analyzer.analyzeBitmap(bmp)
+
+        if (result == null) return
+
+        // --- výsledky pro PreviewActivity ---
+        val intent = Intent("MCAW_DEBUG_UPDATE")
+
+        intent.putExtra("left", result.box.x1)
+        intent.putExtra("top", result.box.y1)
+        intent.putExtra("right", result.box.x2)
+        intent.putExtra("bottom", result.box.y2)
+
+        intent.putExtra("dist", result.distance)
+        intent.putExtra("speed", result.speed)
+        intent.putExtra("ttc", result.ttc)
+
+        sendBroadcast(intent)
     }
 }

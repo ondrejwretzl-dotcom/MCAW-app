@@ -5,26 +5,24 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
-import androidx.core.content.ContextCompat
-import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.camera.core.ImageAnalysis
-import androidx.camera.core.CameraSelector
-import androidx.lifecycle.ProcessLifecycleOwner
-import com.mcaw.app.R
 import com.mcaw.ai.DetectionAnalyzer
 import com.mcaw.ai.YoloOnnxDetector
 import com.mcaw.ai.EfficientDetTFLiteDetector
 import com.mcaw.config.AppPreferences
-import java.util.concurrent.Executors
 
 /**
- * McawService – foreground služba s kamerou a detekcí
- * - načte modely
- * - propojí DetectionAnalyzer
- * - běží i se zhaslou obrazovkou
+ * McawService – čistý výpočetní engine
+ * ------------------------------------
+ * - přijímá zmenšené bitmapy (320×320) z PreviewActivity
+ * - provádí detekci přes YOLO / EfficientDet
+ * - počítá vzdálenost / rychlost / TTC
+ * - výsledek odesílá zpět přes Broadcast Intent
+ *
+ * Kamera NEběží v této službě.
  */
 class McawService : Service() {
 
@@ -37,57 +35,10 @@ class McawService : Service() {
     override fun onCreate() {
         super.onCreate()
 
-        // Inicializace nastavení
         AppPreferences.init(this)
-
-        // Foreground notifikace
         startForegroundNotification()
 
-        // Načtení modelů
-        initModels()
-
-        // (Volitelné) výpočet fokální délky v pixelech – zatím se jen spočítá.
-        // Až budeš chtít, můžeš ji uložit do AppPreferences a použít v Analyzeru.
-        val focalPx = computeFocalLengthPx()
-        // TODO: AppPreferences.setFocalPx(focalPx) – pokud si přidáš takovou volbu.
-
-        // Vytvoření analyzéru
-        analyzer = DetectionAnalyzer(this, yolo, eff)
-
-        // Start kamery
-        startCamera()
-    }
-
-    // ---------------------------------------------------------
-    //  NOTIFIKACE FOREGROUND SERVICE
-    // ---------------------------------------------------------
-    private fun startForegroundNotification() {
-        val channelId = "mcaw_fg"
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            val ch = NotificationChannel(
-                channelId,
-                "MCAW",
-                NotificationManager.IMPORTANCE_LOW
-            )
-            nm.createNotificationChannel(ch)
-        }
-
-        val notif = NotificationCompat.Builder(this, channelId)
-            .setSmallIcon(android.R.drawable.stat_sys_warning)
-            .setContentTitle("MCAW detekuje okolí")
-            .setContentText("Služba běží…")
-            .setOngoing(true)
-            .build()
-
-        startForeground(1, notif)
-    }
-
-    // ---------------------------------------------------------
-    // MODEL LOADING
-    // ---------------------------------------------------------
-    private fun initModels() {
+        // inicializace modelů
         yolo = YoloOnnxDetector(
             context = this,
             modelName = "yolov8n.onnx"
@@ -96,58 +47,70 @@ class McawService : Service() {
             ctx = this,
             modelName = "efficientdet_lite0.tflite"
         )
+
+        analyzer = DetectionAnalyzer(this, yolo, eff)
     }
 
     // ---------------------------------------------------------
-    // CAMERA + ANALYZER
+    // FOREGROUND notification
     // ---------------------------------------------------------
-    private fun startCamera() {
-        val providerFuture = ProcessCameraProvider.getInstance(this)
+    private fun startForegroundNotification() {
+        val channelId = "mcaw_fg"
 
-        providerFuture.addListener({
-            val provider = providerFuture.get()
-
-            val analysis = ImageAnalysis.Builder()
-                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                .build()
-
-            val executor = Executors.newSingleThreadExecutor()
-
-            // Napojení detekčního analyzéru
-            analysis.setAnalyzer(executor, analyzer)
-
-            provider.unbindAll()
-
-            provider.bindToLifecycle(
-                ProcessLifecycleOwner.get(),
-                CameraSelector.DEFAULT_BACK_CAMERA,
-                analysis
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val ch = NotificationChannel(
+                channelId,
+                "MCAW Detection",
+                NotificationManager.IMPORTANCE_LOW
             )
-
-        }, ContextCompat.getMainExecutor(this))
-    }
-
-    // ---------------------------------------------------------
-    // FOKÁLNÍ DÉLKA (px) – z Camera2 parametrů
-    // ---------------------------------------------------------
-    private fun computeFocalLengthPx(): Float {
-        val camManager = getSystemService(Context.CAMERA_SERVICE) as android.hardware.camera2.CameraManager
-        val camId = camManager.cameraIdList.first()
-
-        val chars = camManager.getCameraCharacteristics(camId)
-
-        val focalLengths = chars.get(android.hardware.camera2.CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS)
-        val sensorSize = chars.get(android.hardware.camera2.CameraCharacteristics.SENSOR_INFO_PHYSICAL_SIZE)
-        val pixelArray = chars.get(android.hardware.camera2.CameraCharacteristics.SENSOR_INFO_PIXEL_ARRAY_SIZE)
-
-        if (focalLengths == null || sensorSize == null || pixelArray == null) {
-            return 1000f // fallback
+            nm.createNotificationChannel(ch)
         }
 
-        val focalMm = focalLengths[0]
-        val sensorWidthMm = sensorSize.width
-        val imageWidthPx = pixelArray.width.toFloat()
+        val notif = NotificationCompat.Builder(this, channelId)
+            .setSmallIcon(android.R.drawable.ic_menu_camera)
+            .setContentTitle("MCAW běží")
+            .setContentText("Detekce aktivní…")
+            .setOngoing(true)
+            .build()
 
-        return (focalMm / sensorWidthMm) * imageWidthPx
+        startForeground(1, notif)
+    }
+
+    // ---------------------------------------------------------
+    // PŘÍJEM RÁMEČKŮ OD PREVIEWACTIVITY
+    // ---------------------------------------------------------
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+
+        if (intent?.action == "MCawFrame") {
+            val bmp = intent.getParcelableExtra<Bitmap>("frame")
+            if (bmp != null) processFrame(bmp)
+        }
+
+        return START_STICKY
+    }
+
+    // ---------------------------------------------------------
+    // DETEKCE + ODESLÁNÍ VÝSLEDKŮ
+    // ---------------------------------------------------------
+    private fun processFrame(bmp: Bitmap) {
+        // detekce
+        val result = analyzer.analyzeBitmap(bmp)
+
+        if (result == null) return
+
+        // --- výsledky pro PreviewActivity ---
+        val intent = Intent("MCAW_DEBUG_UPDATE")
+
+        intent.putExtra("left", result.box.x1)
+        intent.putExtra("top", result.box.y1)
+        intent.putExtra("right", result.box.x2)
+        intent.putExtra("bottom", result.box.y2)
+
+        intent.putExtra("dist", result.distance)
+        intent.putExtra("speed", result.speed)
+        intent.putExtra("ttc", result.ttc)
+
+        sendBroadcast(intent)
     }
 }
