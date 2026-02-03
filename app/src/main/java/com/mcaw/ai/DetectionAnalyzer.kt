@@ -183,6 +183,12 @@ class DetectionAnalyzer(
         ctx.sendBroadcast(i)
     }
 
+    private fun sendOverlayClear() {
+        val i = Intent("MCAW_DEBUG_UPDATE")
+        i.putExtra("clear", true)
+        ctx.sendBroadcast(i)
+    }
+
     private fun sendMetricsUpdate(
         dist: Float,
         relSpeed: Float,
