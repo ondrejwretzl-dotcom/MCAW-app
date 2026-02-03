@@ -44,15 +44,15 @@ object AppPreferences {
 
     // USER THRESHOLDS (orange/red)
     var userTtcOrange: Float
-        get() = prefs.getFloat("user_ttc_orange", 2.5f)
+        get() = prefs.getFloat("user_ttc_orange", 3.0f)
         set(v) = prefs.edit().putFloat("user_ttc_orange", v).apply()
 
     var userTtcRed: Float
-        get() = prefs.getFloat("user_ttc_red", 1.5f)
+        get() = prefs.getFloat("user_ttc_red", 1.2f)
         set(v) = prefs.edit().putFloat("user_ttc_red", v).apply()
 
     var userDistOrange: Float
-        get() = prefs.getFloat("user_dist_orange", 12f)
+        get() = prefs.getFloat("user_dist_orange", 15f)
         set(v) = prefs.edit().putFloat("user_dist_orange", v).apply()
 
     var userDistRed: Float
@@ -60,10 +60,10 @@ object AppPreferences {
         set(v) = prefs.edit().putFloat("user_dist_red", v).apply()
 
     var userSpeedOrange: Float
-        get() = prefs.getFloat("user_speed_orange", 4f)
+        get() = prefs.getFloat("user_speed_orange", 3f)
         set(v) = prefs.edit().putFloat("user_speed_orange", v).apply()
 
     var userSpeedRed: Float
-        get() = prefs.getFloat("user_speed_red", 8f)
+        get() = prefs.getFloat("user_speed_red", 5f)
         set(v) = prefs.edit().putFloat("user_speed_red", v).apply()
 }
