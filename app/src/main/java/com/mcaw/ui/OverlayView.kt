@@ -6,6 +6,7 @@ import android.util.AttributeSet
 import android.view.View
 import com.mcaw.model.Box
 import kotlin.math.max
+import kotlin.math.min
 
 /**
  * Jednoduchý overlay, který vykreslí jeden detekční box a související telemetrii.
@@ -36,19 +37,24 @@ class OverlayView @JvmOverloads constructor(
         typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
     }
 
-    private val zonePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.argb(120, 0, 229, 168)
-        style = Paint.Style.STROKE
-        strokeWidth = 3f
-        pathEffect = DashPathEffect(floatArrayOf(16f, 10f), 0f)
-    }
-
     // ---- DATA K ZOBRAZENÍ ------------------------------------------------------
 
     /**
      * Jediný box, který se má vykreslit (nastavuje PreviewActivity).
      */
     var box: Box? = null
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    var frameWidth: Float = 0f
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    var frameHeight: Float = 0f
         set(value) {
             field = value
             invalidate()
@@ -104,12 +110,12 @@ class OverlayView @JvmOverloads constructor(
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
 
-        drawDetectionZone(canvas)
-
         val b = box ?: return
 
+        val mapped = mapToView(b) ?: return
+
         // Vykreslení obdélníku
-        canvas.drawRect(b.x1, b.y1, b.x2, b.y2, boxPaint)
+        canvas.drawRect(mapped, boxPaint)
 
         // Sestavení popisků
         val lines = if (showTelemetry) {
@@ -135,8 +141,8 @@ class OverlayView @JvmOverloads constructor(
         for (ln in lines) textW = max(textW, textPaint.measureText(ln))
 
         val padding = 10f
-        val bgLeft = b.x1
-        val bgBottom = b.y1
+        val bgLeft = mapped.left
+        val bgBottom = mapped.top
         val bgTop = bgBottom - (lineH * lines.size) - (2 * padding)
         val bgRight = bgLeft + textW + (2 * padding)
 
@@ -153,14 +159,25 @@ class OverlayView @JvmOverloads constructor(
         }
     }
 
-    private fun drawDetectionZone(canvas: Canvas) {
-        val w = width.toFloat()
-        val h = height.toFloat()
-        if (w <= 0f || h <= 0f) return
-        val left = w * 0.3f
-        val right = w * 0.7f
-        val top = h * 0.15f
-        val bottom = h * 0.9f
-        canvas.drawRoundRect(left, top, right, bottom, 16f, 16f, zonePaint)
+    private fun mapToView(box: Box): RectF? {
+        val viewW = width.toFloat()
+        val viewH = height.toFloat()
+        if (viewW <= 0f || viewH <= 0f) return null
+        if (frameWidth <= 0f || frameHeight <= 0f) {
+            return RectF(box.x1, box.y1, box.x2, box.y2)
+        }
+
+        val scale = min(viewW / frameWidth, viewH / frameHeight)
+        val scaledW = frameWidth * scale
+        val scaledH = frameHeight * scale
+        val dx = (viewW - scaledW) / 2f
+        val dy = (viewH - scaledH) / 2f
+
+        return RectF(
+            box.x1 * scale + dx,
+            box.y1 * scale + dy,
+            box.x2 * scale + dx,
+            box.y2 * scale + dy
+        )
     }
 }

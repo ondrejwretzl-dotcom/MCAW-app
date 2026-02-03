@@ -7,10 +7,10 @@ import android.view.View
 import android.widget.AdapterView
 import android.widget.EditText
 import android.widget.Spinner
-import android.widget.Switch
 import androidx.activity.ComponentActivity
 import com.mcaw.app.R
 import com.mcaw.config.AppPreferences
+import com.google.android.material.switchmaterial.SwitchMaterial
 
 class SettingsActivity : ComponentActivity() {
 
@@ -31,13 +31,23 @@ class SettingsActivity : ComponentActivity() {
         val etSpeedOrange = findViewById<EditText>(R.id.etSpeedOrange)
         val etSpeedRed = findViewById<EditText>(R.id.etSpeedRed)
 
-        val swSound = findViewById<Switch>(R.id.swSound)
-        val swVibration = findViewById<Switch>(R.id.swVibration)
-        val swVoice = findViewById<Switch>(R.id.swVoice)
-        val swDebug = findViewById<Switch>(R.id.swDebug)
+        val swSound = findViewById<SwitchMaterial>(R.id.swSound)
+        val swVibration = findViewById<SwitchMaterial>(R.id.swVibration)
+        val swVoice = findViewById<SwitchMaterial>(R.id.swVoice)
+        val swDebug = findViewById<SwitchMaterial>(R.id.swDebug)
+        val swLaneFilter = findViewById<SwitchMaterial>(R.id.swLaneFilter)
 
-        spMode.setSelection(AppPreferences.detectionMode)
-        spModel.setSelection(AppPreferences.selectedModel)
+        val modeSelection = AppPreferences.detectionMode.coerceIn(0, spMode.count - 1)
+        val modelSelection = AppPreferences.selectedModel.coerceIn(0, spModel.count - 1)
+        if (modeSelection != AppPreferences.detectionMode) {
+            AppPreferences.detectionMode = modeSelection
+        }
+        if (modelSelection != AppPreferences.selectedModel) {
+            AppPreferences.selectedModel = modelSelection
+        }
+
+        spMode.setSelection(modeSelection)
+        spModel.setSelection(modelSelection)
 
         groupUser.visibility = if (AppPreferences.detectionMode == 2) View.VISIBLE else View.GONE
         txtModeDetails.text = modeSummary(AppPreferences.detectionMode)
@@ -74,6 +84,7 @@ class SettingsActivity : ComponentActivity() {
         swVibration.isChecked = AppPreferences.vibration
         swVoice.isChecked = AppPreferences.voice
         swDebug.isChecked = AppPreferences.debugOverlay
+        swLaneFilter.isChecked = AppPreferences.laneFilter
 
         swSound.setOnCheckedChangeListener { _, isChecked ->
             AppPreferences.sound = isChecked
@@ -86,6 +97,9 @@ class SettingsActivity : ComponentActivity() {
         }
         swDebug.setOnCheckedChangeListener { _, isChecked ->
             AppPreferences.debugOverlay = isChecked
+        }
+        swLaneFilter.setOnCheckedChangeListener { _, isChecked ->
+            AppPreferences.laneFilter = isChecked
         }
 
         fun applyUserThresholds() {

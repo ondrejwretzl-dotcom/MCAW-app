@@ -28,7 +28,7 @@ object AppPreferences {
 
     // MODEL SETTINGS
     var selectedModel: Int
-        get() = prefs.getInt("model", 0)
+        get() = prefs.getInt("model", 1)
         set(v) = prefs.edit().putInt("model", v).apply()
 
     // ALERT SETTINGS
@@ -47,6 +47,10 @@ object AppPreferences {
     var debugOverlay: Boolean
         get() = prefs.getBoolean("debugOverlay", false)
         set(v) = prefs.edit().putBoolean("debugOverlay", v).apply()
+
+    var laneFilter: Boolean
+        get() = prefs.getBoolean("laneFilter", false)
+        set(v) = prefs.edit().putBoolean("laneFilter", v).apply()
 
     // USER THRESHOLDS (orange/red)
     var userTtcOrange: Float

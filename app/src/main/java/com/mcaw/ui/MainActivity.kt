@@ -82,7 +82,7 @@ class MainActivity : ComponentActivity() {
         txtBuildInfo = findViewById(R.id.txtBuildInfo)
         speedMonitor = SpeedMonitor(this)
 
-        txtBuildInfo.text = "Build ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"
+        txtBuildInfo.text = "MCAW ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"
         addLog("Aplikace spuštěna")
 
         findViewById<Button>(R.id.btnStart).setOnClickListener {

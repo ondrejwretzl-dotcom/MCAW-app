@@ -6,6 +6,7 @@ import android.media.MediaPlayer
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.speech.tts.TextToSpeech
+import android.util.Log
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import com.mcaw.app.R
@@ -17,8 +18,8 @@ import kotlin.math.max
 
 class DetectionAnalyzer(
     private val ctx: Context,
-    private val yolo: YoloOnnxDetector,
-    private val det: EfficientDetTFLiteDetector
+    private val yolo: YoloOnnxDetector?,
+    private val det: EfficientDetTFLiteDetector?
 ) : ImageAnalysis.Analyzer {
 
     companion object {
@@ -52,85 +53,92 @@ class DetectionAnalyzer(
     }
 
     override fun analyze(image: ImageProxy) {
-        val ts = System.currentTimeMillis()
-        val bitmap = ImageUtils.imageProxyToBitmap(image)
-        if (bitmap == null) {
-            image.close()
-            return
-        }
+        try {
+            val ts = System.currentTimeMillis()
+            val bitmap = ImageUtils.imageProxyToBitmap(image)
+            if (bitmap == null) {
+                sendOverlayClear()
+                return
+            }
 
-        // -------------------------
-        // DETEKCE
-        // -------------------------
-        val detList: List<Detection> = when (AppPreferences.selectedModel) {
-            0 -> yolo.detect(bitmap)
-            1 -> det.detect(bitmap)
-            else -> emptyList()
-        }
+            // -------------------------
+            // DETEKCE
+            // -------------------------
+            val detList: List<Detection> = when (AppPreferences.selectedModel) {
+                0 -> yolo?.detect(bitmap) ?: det?.detect(bitmap).orEmpty()
+                1 -> det?.detect(bitmap) ?: yolo?.detect(bitmap).orEmpty()
+                else -> emptyList()
+            }
 
-        val frameW = bitmap.width.toFloat()
-        val frameH = bitmap.height.toFloat()
-        val filtered = detList.filter { isRelevantForLane(it.box, frameW, frameH) }
+            val frameW = bitmap.width.toFloat()
+            val frameH = bitmap.height.toFloat()
+            val filtered = if (AppPreferences.laneFilter) {
+                detList.filter { isRelevantForLane(it.box, frameW, frameH) }
+            } else {
+                detList
+            }
 
-        if (filtered.isEmpty()) {
+            if (filtered.isEmpty()) {
+                sendOverlayClear()
+                return
+            }
+
+            // Nejlepší (největší score)
+            val best: Detection? = filtered.maxByOrNull { it.score }
+            if (best == null) {
+                sendOverlayClear()
+                return
+            }
+
+            // -------------------------
+            // FYZIKA: vzdálenost + TTC
+            // -------------------------
+            // Heuristický odhad fokální délky (px) – nahraď později kalibrací/FoV
+            val focalPxEstimate = 1000f
+            val distance: Float = DetectionPhysics.estimateDistanceMeters(
+                bbox = best.box,
+                frameHeightPx = bitmap.height,
+                focalPx = focalPxEstimate,
+                realHeightM = if (best.label == "motorcycle") 1.3f else 1.5f
+            ) ?: Float.POSITIVE_INFINITY
+
+            // TTC z růstu výšky boxu (logaritmická derivace)
+            val currH = best.box.h
+            var ttc = Float.POSITIVE_INFINITY
+            if (lastBoxHeight > 0f && lastTimestamp > 0L) {
+                val dtSec = ((ts - lastTimestamp).coerceAtLeast(1L)).toFloat() / 1000f
+                DetectionPhysics.computeTtcFromHeights(lastBoxHeight, currH, dtSec)?.let { ttc = it }
+            }
+
+            // Rychlost jezdce z GPS (m/s)
+            val riderSpeed = AppPreferences.lastSpeedMps
+            val relSpeed = computeRelativeSpeed(distance, ts)
+            val objectSpeed = (riderSpeed - relSpeed).takeIf { it.isFinite() } ?: 0f
+            val thresholds = thresholdsForMode(AppPreferences.detectionMode)
+            val level = alertLevel(distance, relSpeed, ttc, thresholds)
+
+            // Uložit pro další snímek
+            lastBoxHeight = currH
+            lastTimestamp = ts
+
+            // -------------------------
+            // ALERTY
+            // -------------------------
+            handleAlerts(level, distance, ttc, relSpeed, objectSpeed)
+
+            // -------------------------
+            // DEBUG OVERLAY
+            // -------------------------
+            val label = best.label ?: "unknown"
+            sendOverlayUpdate(best.box, frameW, frameH, distance, relSpeed, objectSpeed, ttc, label)
+
+            sendMetricsUpdate(distance, relSpeed, objectSpeed, ttc, level)
+        } catch (e: Exception) {
+            Log.e("DetectionAnalyzer", "Detection failed", e)
             sendOverlayClear()
+        } finally {
             image.close()
-            return
         }
-
-        // Nejlepší (největší score)
-        val best: Detection? = filtered.maxByOrNull { it.score }
-        if (best == null) {
-            sendOverlayClear()
-            image.close()
-            return
-        }
-
-        // -------------------------
-        // FYZIKA: vzdálenost + TTC
-        // -------------------------
-        // Heuristický odhad fokální délky (px) – nahraď později kalibrací/FoV
-        val focalPxEstimate = 1000f
-        val distance: Float = DetectionPhysics.estimateDistanceMeters(
-            bbox = best.box,
-            frameHeightPx = bitmap.height,
-            focalPx = focalPxEstimate,
-            realHeightM = if (best.label == "motorcycle") 1.3f else 1.5f
-        ) ?: Float.POSITIVE_INFINITY
-
-        // TTC z růstu výšky boxu (logaritmická derivace)
-        val currH = best.box.h
-        var ttc = Float.POSITIVE_INFINITY
-        if (lastBoxHeight > 0f && lastTimestamp > 0L) {
-            val dtSec = ((ts - lastTimestamp).coerceAtLeast(1L)).toFloat() / 1000f
-            DetectionPhysics.computeTtcFromHeights(lastBoxHeight, currH, dtSec)?.let { ttc = it }
-        }
-
-        // Rychlost jezdce z GPS (m/s)
-        val riderSpeed = AppPreferences.lastSpeedMps
-        val relSpeed = computeRelativeSpeed(distance, ts)
-        val objectSpeed = (riderSpeed - relSpeed).takeIf { it.isFinite() } ?: 0f
-        val thresholds = thresholdsForMode(AppPreferences.detectionMode)
-        val level = alertLevel(distance, relSpeed, ttc, thresholds)
-
-        // Uložit pro další snímek
-        lastBoxHeight = currH
-        lastTimestamp = ts
-
-        // -------------------------
-        // ALERTY
-        // -------------------------
-        handleAlerts(level, distance, ttc, relSpeed, objectSpeed)
-
-        // -------------------------
-        // DEBUG OVERLAY
-        // -------------------------
-        val label = best.label ?: "unknown"
-        sendOverlayUpdate(best.box, distance, relSpeed, objectSpeed, ttc, label)
-
-        sendMetricsUpdate(distance, relSpeed, objectSpeed, ttc, level)
-
-        image.close()
     }
 
     // -------------------------------------------------------------------
@@ -158,6 +166,8 @@ class DetectionAnalyzer(
     // -------------------------------------------------------------------
     private fun sendOverlayUpdate(
         box: Box,
+        frameW: Float,
+        frameH: Float,
         dist: Float,
         relSpeed: Float,
         objectSpeed: Float,
@@ -166,6 +176,8 @@ class DetectionAnalyzer(
     ) {
         val i = Intent("MCAW_DEBUG_UPDATE")
         i.putExtra("clear", false)
+        i.putExtra("frame_w", frameW)
+        i.putExtra("frame_h", frameH)
         i.putExtra("left", box.x1)
         i.putExtra("top", box.y1)
         i.putExtra("right", box.x2)
@@ -256,10 +268,10 @@ class DetectionAnalyzer(
         val width = max(0f, box.x2 - box.x1)
         val height = max(0f, box.y2 - box.y1)
         val area = width * height
-        val minArea = frameW * frameH * 0.01f
+        val minArea = frameW * frameH * 0.0035f
 
-        val inLane = centerXNorm in 0.3f..0.7f
-        val largeEnough = area >= minArea && height >= frameH * 0.12f
+        val inLane = centerXNorm in 0.2f..0.8f
+        val largeEnough = area >= minArea && height >= frameH * 0.06f
         return inLane && largeEnough
     }
 
