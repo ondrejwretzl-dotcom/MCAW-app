@@ -14,8 +14,6 @@
     <application
         android:name=".MCAWApp"
         android:label="MCAW"
-        android:icon="@mipmap/ic_launcher"
-        android:roundIcon="@mipmap/ic_launcher_round"
         android:theme="@style/Theme.Material3.DayNight.NoActionBar">
 
         <!-- Launcher Activity -->
