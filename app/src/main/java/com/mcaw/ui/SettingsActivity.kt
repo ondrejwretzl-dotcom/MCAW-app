@@ -8,11 +8,11 @@ import android.widget.AdapterView
 import android.widget.EditText
 import android.widget.Spinner
 import android.widget.Switch
-import androidx.appcompat.app.AppCompatActivity
+import androidx.activity.ComponentActivity
 import com.mcaw.app.R
 import com.mcaw.config.AppPreferences
 
-class SettingsActivity : AppCompatActivity() {
+class SettingsActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
