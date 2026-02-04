@@ -1,0 +1,29 @@
+ts=1770230558318 event=session_start model=efficientdet lane_filter=false mode=0 thresholds=ttc(3.0/1.2) dist(15.0/6.0) speed(3.0/5.0) yolo=input640 score=0.35 iou=0.45 eff=input320 score=0.3 iou=0.45
+ts=1770230558957 event=frame_info frame_w=480 frame_h=640 rotation=90 focal_px=579.3
+ts=1770230558957 event=detections_raw count=0
+ts=1770230558957 event=detections_filtered raw_count=0 vehicle_count=0 filtered_count=0
+ts=1770230558957 event=no_vehicle_detected raw_count=0 vehicle_count=0
+ts=1770230559775 event=no_vehicle_detected raw_count=0 vehicle_count=0
+ts=1770230560625 event=no_vehicle_detected raw_count=0 vehicle_count=0
+ts=1770230560953 event=detection label=bicycle score=0.453 box=55,1,49,0,0,0,12,2 distance=inf ttc=inf rel_speed=0.00 object_speed=0.00 alert_level=0
+ts=1770230561066 event=detections_raw score=0.430 count=10
+ts=1770230561066 event=detections_filtered score=0.430 raw_count=10 vehicle_count=10 filtered_count=10
+ts=1770230561495 event=no_vehicle_detected raw_count=0 vehicle_count=0
+ts=1770230562346 event=no_vehicle_detected raw_count=0 vehicle_count=0
+ts=1770230563130 event=detections_raw count=0
+ts=1770230563130 event=detections_filtered raw_count=0 vehicle_count=0 filtered_count=0
+ts=1770230563266 event=no_vehicle_detected raw_count=0 vehicle_count=0
+ts=1770230564128 event=no_vehicle_detected raw_count=0 vehicle_count=0
+ts=1770230564944 event=no_vehicle_detected raw_count=0 vehicle_count=0
+ts=1770230565136 event=detections_raw count=0
+ts=1770230565136 event=detections_filtered raw_count=0 vehicle_count=0 filtered_count=0
+ts=1770230565818 event=no_vehicle_detected raw_count=0 vehicle_count=0
+ts=1770230566635 event=no_vehicle_detected raw_count=0 vehicle_count=0
+ts=1770230567206 event=detections_raw count=0
+ts=1770230567206 event=detections_filtered raw_count=0 vehicle_count=0 filtered_count=0
+ts=1770230567485 event=no_vehicle_detected raw_count=0 vehicle_count=0
+ts=1770230568294 event=no_vehicle_detected raw_count=0 vehicle_count=0
+ts=1770230569106 event=no_vehicle_detected raw_count=0 vehicle_count=0
+ts=1770230569206 event=detections_raw count=0
+ts=1770230569206 event=detections_filtered raw_count=0 vehicle_count=0 filtered_count=0
+ts=1770230569960 event=no_vehicle_detected raw_count=0 vehicle_count=0

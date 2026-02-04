@@ -1,0 +1,56 @@
+ts=1770230721831 event=session_start model=efficientdet lane_filter=false mode=0 thresholds=ttc(3.0/1.2) dist(15.0/6.0) speed(3.0/5.0) yolo=input640 score=0.35 iou=0.45 eff=input320 score=0.3 iou=0.45
+ts=1770230722711 event=frame_info frame_w=480 frame_h=640 rotation=90 focal_px=579.3
+ts=1770230722711 event=detections_raw score=0.406 count=7
+ts=1770230722711 event=detections_filtered score=0.406 raw_count=7 vehicle_count=7 filtered_count=7
+ts=1770230722711 event=detection label=bicycle score=0.406 box=0,0,12,2,183,6,61,2 distance=17.75 ttc=inf rel_speed=0.00 object_speed=0.00 alert_level=0
+ts=1770230723289 event=no_vehicle_detected raw_count=0 vehicle_count=0
+ts=1770230724137 event=no_vehicle_detected raw_count=0 vehicle_count=0
+ts=1770230724769 event=detections_raw count=0
+ts=1770230724769 event=detections_filtered raw_count=0 vehicle_count=0 filtered_count=0
+ts=1770230724992 event=no_vehicle_detected raw_count=0 vehicle_count=0
+ts=1770230725843 event=no_vehicle_detected raw_count=0 vehicle_count=0
+ts=1770230726698 event=no_vehicle_detected raw_count=0 vehicle_count=0
+ts=1770230726806 event=detections_raw count=0
+ts=1770230726806 event=detections_filtered raw_count=0 vehicle_count=0 filtered_count=0
+ts=1770230727550 event=no_vehicle_detected raw_count=0 vehicle_count=0
+ts=1770230728362 event=no_vehicle_detected raw_count=0 vehicle_count=0
+ts=1770230728866 event=detections_raw score=0.344 count=3
+ts=1770230728866 event=detections_filtered raw_count=3 vehicle_count=0 filtered_count=0
+ts=1770230729238 event=no_vehicle_detected raw_count=0 vehicle_count=0
+ts=1770230730044 event=no_vehicle_detected raw_count=0 vehicle_count=0
+ts=1770230730769 event=detection label=bicycle score=0.344 box=18,4,0,0,0,0,0,0 distance=inf ttc=inf rel_speed=0.00 object_speed=0.00 alert_level=0
+ts=1770230730870 event=detections_raw count=0
+ts=1770230730870 event=detections_filtered raw_count=0 vehicle_count=0 filtered_count=0
+ts=1770230730870 event=no_vehicle_detected raw_count=0 vehicle_count=0
+ts=1770230731667 event=detection label=bicycle score=0.344 box=9,2,0,0,101,0,0,0 distance=inf ttc=inf rel_speed=0.00 object_speed=0.00 alert_level=0
+ts=1770230731784 event=no_vehicle_detected raw_count=0 vehicle_count=0
+ts=1770230732605 event=no_vehicle_detected raw_count=0 vehicle_count=0
+ts=1770230732794 event=detection label=bicycle score=0.430 box=45,9,0,0,0,0,0,0 distance=inf ttc=inf rel_speed=0.00 object_speed=0.00 alert_level=0
+ts=1770230732906 event=detections_raw score=0.477 count=8
+ts=1770230732906 event=detections_filtered score=0.477 raw_count=8 vehicle_count=8 filtered_count=8
+ts=1770230733660 event=detection label=bicycle score=0.594 box=36,7,110,2,0,0,73,4 distance=inf ttc=inf rel_speed=0.00 object_speed=0.00 alert_level=0
+ts=1770230734314 event=no_vehicle_detected score=0.500 raw_count=14 vehicle_count=0
+ts=1770230734496 event=detection label=bicycle score=0.453 box=82,6,0,0,0,0,0,0 distance=inf ttc=inf rel_speed=0.00 object_speed=0.00 alert_level=0
+ts=1770230734980 event=detections_raw count=0
+ts=1770230734980 event=detections_filtered raw_count=0 vehicle_count=0 filtered_count=0
+ts=1770230735164 event=no_vehicle_detected raw_count=0 vehicle_count=0
+ts=1770230736059 event=no_vehicle_detected raw_count=0 vehicle_count=0
+ts=1770230736861 event=no_vehicle_detected raw_count=0 vehicle_count=0
+ts=1770230737027 event=detections_raw count=0
+ts=1770230737027 event=detections_filtered raw_count=0 vehicle_count=0 filtered_count=0
+ts=1770230737680 event=no_vehicle_detected raw_count=0 vehicle_count=0
+ts=1770230737766 event=detection label=bicycle score=0.363 box=0,0,12,2,0,0,171,4 distance=5.46 ttc=inf rel_speed=-14.61 object_speed=14.61 alert_level=2
+ts=1770230738540 event=no_vehicle_detected raw_count=0 vehicle_count=0
+ts=1770230738871 event=detection label=bicycle score=0.301 box=0,0,97,9,36,7,318,2 distance=3.94 ttc=inf rel_speed=38.49 object_speed=-38.49 alert_level=2
+ts=1770230739061 event=detections_raw count=0
+ts=1770230739061 event=detections_filtered raw_count=0 vehicle_count=0 filtered_count=0
+ts=1770230739419 event=no_vehicle_detected raw_count=0 vehicle_count=0
+ts=1770230740296 event=no_vehicle_detected raw_count=0 vehicle_count=0
+ts=1770230741094 event=detections_raw count=0
+ts=1770230741094 event=detections_filtered raw_count=0 vehicle_count=0 filtered_count=0
+ts=1770230741212 event=no_vehicle_detected raw_count=0 vehicle_count=0
+ts=1770230742045 event=no_vehicle_detected raw_count=0 vehicle_count=0
+ts=1770230742858 event=no_vehicle_detected raw_count=0 vehicle_count=0
+ts=1770230743150 event=detections_raw count=0
+ts=1770230743150 event=detections_filtered raw_count=0 vehicle_count=0 filtered_count=0
+ts=1770230743807 event=no_vehicle_detected raw_count=0 vehicle_count=0

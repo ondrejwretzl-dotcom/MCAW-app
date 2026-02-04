@@ -1,0 +1,4 @@
+ts=2026-02-04 19:45:21 service_create
+ts=2026-02-04 19:45:44 analysis_started
+ts=2026-02-04 19:45:45 service_destroy
+ts=2026-02-04 19:45:45 analysis_stopped
