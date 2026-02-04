@@ -181,6 +181,7 @@ class PreviewActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         overlay.showTelemetry = AppPreferences.debugOverlay
+        AppPreferences.previewActive = true
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
             == PackageManager.PERMISSION_GRANTED
         ) {
@@ -193,6 +194,7 @@ class PreviewActivity : ComponentActivity() {
     override fun onStop() {
         speedMonitor.stop()
         stopSearching()
+        AppPreferences.previewActive = false
         sendServiceCommand(McawService.ACTION_START_ANALYSIS)
         super.onStop()
     }

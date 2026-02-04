@@ -3,6 +3,7 @@ package com.mcaw.service
 import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.ServiceInfo
 import android.content.Context
 import android.content.Intent
 import android.hardware.camera2.CameraCharacteristics
@@ -16,7 +17,10 @@ import androidx.camera.core.ImageAnalysis
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleService
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleRegistry
 import com.mcaw.ai.DetectionAnalyzer
 import com.mcaw.ai.EfficientDetTFLiteDetector
 import com.mcaw.ai.YoloOnnxDetector
@@ -40,9 +44,12 @@ class McawService : LifecycleService() {
     private var cameraProvider: ProcessCameraProvider? = null
     private var analysisExecutor = Executors.newSingleThreadExecutor()
     private var analysisRunning = false
+    @Volatile
+    private var analysisDesired = false
     private var serviceLogFileName: String = ""
     private val retryHandler = Handler(Looper.getMainLooper())
     private var retryAttempts = 0
+    private var cameraLifecycleOwner: ServiceCameraLifecycleOwner? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -73,7 +80,16 @@ class McawService : LifecycleService() {
             .setOngoing(true)
             .build()
 
-        startForeground(1, notif)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(
+                1,
+                notif,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+            )
+        } else {
+            startForeground(1, notif)
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -96,6 +112,11 @@ class McawService : LifecycleService() {
     private fun startCameraAnalysis() {
         if (analysisRunning) return
         retryHandler.removeCallbacksAndMessages(null)
+        analysisDesired = true
+        if (AppPreferences.previewActive) {
+            logService("analysis_start_skipped preview_active")
+            return
+        }
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
             != android.content.pm.PackageManager.PERMISSION_GRANTED
         ) {
@@ -114,8 +135,16 @@ class McawService : LifecycleService() {
         providerFuture.addListener({
             runCatching {
                 val provider = providerFuture.get()
+                if (!analysisDesired) {
+                    logService("analysis_start_ignored stale_request")
+                    return@addListener
+                }
                 cameraProvider = provider
                 provider.unbindAll()
+                val lifecycleOwner = ServiceCameraLifecycleOwner().also {
+                    it.start()
+                    cameraLifecycleOwner = it
+                }
                 val analysis = ImageAnalysis.Builder()
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                     .build()
@@ -123,7 +152,7 @@ class McawService : LifecycleService() {
                         setAnalyzer(analysisExecutor, analyzer!!)
                     }
                 val camera = provider.bindToLifecycle(
-                    this,
+                    lifecycleOwner,
                     CameraSelector.DEFAULT_BACK_CAMERA,
                     analysis
                 )
@@ -142,10 +171,13 @@ class McawService : LifecycleService() {
     private fun stopCameraAnalysis() {
         if (!analysisRunning && cameraProvider == null) return
         retryHandler.removeCallbacksAndMessages(null)
+        analysisDesired = false
         analysisRunning = false
         cameraProvider?.unbindAll()
         cameraProvider = null
         analyzer = null
+        cameraLifecycleOwner?.stop()
+        cameraLifecycleOwner = null
         logService("analysis_stopped")
     }
 
@@ -182,5 +214,23 @@ class McawService : LifecycleService() {
         val delayMs = (1000L * retryAttempts.coerceAtMost(5)).coerceAtMost(6000L)
         logService("analysis_retry_scheduled delay_ms=$delayMs attempt=$retryAttempts")
         retryHandler.postDelayed({ startCameraAnalysis() }, delayMs)
+    }
+
+    private class ServiceCameraLifecycleOwner : LifecycleOwner {
+        private val registry = LifecycleRegistry(this)
+
+        override fun getLifecycle(): Lifecycle = registry
+
+        fun start() {
+            registry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
+            registry.handleLifecycleEvent(Lifecycle.Event.ON_START)
+            registry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
+        }
+
+        fun stop() {
+            registry.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
+            registry.handleLifecycleEvent(Lifecycle.Event.ON_STOP)
+            registry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
+        }
     }
 }
