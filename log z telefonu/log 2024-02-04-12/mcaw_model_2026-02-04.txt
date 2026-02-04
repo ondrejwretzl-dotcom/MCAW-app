@@ -1,3 +1,0 @@
-ts=1770205288932 event=effdet_model input_type=UINT8 input_size=320 out0=[1, 19206, 90] out1=[1, 19206, 4] anchors=19206 classes=90
-ts=1770205350981 event=effdet_model input_type=UINT8 input_size=320 out0=[1, 19206, 90] out1=[1, 19206, 4] anchors=19206 classes=90
-ts=1770205367390 event=effdet_model input_type=UINT8 input_size=320 out0=[1, 19206, 90] out1=[1, 19206, 4] anchors=19206 classes=90

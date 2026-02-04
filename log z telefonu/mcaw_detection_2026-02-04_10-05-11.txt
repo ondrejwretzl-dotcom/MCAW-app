@@ -1,9 +1,0 @@
-ts=1770195911539 event=session_start model=efficientdet lane_filter=false mode=0 thresholds=ttc(3.0/1.2) dist(15.0/6.0) speed(3.0/5.0) yolo=input640 score=0.35 iou=0.45 eff=input320 score=0.3 iou=0.45
-ts=1770195912393 event=detection_error label=IllegalArgumentException
-ts=1770195914405 event=detection_error label=IllegalArgumentException
-ts=1770195916422 event=detection_error label=IllegalArgumentException
-ts=1770195918464 event=detection_error label=IllegalArgumentException
-ts=1770195920469 event=detection_error label=IllegalArgumentException
-ts=1770195922483 event=detection_error label=IllegalArgumentException
-ts=1770195924506 event=detection_error label=IllegalArgumentException
-ts=1770195926547 event=detection_error label=IllegalArgumentException
