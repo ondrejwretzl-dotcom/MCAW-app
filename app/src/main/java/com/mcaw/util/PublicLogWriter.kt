@@ -7,7 +7,7 @@ import android.os.Environment
 import android.provider.MediaStore
 
 object PublicLogWriter {
-    private const val RELATIVE_DIR = Environment.DIRECTORY_DOWNLOADS + "/MCAW"
+    private val RELATIVE_DIR = "${Environment.DIRECTORY_DOWNLOADS}/MCAW"
 
     fun writeTextFile(
         context: Context,
