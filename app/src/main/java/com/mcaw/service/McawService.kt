@@ -20,7 +20,10 @@ import com.mcaw.ai.DetectionAnalyzer
 import com.mcaw.ai.EfficientDetTFLiteDetector
 import com.mcaw.ai.YoloOnnxDetector
 import com.mcaw.config.AppPreferences
+import com.mcaw.util.PublicLogWriter
+import java.util.Locale
 import java.util.concurrent.Executors
+
 class McawService : LifecycleService() {
 
     companion object {
@@ -36,12 +39,15 @@ class McawService : LifecycleService() {
     private var cameraProvider: ProcessCameraProvider? = null
     private var analysisExecutor = Executors.newSingleThreadExecutor()
     private var analysisRunning = false
+    private var serviceLogFileName: String = ""
 
     override fun onCreate() {
         super.onCreate()
         AppPreferences.init(this)
+        serviceLogFileName = "mcaw_service_${sessionStamp()}.txt"
         startForegroundNotification()
         isRunning = true
+        logService("service_create")
     }
 
     private fun startForegroundNotification() {
@@ -77,6 +83,7 @@ class McawService : LifecycleService() {
     }
 
     override fun onDestroy() {
+        logService("service_destroy")
         stopCameraAnalysis()
         analysisExecutor.shutdown()
         isRunning = false
@@ -88,40 +95,51 @@ class McawService : LifecycleService() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
             != android.content.pm.PackageManager.PERMISSION_GRANTED
         ) {
+            logService("analysis_start_denied missing_camera_permission")
             return
         }
         val yolo = runCatching { YoloOnnxDetector(this, "yolov8n.onnx") }.getOrNull()
         val eff = runCatching { EfficientDetTFLiteDetector(this, "efficientdet_lite0.tflite") }
             .getOrNull()
         if (yolo == null && eff == null) {
+            logService("analysis_start_failed models_unavailable")
             return
         }
-        analysisRunning = true
         analyzer = DetectionAnalyzer(this, yolo, eff)
         val providerFuture = ProcessCameraProvider.getInstance(this)
         providerFuture.addListener({
-            val provider = providerFuture.get()
-            cameraProvider = provider
-            provider.unbindAll()
-            val analysis = ImageAnalysis.Builder()
-                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                .build()
-                .apply {
-                    setAnalyzer(analysisExecutor, analyzer!!)
-                }
-            val camera = provider.bindToLifecycle(
-                this,
-                CameraSelector.DEFAULT_BACK_CAMERA,
-                analysis
-            )
-            updateCameraCalibration(camera)
+            runCatching {
+                val provider = providerFuture.get()
+                cameraProvider = provider
+                provider.unbindAll()
+                val analysis = ImageAnalysis.Builder()
+                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                    .build()
+                    .apply {
+                        setAnalyzer(analysisExecutor, analyzer!!)
+                    }
+                val camera = provider.bindToLifecycle(
+                    this,
+                    CameraSelector.DEFAULT_BACK_CAMERA,
+                    analysis
+                )
+                updateCameraCalibration(camera)
+                analysisRunning = true
+                logService("analysis_started")
+            }.onFailure { err ->
+                analysisRunning = false
+                logService("analysis_start_failed ${err.javaClass.simpleName}:${err.message}")
+            }
         }, ContextCompat.getMainExecutor(this))
     }
 
     private fun stopCameraAnalysis() {
+        if (!analysisRunning && cameraProvider == null) return
         analysisRunning = false
         cameraProvider?.unbindAll()
         cameraProvider = null
+        analyzer = null
+        logService("analysis_stopped")
     }
 
     private fun updateCameraCalibration(camera: androidx.camera.core.Camera) {
@@ -137,5 +155,18 @@ class McawService : LifecycleService() {
             AppPreferences.cameraFocalLengthMm = focalMm ?: Float.NaN
             AppPreferences.cameraSensorHeightMm = sensorHeightMm ?: Float.NaN
         }
+    }
+
+    private fun logService(message: String) {
+        val timestamp =
+            java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
+                .format(System.currentTimeMillis())
+        val content = "ts=$timestamp $message"
+        PublicLogWriter.appendLogLine(this, serviceLogFileName, content)
+    }
+
+    private fun sessionStamp(): String {
+        return java.text.SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US)
+            .format(System.currentTimeMillis())
     }
 }

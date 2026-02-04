@@ -198,7 +198,6 @@ class PreviewActivity : ComponentActivity() {
     }
 
     private fun sendServiceCommand(action: String) {
-        if (!McawService.isRunning) return
         val intent = Intent(this, McawService::class.java).setAction(action)
         ContextCompat.startForegroundService(this, intent)
     }
