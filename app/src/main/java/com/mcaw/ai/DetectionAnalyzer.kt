@@ -260,7 +260,7 @@ class DetectionAnalyzer(
         ttc: Float,
         label: String
     ) {
-        val i = Intent("MCAW_DEBUG_UPDATE")
+        val i = Intent("MCAW_DEBUG_UPDATE").setPackage(ctx.packageName)
         i.putExtra("clear", false)
         i.putExtra("frame_w", frameW)
         i.putExtra("frame_h", frameH)
@@ -277,7 +277,7 @@ class DetectionAnalyzer(
     }
 
     private fun sendOverlayClear() {
-        val i = Intent("MCAW_DEBUG_UPDATE")
+        val i = Intent("MCAW_DEBUG_UPDATE").setPackage(ctx.packageName)
         i.putExtra("clear", true)
         ctx.sendBroadcast(i)
     }
@@ -290,7 +290,7 @@ class DetectionAnalyzer(
         level: Int,
         label: String
     ) {
-        val i = Intent(ACTION_METRICS_UPDATE)
+        val i = Intent(ACTION_METRICS_UPDATE).setPackage(ctx.packageName)
         i.putExtra(EXTRA_DISTANCE, dist)
         i.putExtra(EXTRA_SPEED, relSpeed)
         i.putExtra(EXTRA_OBJECT_SPEED, objectSpeed)
@@ -301,7 +301,7 @@ class DetectionAnalyzer(
     }
 
     private fun sendMetricsClear() {
-        val i = Intent(ACTION_METRICS_UPDATE)
+        val i = Intent(ACTION_METRICS_UPDATE).setPackage(ctx.packageName)
         i.putExtra(EXTRA_DISTANCE, Float.POSITIVE_INFINITY)
         i.putExtra(EXTRA_SPEED, Float.POSITIVE_INFINITY)
         i.putExtra(EXTRA_OBJECT_SPEED, Float.POSITIVE_INFINITY)
