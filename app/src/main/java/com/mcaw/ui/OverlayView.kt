@@ -26,6 +26,11 @@ class OverlayView @JvmOverloads constructor(
         strokeWidth = 4f
     }
 
+    private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.GREEN
+        style = Paint.Style.FILL
+    }
+
     private val textBgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.argb(140, 0, 0, 0)
         style = Paint.Style.FILL
@@ -97,6 +102,15 @@ class OverlayView @JvmOverloads constructor(
         }
 
     /**
+     * Label detekovaného objektu (např. auto, kolo, chodec).
+     */
+    var label: String = ""
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    /**
      * Když je true, zobrazí se telemetrie vedle boxu.
      */
     var showTelemetry: Boolean = true
@@ -122,11 +136,16 @@ class OverlayView @JvmOverloads constructor(
 
         // Vykreslení obdélníku
         canvas.drawRect(mapped, boxPaint)
+        drawCornerDots(canvas, mapped)
+        if (label.isNotBlank()) {
+            drawLabelTag(canvas, mapped, label)
+        }
 
         // Sestavení popisků
         if (!showTelemetry) return
         val lines = if (showTelemetry) {
             buildList {
+                if (label.isNotBlank()) add("OBJ  $label")
                 add("BOX  [%.0f×%.0f]".format((b.x2 - b.x1), (b.y2 - b.y1)))
                 if (distance >= 0f && distance.isFinite()) add("DIST %.2f m".format(distance))
                 if (speed >= 0f && speed.isFinite()) add("REL  %.2f m/s".format(speed))
@@ -164,6 +183,30 @@ class OverlayView @JvmOverloads constructor(
             canvas.drawText(ln, bgLeft + padding, y, textPaint)
             y += lineH
         }
+    }
+
+    private fun drawLabelTag(canvas: Canvas, rect: RectF, labelText: String) {
+        val padding = 8f
+        val textW = textPaint.measureText(labelText)
+        val fm = textPaint.fontMetrics
+        val textH = (fm.bottom - fm.top)
+        val bgLeft = rect.left
+        val bgBottom = rect.top
+        val bgTop = bgBottom - textH - padding * 2
+        val bgRight = bgLeft + textW + padding * 2
+        val topClamped = max(0f, bgTop)
+        val tagRect = RectF(bgLeft, topClamped, bgRight, bgBottom)
+        canvas.drawRoundRect(tagRect, 10f, 10f, textBgPaint)
+        val textY = bgBottom - padding
+        canvas.drawText(labelText, bgLeft + padding, textY, textPaint)
+    }
+
+    private fun drawCornerDots(canvas: Canvas, rect: RectF) {
+        val radius = 6f
+        canvas.drawCircle(rect.left, rect.top, radius, dotPaint)
+        canvas.drawCircle(rect.right, rect.top, radius, dotPaint)
+        canvas.drawCircle(rect.left, rect.bottom, radius, dotPaint)
+        canvas.drawCircle(rect.right, rect.bottom, radius, dotPaint)
     }
 
     private fun drawStatus(canvas: Canvas, message: String) {
