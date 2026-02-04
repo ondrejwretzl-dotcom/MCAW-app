@@ -37,8 +37,6 @@ class McawService : LifecycleService() {
     private var analysisExecutor = Executors.newSingleThreadExecutor()
     private var analysisRunning = false
 
-    override fun onBind(intent: Intent?): IBinder? = null
-
     override fun onCreate() {
         super.onCreate()
         AppPreferences.init(this)
