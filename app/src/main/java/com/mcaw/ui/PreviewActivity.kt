@@ -28,6 +28,8 @@ import com.mcaw.app.BuildConfig
 import com.mcaw.app.R
 import com.mcaw.config.AppPreferences
 import com.mcaw.location.SpeedMonitor
+import com.mcaw.service.McawService
+import com.mcaw.util.LabelMapper
 import java.util.concurrent.Executors
 
 class PreviewActivity : ComponentActivity() {
@@ -51,6 +53,7 @@ class PreviewActivity : ComponentActivity() {
                 overlay.speed = -1f
                 overlay.objectSpeed = -1f
                 overlay.ttc = -1f
+                overlay.label = ""
                 searching = true
                 updateSearchingLabel()
                 logActivity("detection_clear")
@@ -69,8 +72,8 @@ class PreviewActivity : ComponentActivity() {
             overlay.speed = i.getFloatExtra("speed", -1f)
             overlay.objectSpeed = i.getFloatExtra("object_speed", -1f)
             overlay.ttc = i.getFloatExtra("ttc", -1f)
-            val label = i.getStringExtra("label")?.ifBlank { null } ?: "neznámý objekt"
-            val mapped = mapLabel(label)
+            val mapped = LabelMapper.mapLabel(i.getStringExtra("label"))
+            overlay.label = mapped
             txtDetectionLabel.text = "Detekce: $mapped"
             logActivity("detection_found label=$mapped")
         }
@@ -184,24 +187,20 @@ class PreviewActivity : ComponentActivity() {
             speedMonitor.start()
         }
         startSearching()
+        sendServiceCommand(McawService.ACTION_STOP_ANALYSIS)
     }
 
     override fun onStop() {
         speedMonitor.stop()
         stopSearching()
+        sendServiceCommand(McawService.ACTION_START_ANALYSIS)
         super.onStop()
     }
 
-    private fun mapLabel(label: String): String {
-        return when (label.lowercase()) {
-            "car", "auto", "vehicle" -> "auto"
-            "motorcycle", "motorbike", "bike", "motorka" -> "motorka"
-            "truck", "lorry", "nákladák", "nakladak" -> "nákladák"
-            "van", "dodavka", "dodávka" -> "dodávka"
-            "bus" -> "autobus"
-            "unknown" -> "neznámý objekt"
-            else -> label
-        }
+    private fun sendServiceCommand(action: String) {
+        if (!McawService.isRunning) return
+        val intent = Intent(this, McawService::class.java).setAction(action)
+        ContextCompat.startForegroundService(this, intent)
     }
 
     private fun updateCameraCalibration(camera: androidx.camera.core.Camera) {
