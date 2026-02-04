@@ -1,6 +1,0 @@
-ts=1770201335708 event=session_start model=efficientdet lane_filter=false mode=0 thresholds=ttc(3.0/1.2) dist(15.0/6.0) speed(3.0/5.0) yolo=input640 score=0.35 iou=0.45 eff=input320 score=0.3 iou=0.45
-ts=1770201336959 event=frame_info frame_w=480 frame_h=640 rotation=90 focal_px=579,3
-ts=1770201338969 event=detections_raw score=0.656 count=31
-ts=1770201340989 event=detections_raw score=0.637 count=33
-ts=1770201343007 event=detections_raw score=0.789 count=47
-ts=1770201345155 event=detections_raw score=0.738 count=26
