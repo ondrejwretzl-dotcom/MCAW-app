@@ -79,16 +79,8 @@ class McawService : LifecycleService() {
             .setOngoing(true)
             .build()
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                1,
-                notif,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
-            )
-        } else {
-            startForeground(1, notif)
-        }
+        // Do not use ServiceInfo types here; some build environments lack the symbol.
+        startForeground(1, notif)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
