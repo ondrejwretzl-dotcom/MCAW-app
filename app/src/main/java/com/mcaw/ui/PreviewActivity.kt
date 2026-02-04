@@ -6,12 +6,15 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.widget.TextView
 import androidx.activity.ComponentActivity
+import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -155,12 +158,13 @@ class PreviewActivity : ComponentActivity() {
                     setAnalyzer(Executors.newSingleThreadExecutor(), analyzer)
                 }
 
-            provider.bindToLifecycle(
+            val camera = provider.bindToLifecycle(
                 this,
                 CameraSelector.DEFAULT_BACK_CAMERA,
                 preview,
                 analysis
             )
+            updateCameraCalibration(camera)
         }, ContextCompat.getMainExecutor(this))
     }
 
@@ -197,6 +201,30 @@ class PreviewActivity : ComponentActivity() {
             "bus" -> "autobus"
             "unknown" -> "neznámý objekt"
             else -> label
+        }
+    }
+
+    private fun updateCameraCalibration(camera: androidx.camera.core.Camera) {
+        runCatching {
+            val cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+            val cameraId = Camera2CameraInfo.from(camera.cameraInfo).cameraId
+            val characteristics = cameraManager.getCameraCharacteristics(cameraId)
+            val focalLengths =
+                characteristics.get(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS)
+            val sensorSize = characteristics.get(CameraCharacteristics.SENSOR_INFO_PHYSICAL_SIZE)
+            val sensorArray = characteristics.get(CameraCharacteristics.SENSOR_INFO_PIXEL_ARRAY_SIZE)
+            val focalMm = focalLengths?.firstOrNull()
+            val sensorHeightMm = sensorSize?.height
+            AppPreferences.cameraFocalLengthMm = focalMm ?: Float.NaN
+            AppPreferences.cameraSensorHeightMm = sensorHeightMm ?: Float.NaN
+            logActivity(
+                "camera_calibration id=$cameraId" +
+                    " focal_mm=${focalMm ?: "?"}" +
+                    " sensor_mm=${sensorSize?.width ?: "?"}x${sensorSize?.height ?: "?"}" +
+                    " array_px=${sensorArray?.width ?: "?"}x${sensorArray?.height ?: "?"}"
+            )
+        }.onFailure { err ->
+            logActivity("camera_calibration_failed ${err.javaClass.simpleName}:${err.message}")
         }
     }
 

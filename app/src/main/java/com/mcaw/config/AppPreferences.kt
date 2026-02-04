@@ -11,6 +11,12 @@ object AppPreferences {
     @Volatile
     var lastSpeedMps: Float = 0f
 
+    @Volatile
+    var cameraFocalLengthMm: Float = Float.NaN
+
+    @Volatile
+    var cameraSensorHeightMm: Float = Float.NaN
+
     fun init(ctx: Context) {
         prefs = ctx.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
     }
