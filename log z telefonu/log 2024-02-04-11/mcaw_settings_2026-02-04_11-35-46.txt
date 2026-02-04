@@ -1,1 +1,0 @@
-event=Settings opened

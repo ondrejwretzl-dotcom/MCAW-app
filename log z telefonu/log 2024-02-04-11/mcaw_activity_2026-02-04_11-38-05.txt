@@ -1,3 +1,0 @@
-ts=2026-02-04 11:38:05 preview_open build=1.0(1)
-ts=2026-02-04 11:38:05 models_loaded yolo=true efficient=true
-ts=2026-02-04 11:38:05 camera_calibration id=0 focal_mm=5.54 sensor_mm=8.16x6.12 array_px=4080x3060

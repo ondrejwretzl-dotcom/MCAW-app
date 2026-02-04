@@ -29,6 +29,7 @@ class DetectionAnalyzer(
         const val EXTRA_SPEED = "extra_speed"
         const val EXTRA_OBJECT_SPEED = "extra_object_speed"
         const val EXTRA_LEVEL = "extra_level"
+        const val EXTRA_LABEL = "extra_label"
     }
 
     // U TTC pracujeme s výškou boxu › držíme si poslední hodnotu
@@ -130,6 +131,7 @@ class DetectionAnalyzer(
                     )
                 )
                 sendOverlayClear()
+                sendMetricsClear()
                 return
             }
 
@@ -144,6 +146,7 @@ class DetectionAnalyzer(
                     mapOf("filtered_count" to filtered.size.toString())
                 )
                 sendOverlayClear()
+                sendMetricsClear()
                 return
             }
 
@@ -188,7 +191,7 @@ class DetectionAnalyzer(
             val label = best.label ?: "unknown"
             sendOverlayUpdate(best.box, frameW, frameH, distance, relSpeed, objectSpeed, ttc, label)
 
-            sendMetricsUpdate(distance, relSpeed, objectSpeed, ttc, level)
+            sendMetricsUpdate(distance, relSpeed, objectSpeed, ttc, level, label)
             logDetection(
                 ts,
                 "detection",
@@ -218,6 +221,7 @@ class DetectionAnalyzer(
                 mapOf("message" to (e.message ?: ""))
             )
             sendOverlayClear()
+            sendMetricsClear()
         } finally {
             image.close()
         }
@@ -256,7 +260,7 @@ class DetectionAnalyzer(
         ttc: Float,
         label: String
     ) {
-        val i = Intent("MCAW_DEBUG_UPDATE")
+        val i = Intent("MCAW_DEBUG_UPDATE").setPackage(ctx.packageName)
         i.putExtra("clear", false)
         i.putExtra("frame_w", frameW)
         i.putExtra("frame_h", frameH)
@@ -273,7 +277,7 @@ class DetectionAnalyzer(
     }
 
     private fun sendOverlayClear() {
-        val i = Intent("MCAW_DEBUG_UPDATE")
+        val i = Intent("MCAW_DEBUG_UPDATE").setPackage(ctx.packageName)
         i.putExtra("clear", true)
         ctx.sendBroadcast(i)
     }
@@ -283,14 +287,27 @@ class DetectionAnalyzer(
         relSpeed: Float,
         objectSpeed: Float,
         ttc: Float,
-        level: Int
+        level: Int,
+        label: String
     ) {
-        val i = Intent(ACTION_METRICS_UPDATE)
+        val i = Intent(ACTION_METRICS_UPDATE).setPackage(ctx.packageName)
         i.putExtra(EXTRA_DISTANCE, dist)
         i.putExtra(EXTRA_SPEED, relSpeed)
         i.putExtra(EXTRA_OBJECT_SPEED, objectSpeed)
         i.putExtra(EXTRA_TTC, ttc)
         i.putExtra(EXTRA_LEVEL, level)
+        i.putExtra(EXTRA_LABEL, label)
+        ctx.sendBroadcast(i)
+    }
+
+    private fun sendMetricsClear() {
+        val i = Intent(ACTION_METRICS_UPDATE).setPackage(ctx.packageName)
+        i.putExtra(EXTRA_DISTANCE, Float.POSITIVE_INFINITY)
+        i.putExtra(EXTRA_SPEED, Float.POSITIVE_INFINITY)
+        i.putExtra(EXTRA_OBJECT_SPEED, Float.POSITIVE_INFINITY)
+        i.putExtra(EXTRA_TTC, Float.POSITIVE_INFINITY)
+        i.putExtra(EXTRA_LEVEL, 0)
+        i.putExtra(EXTRA_LABEL, "")
         ctx.sendBroadcast(i)
     }
 
@@ -370,10 +387,12 @@ class DetectionAnalyzer(
             "truck",
             "lorry",
             "van",
-            "bus",
             "motorcycle",
             "motorbike",
-            "bike"
+            "bike",
+            "person",
+            "pedestrian",
+            "chodec"
         )
     }
 

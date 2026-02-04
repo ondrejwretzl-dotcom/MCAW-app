@@ -17,6 +17,7 @@ import com.mcaw.app.R
 import com.mcaw.location.SpeedMonitor
 import com.mcaw.service.McawService
 import com.mcaw.util.PublicLogWriter
+import com.mcaw.util.LabelMapper
 
 class MainActivity : ComponentActivity() {
 
@@ -26,6 +27,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var txtSpeed: TextView
     private lateinit var txtObjectSpeed: TextView
     private lateinit var txtRiderSpeed: TextView
+    private lateinit var txtDetectedObject: TextView
     private lateinit var txtActivityLog: TextView
     private lateinit var txtBuildInfo: TextView
     private var pendingAction: PendingAction? = null
@@ -44,6 +46,7 @@ class MainActivity : ComponentActivity() {
             val objectSpeed =
                 intent.getFloatExtra(DetectionAnalyzer.EXTRA_OBJECT_SPEED, Float.POSITIVE_INFINITY)
             val level = intent.getIntExtra(DetectionAnalyzer.EXTRA_LEVEL, 0)
+            val label = intent.getStringExtra(DetectionAnalyzer.EXTRA_LABEL)
 
             txtTtc.text = if (ttc.isFinite()) "TTC: %.2f s".format(ttc) else "TTC: --.- s"
             txtDistance.text =
@@ -55,6 +58,12 @@ class MainActivity : ComponentActivity() {
             txtObjectSpeed.text =
                 if (objectSpeed.isFinite()) "Rychlost objektu: %.2f m/s".format(objectSpeed) else
                     "Rychlost objektu: --.- m/s"
+            val mappedLabel = LabelMapper.mapLabel(label)
+            txtDetectedObject.text = if (mappedLabel.isNotBlank()) {
+                "Detekovaný objekt: $mappedLabel"
+            } else {
+                "Detekovaný objekt: --"
+            }
 
             val color = when (level) {
                 2 -> android.graphics.Color.parseColor("#FF3B30")
@@ -65,7 +74,8 @@ class MainActivity : ComponentActivity() {
             addLog(
                 "Metriky: TTC ${formatMetric(ttc, "s")} · " +
                     "Vzdálenost ${formatMetric(distance, "m")} · " +
-                    "Rel ${formatMetric(speed, "m/s")}"
+                    "Rel ${formatMetric(speed, "m/s")} · " +
+                    "Objekt ${mappedLabel.ifBlank { "--" }}"
             )
             logActivity(
                 "metrics ttc=${formatMetric(ttc, "s")} dist=${formatMetric(distance, "m")} " +
@@ -90,6 +100,7 @@ class MainActivity : ComponentActivity() {
         txtSpeed = findViewById(R.id.txtSpeed)
         txtObjectSpeed = findViewById(R.id.txtObjectSpeed)
         txtRiderSpeed = findViewById(R.id.txtRiderSpeed)
+        txtDetectedObject = findViewById(R.id.txtDetectedObject)
         txtActivityLog = findViewById(R.id.txtActivityLog)
         txtBuildInfo = findViewById(R.id.txtBuildInfo)
         speedMonitor = SpeedMonitor(this)

@@ -1,0 +1,11 @@
+ts=1770230539703 event=effdet_model input_type=UINT8 input_size=320 out0=[1, 19206, 90] out1=[1, 19206, 4] anchors=19206 classes=90
+ts=1770230558304 event=effdet_model input_type=UINT8 input_size=320 out0=[1, 19206, 90] out1=[1, 19206, 4] anchors=19206 classes=90
+ts=1770230614947 event=effdet_model input_type=UINT8 input_size=320 out0=[1, 19206, 90] out1=[1, 19206, 4] anchors=19206 classes=90
+ts=1770230642288 event=effdet_model input_type=UINT8 input_size=320 out0=[1, 19206, 90] out1=[1, 19206, 4] anchors=19206 classes=90
+ts=1770230649978 event=effdet_model input_type=UINT8 input_size=320 out0=[1, 19206, 90] out1=[1, 19206, 4] anchors=19206 classes=90
+ts=1770230667413 event=effdet_model input_type=UINT8 input_size=320 out0=[1, 19206, 90] out1=[1, 19206, 4] anchors=19206 classes=90
+ts=1770230692040 event=effdet_model input_type=UINT8 input_size=320 out0=[1, 19206, 90] out1=[1, 19206, 4] anchors=19206 classes=90
+ts=1770230710208 event=effdet_model input_type=UINT8 input_size=320 out0=[1, 19206, 90] out1=[1, 19206, 4] anchors=19206 classes=90
+ts=1770230719887 event=effdet_model input_type=UINT8 input_size=320 out0=[1, 19206, 90] out1=[1, 19206, 4] anchors=19206 classes=90
+ts=1770230721785 event=effdet_model input_type=UINT8 input_size=320 out0=[1, 19206, 90] out1=[1, 19206, 4] anchors=19206 classes=90
+ts=1770230744442 event=effdet_model input_type=UINT8 input_size=320 out0=[1, 19206, 90] out1=[1, 19206, 4] anchors=19206 classes=90

@@ -1,0 +1,6 @@
+ts=2026-02-04 19:43:23 ui_log Aplikace spuštěna
+ts=2026-02-04 19:43:23 app_start build=1.0(1)
+ts=2026-02-04 19:43:23 ui_log GPS monitor spuštěn
+ts=2026-02-04 19:43:23 gps_monitor_start
+ts=2026-02-04 19:43:25 ui_log GPS monitor zastaven
+ts=2026-02-04 19:43:25 gps_monitor_stop
