@@ -39,7 +39,7 @@ class DetectionAnalyzer(
     private var lastRelativeSpeed = 0f
     private var lastAlertLevel = 0
     private var lastAlertTimestamp = 0L
-    private var lastLogTimestamp = 0L
+    private val lastLogByEvent = mutableMapOf<String, Long>()
     private val sessionLogFileName = "mcaw_detection_${sessionStamp()}.txt"
     private var frameInfoLogged = false
 
@@ -76,7 +76,7 @@ class DetectionAnalyzer(
                         "frame_w" to bitmap.width.toString(),
                         "frame_h" to bitmap.height.toString(),
                         "rotation" to rotation.toString(),
-                        "focal_px" to "%.1f".format(estimateFocalLengthPx(bitmap.height))
+                        "focal_px" to String.format(Locale.US, "%.1f", estimateFocalLengthPx(bitmap.height))
                     )
                 )
                 frameInfoLogged = true
@@ -106,6 +106,17 @@ class DetectionAnalyzer(
             } else {
                 vehicleDetections
             }
+            logDetection(
+                ts,
+                "detections_filtered",
+                null,
+                filtered.maxOfOrNull { it.score } ?: 0f,
+                mapOf(
+                    "raw_count" to detList.size.toString(),
+                    "vehicle_count" to vehicleDetections.size.toString(),
+                    "filtered_count" to filtered.size.toString()
+                )
+            )
 
             if (filtered.isEmpty()) {
                 logDetection(
@@ -292,7 +303,10 @@ class DetectionAnalyzer(
 
     private fun vibrate() {
         val vib = ctx.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-        vib.vibrate(VibrationEffect.createOneShot(200, 150))
+        if (!vib.hasVibrator()) return
+        runCatching {
+            vib.vibrate(VibrationEffect.createOneShot(200, 150))
+        }
     }
 
     private fun speak(msg: String) {
@@ -349,6 +363,7 @@ class DetectionAnalyzer(
     private fun isVehicleLabel(label: String?): Boolean {
         val normalized = label?.lowercase()?.trim() ?: return false
         return normalized in setOf(
+            "bicycle",
             "car",
             "auto",
             "vehicle",
@@ -369,8 +384,15 @@ class DetectionAnalyzer(
         score: Float,
         extras: Map<String, String> = emptyMap()
     ) {
-        if (timestamp - lastLogTimestamp < 2000L) return
-        lastLogTimestamp = timestamp
+        val interval = when (event) {
+            "detections_raw", "detections_filtered" -> 2000L
+            "no_vehicle_detected", "no_best_detection", "detection" -> 800L
+            "detection_error" -> 0L
+            else -> 2000L
+        }
+        val lastLogged = lastLogByEvent[event] ?: 0L
+        if (interval > 0 && timestamp - lastLogged < interval) return
+        lastLogByEvent[event] = timestamp
         val content = buildString {
             append("ts=")
             append(timestamp)
