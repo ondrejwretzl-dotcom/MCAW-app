@@ -45,7 +45,7 @@ class EfficientDetTFLiteDetector(
         val scores = Array(1) { FloatArray(1917) }
         val classes = Array(1) { FloatArray(1917) }
 
-        val outputs = mutableMapOf(
+        val outputs: MutableMap<Int, Any> = mutableMapOf(
             0 to boxes,
             1 to classes,
             2 to scores
