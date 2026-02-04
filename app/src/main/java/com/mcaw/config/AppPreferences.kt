@@ -58,6 +58,10 @@ object AppPreferences {
         get() = prefs.getBoolean("laneFilter", false)
         set(v) = prefs.edit().putBoolean("laneFilter", v).apply()
 
+    var previewActive: Boolean
+        get() = prefs.getBoolean("previewActive", false)
+        set(v) = prefs.edit().putBoolean("previewActive", v).apply()
+
     // USER THRESHOLDS (orange/red)
     var userTtcOrange: Float
         get() = prefs.getFloat("user_ttc_orange", 3.0f)
