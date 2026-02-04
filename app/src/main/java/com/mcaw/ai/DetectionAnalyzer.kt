@@ -39,8 +39,9 @@ class DetectionAnalyzer(
     private var lastRelativeSpeed = 0f
     private var lastAlertLevel = 0
     private var lastAlertTimestamp = 0L
-    private var lastLogTimestamp = 0L
+    private val lastLogByEvent = mutableMapOf<String, Long>()
     private val sessionLogFileName = "mcaw_detection_${sessionStamp()}.txt"
+    private var frameInfoLogged = false
 
     private var tts: TextToSpeech? = null
 
@@ -65,6 +66,21 @@ class DetectionAnalyzer(
             }
             val rotation = image.imageInfo.rotationDegrees
             val bitmap = ImageUtils.rotateBitmap(rawBitmap, rotation)
+            if (!frameInfoLogged) {
+                logDetection(
+                    ts,
+                    "frame_info",
+                    null,
+                    0f,
+                    mapOf(
+                        "frame_w" to bitmap.width.toString(),
+                        "frame_h" to bitmap.height.toString(),
+                        "rotation" to rotation.toString(),
+                        "focal_px" to String.format(Locale.US, "%.1f", estimateFocalLengthPx(bitmap.height))
+                    )
+                )
+                frameInfoLogged = true
+            }
 
             // -------------------------
             // DETEKCE
@@ -90,6 +106,17 @@ class DetectionAnalyzer(
             } else {
                 vehicleDetections
             }
+            logDetection(
+                ts,
+                "detections_filtered",
+                null,
+                filtered.maxOfOrNull { it.score } ?: 0f,
+                mapOf(
+                    "raw_count" to detList.size.toString(),
+                    "vehicle_count" to vehicleDetections.size.toString(),
+                    "filtered_count" to filtered.size.toString()
+                )
+            )
 
             if (filtered.isEmpty()) {
                 logDetection(
@@ -123,8 +150,7 @@ class DetectionAnalyzer(
             // -------------------------
             // FYZIKA: vzdálenost + TTC
             // -------------------------
-            // Heuristický odhad fokální délky (px) – nahraď později kalibrací/FoV
-            val focalPxEstimate = 1000f
+            val focalPxEstimate = estimateFocalLengthPx(bitmap.height)
             val distance: Float = DetectionPhysics.estimateDistanceMeters(
                 bbox = best.box,
                 frameHeightPx = bitmap.height,
@@ -188,7 +214,8 @@ class DetectionAnalyzer(
                 System.currentTimeMillis(),
                 "detection_error",
                 e.javaClass.simpleName,
-                0f
+                0f,
+                mapOf("message" to (e.message ?: ""))
             )
             sendOverlayClear()
         } finally {
@@ -276,7 +303,10 @@ class DetectionAnalyzer(
 
     private fun vibrate() {
         val vib = ctx.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-        vib.vibrate(VibrationEffect.createOneShot(200, 150))
+        if (!vib.hasVibrator()) return
+        runCatching {
+            vib.vibrate(VibrationEffect.createOneShot(200, 150))
+        }
     }
 
     private fun speak(msg: String) {
@@ -333,6 +363,7 @@ class DetectionAnalyzer(
     private fun isVehicleLabel(label: String?): Boolean {
         val normalized = label?.lowercase()?.trim() ?: return false
         return normalized in setOf(
+            "bicycle",
             "car",
             "auto",
             "vehicle",
@@ -353,8 +384,15 @@ class DetectionAnalyzer(
         score: Float,
         extras: Map<String, String> = emptyMap()
     ) {
-        if (timestamp - lastLogTimestamp < 2000L) return
-        lastLogTimestamp = timestamp
+        val interval = when (event) {
+            "detections_raw", "detections_filtered" -> 2000L
+            "no_vehicle_detected", "no_best_detection", "detection" -> 800L
+            "detection_error" -> 0L
+            else -> 2000L
+        }
+        val lastLogged = lastLogByEvent[event] ?: 0L
+        if (interval > 0 && timestamp - lastLogged < interval) return
+        lastLogByEvent[event] = timestamp
         val content = buildString {
             append("ts=")
             append(timestamp)
@@ -441,6 +479,15 @@ class DetectionAnalyzer(
 
     private fun formatMetric(value: Float): String {
         return if (value.isFinite()) "%.2f".format(Locale.US, value) else "inf"
+    }
+
+    private fun estimateFocalLengthPx(frameHeightPx: Int): Float {
+        val focalMm = AppPreferences.cameraFocalLengthMm
+        val sensorHeightMm = AppPreferences.cameraSensorHeightMm
+        if (focalMm.isFinite() && sensorHeightMm.isFinite() && sensorHeightMm > 0f) {
+            return (focalMm / sensorHeightMm) * frameHeightPx
+        }
+        return 1000f
     }
 
     private data class AlertThresholds(

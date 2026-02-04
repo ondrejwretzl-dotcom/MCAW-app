@@ -1,0 +1,20 @@
+ts=1770201534335 event=session_start model=efficientdet lane_filter=false mode=0 thresholds=ttc(3.0/1.2) dist(15.0/6.0) speed(3.0/5.0) yolo=input640 score=0.35 iou=0.45 eff=input320 score=0.3 iou=0.45
+ts=1770201535007 event=frame_info frame_w=480 frame_h=640 rotation=90 focal_px=579,3
+ts=1770201537049 event=detections_raw score=0.656 count=32
+ts=1770201539049 event=detections_raw score=0.699 count=47
+ts=1770201541082 event=detections_raw score=0.613 count=23
+ts=1770201543148 event=detections_raw score=0.656 count=21
+ts=1770201545194 event=detections_raw score=0.789 count=53
+ts=1770201547248 event=detections_raw score=0.770 count=26
+ts=1770201549280 event=detections_raw score=0.789 count=38
+ts=1770201551328 event=detections_raw score=0.816 count=32
+ts=1770201553382 event=detections_raw score=0.844 count=39
+ts=1770201555398 event=detections_raw score=0.523 count=12
+ts=1770201557470 event=detections_raw score=0.719 count=33
+ts=1770201559530 event=detections_raw score=0.613 count=30
+ts=1770201561575 event=detections_raw score=0.789 count=57
+ts=1770201563607 event=detections_raw score=0.816 count=46
+ts=1770201565654 event=detections_raw score=0.844 count=32
+ts=1770201567699 event=detections_raw score=0.754 count=41
+ts=1770201569746 event=detections_raw score=0.770 count=45
+ts=1770201571811 event=detections_raw score=0.754 count=50

@@ -110,11 +110,11 @@ class OverlayView @JvmOverloads constructor(
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
 
-        if (!showTelemetry) return
-
         val b = box
         if (b == null) {
-            drawStatus(canvas, "DEBUG OVERLAY: čekám na detekci")
+            if (showTelemetry) {
+                drawStatus(canvas, "DEBUG OVERLAY: čekám na detekci")
+            }
             return
         }
 
@@ -124,6 +124,7 @@ class OverlayView @JvmOverloads constructor(
         canvas.drawRect(mapped, boxPaint)
 
         // Sestavení popisků
+        if (!showTelemetry) return
         val lines = if (showTelemetry) {
             buildList {
                 add("BOX  [%.0f×%.0f]".format((b.x2 - b.x1), (b.y2 - b.y1)))
