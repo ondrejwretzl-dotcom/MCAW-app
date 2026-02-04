@@ -11,8 +11,8 @@ import java.nio.ByteBuffer
 /**
  * ImageUtils
  * ----------
- * - Konverze YUV_420_888 › Bitmap
- * - Používá JPEG kompresní transformaci (rychlé a stabilní)
+ * - Konverze YUV_420_888 ï¿½ Bitmap
+ * - Pouï¿½ï¿½vï¿½ JPEG kompresnï¿½ transformaci (rychlï¿½ a stabilnï¿½)
  */
 object ImageUtils {
 
@@ -24,8 +24,16 @@ object ImageUtils {
         }
     }
 
+    fun rotateBitmap(source: Bitmap, degrees: Int): Bitmap {
+        if (degrees == 0) return source
+        val matrix = android.graphics.Matrix().apply {
+            postRotate(degrees.toFloat())
+        }
+        return Bitmap.createBitmap(source, 0, 0, source.width, source.height, matrix, true)
+    }
+
     // ---------------------------------------------------------
-    // YUV › Bitmap (univerzální metoda pro CameraX)
+    // YUV ï¿½ Bitmap (univerzï¿½lnï¿½ metoda pro CameraX)
     // ---------------------------------------------------------
     private fun yuv420ToBitmap(image: ImageProxy): Bitmap? {
         val yBuffer = image.planes[0].buffer // Y
@@ -41,7 +49,7 @@ object ImageUtils {
 
         yBuffer.get(nv21, 0, ySize)
 
-        // V a U jsou prohozené oproti NV21, proto je ukládáme opaènì
+        // V a U jsou prohozenï¿½ oproti NV21, proto je uklï¿½dï¿½me opaï¿½nï¿½
         val chromaStart = ySize
         val vPos = chromaStart
         val uPos = chromaStart + 1
@@ -59,7 +67,7 @@ object ImageUtils {
             uIndex += 2
         }
 
-        // Teï máme NV21 › zkomprimujeme do JPEG › dekódujeme na Bitmap
+        // Teï¿½ mï¿½me NV21 ï¿½ zkomprimujeme do JPEG ï¿½ dekï¿½dujeme na Bitmap
         val yuvImage = YuvImage(
             nv21,
             ImageFormat.NV21,

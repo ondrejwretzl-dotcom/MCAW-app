@@ -3,12 +3,11 @@ name: Android CI (no-wrapper)
 on:
   push:
     branches: [ "main"]
-  pull_request:
-    branches: [ "main"]
   workflow_dispatch: {}
 
 jobs:
   build:
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-22.04
 
     steps:

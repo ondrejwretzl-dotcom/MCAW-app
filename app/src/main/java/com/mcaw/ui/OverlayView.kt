@@ -110,7 +110,13 @@ class OverlayView @JvmOverloads constructor(
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
 
-        val b = box ?: return
+        if (!showTelemetry) return
+
+        val b = box
+        if (b == null) {
+            drawStatus(canvas, "DEBUG OVERLAY: čekám na detekci")
+            return
+        }
 
         val mapped = mapToView(b) ?: return
 
@@ -157,6 +163,20 @@ class OverlayView @JvmOverloads constructor(
             canvas.drawText(ln, bgLeft + padding, y, textPaint)
             y += lineH
         }
+    }
+
+    private fun drawStatus(canvas: Canvas, message: String) {
+        val padding = 12f
+        val fm = textPaint.fontMetrics
+        val lineH = (fm.bottom - fm.top)
+        val textW = textPaint.measureText(message)
+        val left = padding
+        val top = padding
+        val right = left + textW + padding * 2
+        val bottom = top + lineH + padding * 2
+        val rect = RectF(left, top, right, bottom)
+        canvas.drawRoundRect(rect, 10f, 10f, textBgPaint)
+        canvas.drawText(message, left + padding, bottom - padding, textPaint)
     }
 
     private fun mapToView(box: Box): RectF? {

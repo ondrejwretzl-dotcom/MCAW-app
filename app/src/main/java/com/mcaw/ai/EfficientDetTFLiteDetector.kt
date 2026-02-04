@@ -4,8 +4,11 @@ import android.content.Context
 import android.graphics.Bitmap
 import com.mcaw.model.Box
 import com.mcaw.model.Detection
+import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Interpreter
 import org.tensorflow.lite.support.common.FileUtil
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import kotlin.math.max
 import kotlin.math.min
 
@@ -13,16 +16,16 @@ import kotlin.math.min
  * EfficientDet Lite0 (TFLite) Detector
  * ------------------------------------
  * - Model: efficientdet_lite0.tflite
- * - Vstup: 320x320 RGB (NHWC), normalizováno 0..1
- * - Výstup: boxes [1, 1917, 4], scores [1, 1917], classes [1, 1917]
- * - Vrací List<Detection> (stejná struktura jako YOLO detektor)
+ * - Vstup: 320x320 RGB (NHWC), normalizovÃ¡no 0..1
+ * - VÃ½stup: boxes [1, 1917, 4], scores [1, 1917], classes [1, 1917]
+ * - VracÃ­ List<Detection> (stejnÃ¡ struktura jako YOLO detektor)
  */
 class EfficientDetTFLiteDetector(
     ctx: Context,
     modelName: String = "efficientdet_lite0.tflite",
-    private val inputSize: Int = 320,
-    private val scoreThreshold: Float = 0.30f,
-    private val iouThreshold: Float = 0.45f
+    val inputSize: Int = 320,
+    val scoreThreshold: Float = 0.30f,
+    val iouThreshold: Float = 0.45f
 ) {
 
     private val interpreter: Interpreter
@@ -35,27 +38,36 @@ class EfficientDetTFLiteDetector(
     fun detect(bitmap: Bitmap): List<Detection> {
         // Resize input pro inference
         val resized = Bitmap.createScaledBitmap(bitmap, inputSize, inputSize, true)
-        val input = preprocess(resized)
+        val input = preprocess(resized, interpreter.getInputTensor(0).dataType())
 
-        // Výstupy EfficientDet Lite0
+        // VÃ½stupy EfficientDet Lite0
         val boxes = Array(1) { Array(1917) { FloatArray(4) } }   // [ymin, xmin, ymax, xmax] (norm.)
         val scores = Array(1) { FloatArray(1917) }
         val classes = Array(1) { FloatArray(1917) }
 
-        val outputs = mapOf(
+        val outputs = mutableMapOf(
             0 to boxes,
             1 to classes,
             2 to scores
         )
+        val numDetections = if (interpreter.outputTensorCount > 3) {
+            Array(1) { FloatArray(1) }
+        } else {
+            null
+        }
+        if (numDetections != null) {
+            outputs[3] = numDetections
+        }
 
         interpreter.runForMultipleInputsOutputs(arrayOf(input), outputs)
 
-        // Pøevod na Detection v rozmìru pùvodního bitmapu
+        // PÅ™evod na Detection v rozmÄ›ru pÅ¯vodnÃ­ho bitmapu
         val dets = mutableListOf<Detection>()
         val scaleX = bitmap.width.toFloat()
         val scaleY = bitmap.height.toFloat()
+        val limit = numDetections?.get(0)?.get(0)?.toInt()?.coerceAtMost(1917) ?: 1917
 
-        for (i in 0 until 1917) {
+        for (i in 0 until limit) {
             val score = scores[0][i]
             if (score >= scoreThreshold) {
                 val b = boxes[0][i]  // [ymin, xmin, ymax, xmax] v <0..1>
@@ -63,13 +75,14 @@ class EfficientDetTFLiteDetector(
                 val y1 = (b[0] * scaleY)
                 val x2 = (b[3] * scaleX)
                 val y2 = (b[2] * scaleY)
+                val classId = classes[0][i].toInt()
+                val label = labelForClassId(classId)
 
                 dets.add(
                     Detection(
                         box = Box(x1, y1, x2, y2),
                         score = score,
-                        // Pokud budeš chtít mapovat ID tøídy na label, mùžeš zde:
-                        label = "car"
+                        label = label
                     )
                 )
             }
@@ -79,26 +92,56 @@ class EfficientDetTFLiteDetector(
     }
 
     // ---------------------------------------------------------
-    // PREPROCESSING (NHWC, bez mean/std – dle modelu pøípadnì doplnit)
+    // PREPROCESSING (NHWC, bez mean/std â€“ dle modelu pÅ™Ã­padnÄ› doplnit)
     // ---------------------------------------------------------
-    private fun preprocess(bitmap: Bitmap): Array<Array<Array<FloatArray>>> {
-        val img = Array(1) {
-            Array(inputSize) {
-                Array(inputSize) {
-                    FloatArray(3)
+    private fun preprocess(bitmap: Bitmap, dataType: DataType): Any {
+        return when (dataType) {
+            DataType.UINT8 -> {
+                val buffer =
+                    ByteBuffer.allocateDirect(inputSize * inputSize * 3)
+                        .order(ByteOrder.nativeOrder())
+                for (y in 0 until inputSize) {
+                    for (x in 0 until inputSize) {
+                        val px = bitmap.getPixel(x, y)
+                        buffer.put(((px shr 16) and 0xFF).toByte())
+                        buffer.put(((px shr 8) and 0xFF).toByte())
+                        buffer.put((px and 0xFF).toByte())
+                    }
                 }
+                buffer.rewind()
+                buffer
             }
-        }
+            else -> {
+                val img = Array(1) {
+                    Array(inputSize) {
+                        Array(inputSize) {
+                            FloatArray(3)
+                        }
+                    }
+                }
 
-        for (y in 0 until inputSize) {
-            for (x in 0 until inputSize) {
-                val px = bitmap.getPixel(x, y)
-                img[0][y][x][0] = ((px shr 16) and 0xFF) / 255f // R
-                img[0][y][x][1] = ((px shr 8) and 0xFF) / 255f  // G
-                img[0][y][x][2] = (px and 0xFF) / 255f          // B
+                for (y in 0 until inputSize) {
+                    for (x in 0 until inputSize) {
+                        val px = bitmap.getPixel(x, y)
+                        img[0][y][x][0] = ((px shr 16) and 0xFF) / 255f // R
+                        img[0][y][x][1] = ((px shr 8) and 0xFF) / 255f  // G
+                        img[0][y][x][2] = (px and 0xFF) / 255f          // B
+                    }
+                }
+                img
             }
         }
-        return img
+    }
+
+    private fun labelForClassId(classId: Int): String {
+        return when (classId) {
+            1 -> "bicycle"
+            2 -> "car"
+            3 -> "motorcycle"
+            5 -> "bus"
+            7 -> "truck"
+            else -> "unknown"
+        }
     }
 
     // ---------------------------------------------------------

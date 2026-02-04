@@ -40,10 +40,12 @@ class DetectionAnalyzer(
     private var lastAlertLevel = 0
     private var lastAlertTimestamp = 0L
     private var lastLogTimestamp = 0L
+    private val sessionLogFileName = "mcaw_detection_${sessionStamp()}.txt"
 
     private var tts: TextToSpeech? = null
 
     init {
+        logSessionStart()
         if (AppPreferences.voice) {
             tts = TextToSpeech(ctx) { status ->
                 if (status == TextToSpeech.SUCCESS) {
@@ -56,11 +58,13 @@ class DetectionAnalyzer(
     override fun analyze(image: ImageProxy) {
         try {
             val ts = System.currentTimeMillis()
-            val bitmap = ImageUtils.imageProxyToBitmap(image)
-            if (bitmap == null) {
+            val rawBitmap = ImageUtils.imageProxyToBitmap(image)
+            if (rawBitmap == null) {
                 sendOverlayClear()
                 return
             }
+            val rotation = image.imageInfo.rotationDegrees
+            val bitmap = ImageUtils.rotateBitmap(rawBitmap, rotation)
 
             // -------------------------
             // DETEKCE
@@ -70,6 +74,13 @@ class DetectionAnalyzer(
                 1 -> det?.detect(bitmap) ?: yolo?.detect(bitmap).orEmpty()
                 else -> emptyList()
             }
+            logDetection(
+                ts,
+                "detections_raw",
+                null,
+                detList.maxOfOrNull { it.score } ?: 0f,
+                mapOf("count" to detList.size.toString())
+            )
 
             val vehicleDetections = detList.filter { isVehicleLabel(it.label) }
             val frameW = bitmap.width.toFloat()
@@ -81,7 +92,16 @@ class DetectionAnalyzer(
             }
 
             if (filtered.isEmpty()) {
-                logDetection(ts, "no_vehicle_detected", null, 0f)
+                logDetection(
+                    ts,
+                    "no_vehicle_detected",
+                    null,
+                    detList.maxOfOrNull { it.score } ?: 0f,
+                    mapOf(
+                        "raw_count" to detList.size.toString(),
+                        "vehicle_count" to vehicleDetections.size.toString()
+                    )
+                )
                 sendOverlayClear()
                 return
             }
@@ -89,7 +109,13 @@ class DetectionAnalyzer(
             // Nejlepší (největší score)
             val best: Detection? = filtered.maxByOrNull { it.score }
             if (best == null) {
-                logDetection(ts, "no_best_detection", null, 0f)
+                logDetection(
+                    ts,
+                    "no_best_detection",
+                    null,
+                    0f,
+                    mapOf("filtered_count" to filtered.size.toString())
+                )
                 sendOverlayClear()
                 return
             }
@@ -137,10 +163,33 @@ class DetectionAnalyzer(
             sendOverlayUpdate(best.box, frameW, frameH, distance, relSpeed, objectSpeed, ttc, label)
 
             sendMetricsUpdate(distance, relSpeed, objectSpeed, ttc, level)
-            logDetection(ts, "detection", label, best.score)
+            logDetection(
+                ts,
+                "detection",
+                label,
+                best.score,
+                mapOf(
+                    "box" to "%.1f,%.1f,%.1f,%.1f".format(
+                        best.box.x1,
+                        best.box.y1,
+                        best.box.x2,
+                        best.box.y2
+                    ),
+                    "distance" to formatMetric(distance),
+                    "ttc" to formatMetric(ttc),
+                    "rel_speed" to formatMetric(relSpeed),
+                    "object_speed" to formatMetric(objectSpeed),
+                    "alert_level" to level.toString()
+                )
+            )
         } catch (e: Exception) {
             Log.e("DetectionAnalyzer", "Detection failed", e)
-            logDetection(System.currentTimeMillis(), "detection_error", e.javaClass.simpleName, 0f)
+            logDetection(
+                System.currentTimeMillis(),
+                "detection_error",
+                e.javaClass.simpleName,
+                0f
+            )
             sendOverlayClear()
         } finally {
             image.close()
@@ -297,7 +346,13 @@ class DetectionAnalyzer(
         )
     }
 
-    private fun logDetection(timestamp: Long, event: String, label: String?, score: Float) {
+    private fun logDetection(
+        timestamp: Long,
+        event: String,
+        label: String?,
+        score: Float,
+        extras: Map<String, String> = emptyMap()
+    ) {
         if (timestamp - lastLogTimestamp < 2000L) return
         lastLogTimestamp = timestamp
         val content = buildString {
@@ -313,16 +368,79 @@ class DetectionAnalyzer(
                 append(" score=")
                 append("%.3f".format(Locale.US, score))
             }
+            extras.forEach { (key, value) ->
+                append(" ")
+                append(key)
+                append("=")
+                append(value)
+            }
         }
         com.mcaw.util.PublicLogWriter.appendLogLine(
             ctx,
-            "mcaw_activity_detection_${dateStamp(timestamp)}.txt",
+            sessionLogFileName,
             content
         )
     }
 
-    private fun dateStamp(timestamp: Long): String {
-        return java.text.SimpleDateFormat("yyyy-MM-dd", Locale.US).format(timestamp)
+    private fun sessionStamp(): String {
+        return java.text.SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US)
+            .format(System.currentTimeMillis())
+    }
+
+    private fun logSessionStart() {
+        val thresholds = thresholdsForMode(AppPreferences.detectionMode)
+        val modelInfo = when (AppPreferences.selectedModel) {
+            0 -> "yolo"
+            1 -> "efficientdet"
+            else -> "none"
+        }
+        val timestamp = System.currentTimeMillis()
+        val content = buildString {
+            append("ts=")
+            append(timestamp)
+            append(" ")
+            append("event=session_start")
+            append(" model=")
+            append(modelInfo)
+            append(" lane_filter=")
+            append(AppPreferences.laneFilter)
+            append(" mode=")
+            append(AppPreferences.detectionMode)
+            append(" thresholds=ttc(")
+            append(thresholds.ttcOrange)
+            append("/")
+            append(thresholds.ttcRed)
+            append(") dist(")
+            append(thresholds.distOrange)
+            append("/")
+            append(thresholds.distRed)
+            append(") speed(")
+            append(thresholds.speedOrange)
+            append("/")
+            append(thresholds.speedRed)
+            append(")")
+            yolo?.let {
+                append(" yolo=input")
+                append(it.inputSize)
+                append(" score=")
+                append(it.scoreThreshold)
+                append(" iou=")
+                append(it.iouThreshold)
+            }
+            det?.let {
+                append(" eff=input")
+                append(it.inputSize)
+                append(" score=")
+                append(it.scoreThreshold)
+                append(" iou=")
+                append(it.iouThreshold)
+            }
+        }
+        com.mcaw.util.PublicLogWriter.appendLogLine(ctx, sessionLogFileName, content)
+    }
+
+    private fun formatMetric(value: Float): String {
+        return if (value.isFinite()) "%.2f".format(Locale.US, value) else "inf"
     }
 
     private data class AlertThresholds(
