@@ -1,0 +1,15 @@
+ts=1770195672007 event=session_start model=efficientdet lane_filter=false mode=0 thresholds=ttc(3.0/1.2) dist(15.0/6.0) speed(3.0/5.0) yolo=input640 score=0.35 iou=0.45 eff=input320 score=0.3 iou=0.45
+ts=1770195673140 event=detection_error label=IllegalArgumentException
+ts=1770195675185 event=detection_error label=IllegalArgumentException
+ts=1770195677235 event=detection_error label=IllegalArgumentException
+ts=1770195679289 event=detection_error label=IllegalArgumentException
+ts=1770195681333 event=detection_error label=IllegalArgumentException
+ts=1770195683359 event=detection_error label=IllegalArgumentException
+ts=1770195685396 event=detection_error label=IllegalArgumentException
+ts=1770195687419 event=detection_error label=IllegalArgumentException
+ts=1770195689474 event=detection_error label=IllegalArgumentException
+ts=1770195691496 event=detection_error label=IllegalArgumentException
+ts=1770195693520 event=detection_error label=IllegalArgumentException
+ts=1770195695535 event=detection_error label=IllegalArgumentException
+ts=1770195697558 event=detection_error label=IllegalArgumentException
+ts=1770195699607 event=detection_error label=IllegalArgumentException
