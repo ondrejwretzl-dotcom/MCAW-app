@@ -2,13 +2,16 @@ package com.mcaw.ai
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.util.Log
 import com.mcaw.model.Box
 import com.mcaw.model.Detection
+import com.mcaw.util.PublicLogWriter
 import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Interpreter
 import org.tensorflow.lite.support.common.FileUtil
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.Locale
 import kotlin.math.max
 import kotlin.math.min
 
@@ -16,12 +19,12 @@ import kotlin.math.min
  * EfficientDet Lite0 (TFLite) Detector
  * ------------------------------------
  * - Model: efficientdet_lite0.tflite
- * - Vstup: 320x320 RGB (NHWC), normalizováno 0..1
- * - Výstup: boxes [1, 1917, 4], scores [1, 1917], classes [1, 1917]
+ * - Vstup: 320x320 RGB (NHWC)
+ * - Výstup: scores [1, N, C], boxes [1, N, 4]
  * - Vrací List<Detection> (stejná struktura jako YOLO detektor)
  */
 class EfficientDetTFLiteDetector(
-    ctx: Context,
+    private val ctx: Context,
     modelName: String = "efficientdet_lite0.tflite",
     val inputSize: Int = 320,
     val scoreThreshold: Float = 0.30f,
@@ -29,35 +32,56 @@ class EfficientDetTFLiteDetector(
 ) {
 
     private val interpreter: Interpreter
+    private val inputType: DataType
+    private val numAnchors: Int
+    private val numClasses: Int
+    private val boxesOutputIndex: Int
+    private val scoresOutputIndex: Int
 
     init {
         val model = FileUtil.loadMappedFile(ctx, "models/$modelName")
         interpreter = Interpreter(model, Interpreter.Options().setNumThreads(4))
+        inputType = interpreter.getInputTensor(0).dataType()
+        val out0 = interpreter.getOutputTensor(0).shape()
+        val out1 = interpreter.getOutputTensor(1).shape()
+        val out0Last = out0.lastOrNull() ?: 0
+        val out1Last = out1.lastOrNull() ?: 0
+        if (out0Last == 4 && out1Last != 4) {
+            boxesOutputIndex = 0
+            scoresOutputIndex = 1
+            numAnchors = out0.getOrNull(1) ?: 0
+            numClasses = out1.getOrNull(2) ?: 0
+        } else if (out1Last == 4 && out0Last != 4) {
+            boxesOutputIndex = 1
+            scoresOutputIndex = 0
+            numAnchors = out1.getOrNull(1) ?: 0
+            numClasses = out0.getOrNull(2) ?: 0
+        } else {
+            boxesOutputIndex = 0
+            scoresOutputIndex = 1
+            numAnchors = out0.getOrNull(1) ?: 0
+            numClasses = out1.getOrNull(2) ?: 0
+            Log.w(
+                "EfficientDet",
+                "Unexpected output shapes out0=${out0.contentToString()} out1=${out1.contentToString()}"
+            )
+        }
+        logModelConfig(out0, out1)
     }
 
     fun detect(bitmap: Bitmap): List<Detection> {
         // Resize input pro inference
         val resized = Bitmap.createScaledBitmap(bitmap, inputSize, inputSize, true)
-        val input = preprocess(resized, interpreter.getInputTensor(0).dataType())
+        val input = preprocess(resized)
 
         // Výstupy EfficientDet Lite0
-        val boxes = Array(1) { Array(1917) { FloatArray(4) } }   // [ymin, xmin, ymax, xmax] (norm.)
-        val scores = Array(1) { FloatArray(1917) }
-        val classes = Array(1) { FloatArray(1917) }
+        val boxes = Array(1) { Array(numAnchors) { FloatArray(4) } }   // [ymin, xmin, ymax, xmax] (norm.)
+        val classScores = Array(1) { Array(numAnchors) { FloatArray(numClasses) } }
 
-        val outputs = mutableMapOf(
-            0 to boxes,
-            1 to classes,
-            2 to scores
+        val outputs: MutableMap<Int, Any> = mutableMapOf(
+            boxesOutputIndex to boxes,
+            scoresOutputIndex to classScores
         )
-        val numDetections = if (interpreter.outputTensorCount > 3) {
-            Array(1) { FloatArray(1) }
-        } else {
-            null
-        }
-        if (numDetections != null) {
-            outputs[3] = numDetections
-        }
 
         interpreter.runForMultipleInputsOutputs(arrayOf(input), outputs)
 
@@ -65,24 +89,39 @@ class EfficientDetTFLiteDetector(
         val dets = mutableListOf<Detection>()
         val scaleX = bitmap.width.toFloat()
         val scaleY = bitmap.height.toFloat()
-        val limit = numDetections?.get(0)?.get(0)?.toInt()?.coerceAtMost(1917) ?: 1917
 
-        for (i in 0 until limit) {
-            val score = scores[0][i]
-            if (score >= scoreThreshold) {
+        val vehicleLabelByClassId = mapOf(
+            2 to "bicycle",
+            3 to "car",
+            4 to "motorcycle",
+            6 to "bus",
+            8 to "truck"
+        )
+        val validClassIds = vehicleLabelByClassId.keys.filter { it < numClasses }
+
+        for (i in 0 until numAnchors) {
+            val scores = classScores[0][i]
+            var bestScore = 0f
+            var bestClass = -1
+            for (classId in validClassIds) {
+                val score = scores[classId]
+                if (score > bestScore) {
+                    bestScore = score
+                    bestClass = classId
+                }
+            }
+            if (bestClass >= 0 && bestScore >= scoreThreshold) {
                 val b = boxes[0][i]  // [ymin, xmin, ymax, xmax] v <0..1>
-                val x1 = (b[1] * scaleX)
-                val y1 = (b[0] * scaleY)
-                val x2 = (b[3] * scaleX)
-                val y2 = (b[2] * scaleY)
-                val classId = classes[0][i].toInt()
-                val label = labelForClassId(classId)
+                val x1 = (b[1] * scaleX).coerceIn(0f, scaleX)
+                val y1 = (b[0] * scaleY).coerceIn(0f, scaleY)
+                val x2 = (b[3] * scaleX).coerceIn(0f, scaleX)
+                val y2 = (b[2] * scaleY).coerceIn(0f, scaleY)
 
                 dets.add(
                     Detection(
                         box = Box(x1, y1, x2, y2),
-                        score = score,
-                        label = label
+                        score = bestScore,
+                        label = vehicleLabelByClassId[bestClass] ?: "vehicle"
                     )
                 )
             }
@@ -94,54 +133,30 @@ class EfficientDetTFLiteDetector(
     // ---------------------------------------------------------
     // PREPROCESSING (NHWC, bez mean/std – dle modelu případně doplnit)
     // ---------------------------------------------------------
-    private fun preprocess(bitmap: Bitmap, dataType: DataType): Any {
-        return when (dataType) {
-            DataType.UINT8 -> {
-                val buffer =
-                    ByteBuffer.allocateDirect(inputSize * inputSize * 3)
-                        .order(ByteOrder.nativeOrder())
-                for (y in 0 until inputSize) {
-                    for (x in 0 until inputSize) {
-                        val px = bitmap.getPixel(x, y)
-                        buffer.put(((px shr 16) and 0xFF).toByte())
-                        buffer.put(((px shr 8) and 0xFF).toByte())
-                        buffer.put((px and 0xFF).toByte())
-                    }
-                }
-                buffer.rewind()
-                buffer
-            }
-            else -> {
-                val img = Array(1) {
-                    Array(inputSize) {
-                        Array(inputSize) {
-                            FloatArray(3)
-                        }
-                    }
-                }
+    private fun preprocess(bitmap: Bitmap): ByteBuffer {
+        val bytesPerChannel = if (inputType == DataType.FLOAT32) 4 else 1
+        val buffer = ByteBuffer.allocateDirect(inputSize * inputSize * 3 * bytesPerChannel)
+            .order(ByteOrder.nativeOrder())
 
-                for (y in 0 until inputSize) {
-                    for (x in 0 until inputSize) {
-                        val px = bitmap.getPixel(x, y)
-                        img[0][y][x][0] = ((px shr 16) and 0xFF) / 255f // R
-                        img[0][y][x][1] = ((px shr 8) and 0xFF) / 255f  // G
-                        img[0][y][x][2] = (px and 0xFF) / 255f          // B
-                    }
+        for (y in 0 until inputSize) {
+            for (x in 0 until inputSize) {
+                val px = bitmap.getPixel(x, y)
+                val r = ((px shr 16) and 0xFF)
+                val g = ((px shr 8) and 0xFF)
+                val b = (px and 0xFF)
+                if (inputType == DataType.FLOAT32) {
+                    buffer.putFloat(r / 255f)
+                    buffer.putFloat(g / 255f)
+                    buffer.putFloat(b / 255f)
+                } else {
+                    buffer.put(r.toByte())
+                    buffer.put(g.toByte())
+                    buffer.put(b.toByte())
                 }
-                img
             }
         }
-    }
-
-    private fun labelForClassId(classId: Int): String {
-        return when (classId) {
-            1 -> "bicycle"
-            2 -> "car"
-            3 -> "motorcycle"
-            5 -> "bus"
-            7 -> "truck"
-            else -> "unknown"
-        }
+        buffer.rewind()
+        return buffer
     }
 
     // ---------------------------------------------------------
@@ -176,5 +191,35 @@ class EfficientDetTFLiteDetector(
         val union = a.area + b.area - inter
 
         return if (union <= 0f) 0f else inter / union
+    }
+
+    private fun logModelConfig(out0: IntArray, out1: IntArray) {
+        val timestamp = System.currentTimeMillis()
+        val content = buildString {
+            append("ts=")
+            append(timestamp)
+            append(" event=effdet_model")
+            append(" input_type=")
+            append(inputType)
+            append(" input_size=")
+            append(inputSize)
+            append(" out0=")
+            append(out0.contentToString())
+            append(" out1=")
+            append(out1.contentToString())
+            append(" anchors=")
+            append(numAnchors)
+            append(" classes=")
+            append(numClasses)
+        }
+        PublicLogWriter.appendLogLine(
+            ctx,
+            "mcaw_model_${dateStamp(timestamp)}.txt",
+            content
+        )
+    }
+
+    private fun dateStamp(timestamp: Long): String {
+        return java.text.SimpleDateFormat("yyyy-MM-dd", Locale.US).format(timestamp)
     }
 }

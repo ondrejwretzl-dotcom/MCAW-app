@@ -41,6 +41,7 @@ class DetectionAnalyzer(
     private var lastAlertTimestamp = 0L
     private var lastLogTimestamp = 0L
     private val sessionLogFileName = "mcaw_detection_${sessionStamp()}.txt"
+    private var frameInfoLogged = false
 
     private var tts: TextToSpeech? = null
 
@@ -65,6 +66,21 @@ class DetectionAnalyzer(
             }
             val rotation = image.imageInfo.rotationDegrees
             val bitmap = ImageUtils.rotateBitmap(rawBitmap, rotation)
+            if (!frameInfoLogged) {
+                logDetection(
+                    ts,
+                    "frame_info",
+                    null,
+                    0f,
+                    mapOf(
+                        "frame_w" to bitmap.width.toString(),
+                        "frame_h" to bitmap.height.toString(),
+                        "rotation" to rotation.toString(),
+                        "focal_px" to "%.1f".format(estimateFocalLengthPx(bitmap.height))
+                    )
+                )
+                frameInfoLogged = true
+            }
 
             // -------------------------
             // DETEKCE
@@ -123,8 +139,7 @@ class DetectionAnalyzer(
             // -------------------------
             // FYZIKA: vzdálenost + TTC
             // -------------------------
-            // Heuristický odhad fokální délky (px) – nahraď později kalibrací/FoV
-            val focalPxEstimate = 1000f
+            val focalPxEstimate = estimateFocalLengthPx(bitmap.height)
             val distance: Float = DetectionPhysics.estimateDistanceMeters(
                 bbox = best.box,
                 frameHeightPx = bitmap.height,
@@ -188,7 +203,8 @@ class DetectionAnalyzer(
                 System.currentTimeMillis(),
                 "detection_error",
                 e.javaClass.simpleName,
-                0f
+                0f,
+                mapOf("message" to (e.message ?: ""))
             )
             sendOverlayClear()
         } finally {
@@ -441,6 +457,15 @@ class DetectionAnalyzer(
 
     private fun formatMetric(value: Float): String {
         return if (value.isFinite()) "%.2f".format(Locale.US, value) else "inf"
+    }
+
+    private fun estimateFocalLengthPx(frameHeightPx: Int): Float {
+        val focalMm = AppPreferences.cameraFocalLengthMm
+        val sensorHeightMm = AppPreferences.cameraSensorHeightMm
+        if (focalMm.isFinite() && sensorHeightMm.isFinite() && sensorHeightMm > 0f) {
+            return (focalMm / sensorHeightMm) * frameHeightPx
+        }
+        return 1000f
     }
 
     private data class AlertThresholds(
