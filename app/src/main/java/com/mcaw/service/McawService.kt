@@ -8,7 +8,8 @@ import android.content.Intent
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.os.Build
-import android.os.IBinder
+import android.os.Handler
+import android.os.Looper
 import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
@@ -40,6 +41,8 @@ class McawService : LifecycleService() {
     private var analysisExecutor = Executors.newSingleThreadExecutor()
     private var analysisRunning = false
     private var serviceLogFileName: String = ""
+    private val retryHandler = Handler(Looper.getMainLooper())
+    private var retryAttempts = 0
 
     override fun onCreate() {
         super.onCreate()
@@ -92,6 +95,7 @@ class McawService : LifecycleService() {
 
     private fun startCameraAnalysis() {
         if (analysisRunning) return
+        retryHandler.removeCallbacksAndMessages(null)
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
             != android.content.pm.PackageManager.PERMISSION_GRANTED
         ) {
@@ -125,16 +129,19 @@ class McawService : LifecycleService() {
                 )
                 updateCameraCalibration(camera)
                 analysisRunning = true
+                retryAttempts = 0
                 logService("analysis_started")
             }.onFailure { err ->
                 analysisRunning = false
                 logService("analysis_start_failed ${err.javaClass.simpleName}:${err.message}")
+                scheduleRetry()
             }
         }, ContextCompat.getMainExecutor(this))
     }
 
     private fun stopCameraAnalysis() {
         if (!analysisRunning && cameraProvider == null) return
+        retryHandler.removeCallbacksAndMessages(null)
         analysisRunning = false
         cameraProvider?.unbindAll()
         cameraProvider = null
@@ -168,5 +175,12 @@ class McawService : LifecycleService() {
     private fun sessionStamp(): String {
         return java.text.SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US)
             .format(System.currentTimeMillis())
+    }
+
+    private fun scheduleRetry() {
+        retryAttempts += 1
+        val delayMs = (1000L * retryAttempts.coerceAtMost(5)).coerceAtMost(6000L)
+        logService("analysis_retry_scheduled delay_ms=$delayMs attempt=$retryAttempts")
+        retryHandler.postDelayed({ startCameraAnalysis() }, delayMs)
     }
 }
