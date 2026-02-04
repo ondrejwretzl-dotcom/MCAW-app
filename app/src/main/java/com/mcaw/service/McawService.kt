@@ -3,7 +3,6 @@ package com.mcaw.service
 import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.ServiceInfo
 import android.content.Context
 import android.content.Intent
 import android.hardware.camera2.CameraCharacteristics
@@ -219,7 +218,8 @@ class McawService : LifecycleService() {
     private class ServiceCameraLifecycleOwner : LifecycleOwner {
         private val registry = LifecycleRegistry(this)
 
-        override fun getLifecycle(): Lifecycle = registry
+        override val lifecycle: Lifecycle
+            get() = registry
 
         fun start() {
             registry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
