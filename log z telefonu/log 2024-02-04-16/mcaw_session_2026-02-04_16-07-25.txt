@@ -1,0 +1,4 @@
+event=Open settings
+build_name=1.0
+build_code=1
+build_id=1770217318556

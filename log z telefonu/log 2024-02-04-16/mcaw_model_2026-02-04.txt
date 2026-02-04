@@ -1,0 +1,16 @@
+ts=1770217542794 event=effdet_model input_type=UINT8 input_size=320 out0=[1, 19206, 90] out1=[1, 19206, 4] anchors=19206 classes=90
+ts=1770217553181 event=effdet_model input_type=UINT8 input_size=320 out0=[1, 19206, 90] out1=[1, 19206, 4] anchors=19206 classes=90
+ts=1770217563947 event=effdet_model input_type=UINT8 input_size=320 out0=[1, 19206, 90] out1=[1, 19206, 4] anchors=19206 classes=90
+ts=1770217569195 event=effdet_model input_type=UINT8 input_size=320 out0=[1, 19206, 90] out1=[1, 19206, 4] anchors=19206 classes=90
+ts=1770217579727 event=effdet_model input_type=UINT8 input_size=320 out0=[1, 19206, 90] out1=[1, 19206, 4] anchors=19206 classes=90
+ts=1770217611677 event=effdet_model input_type=UINT8 input_size=320 out0=[1, 19206, 90] out1=[1, 19206, 4] anchors=19206 classes=90
+ts=1770217623427 event=effdet_model input_type=UINT8 input_size=320 out0=[1, 19206, 90] out1=[1, 19206, 4] anchors=19206 classes=90
+ts=1770217630369 event=effdet_model input_type=UINT8 input_size=320 out0=[1, 19206, 90] out1=[1, 19206, 4] anchors=19206 classes=90
+ts=1770217631637 event=effdet_model input_type=UINT8 input_size=320 out0=[1, 19206, 90] out1=[1, 19206, 4] anchors=19206 classes=90
+ts=1770217637627 event=effdet_model input_type=UINT8 input_size=320 out0=[1, 19206, 90] out1=[1, 19206, 4] anchors=19206 classes=90
+ts=1770217640680 event=effdet_model input_type=UINT8 input_size=320 out0=[1, 19206, 90] out1=[1, 19206, 4] anchors=19206 classes=90
+ts=1770217645259 event=effdet_model input_type=UINT8 input_size=320 out0=[1, 19206, 90] out1=[1, 19206, 4] anchors=19206 classes=90
+ts=1770217652417 event=effdet_model input_type=UINT8 input_size=320 out0=[1, 19206, 90] out1=[1, 19206, 4] anchors=19206 classes=90
+ts=1770217658697 event=effdet_model input_type=UINT8 input_size=320 out0=[1, 19206, 90] out1=[1, 19206, 4] anchors=19206 classes=90
+ts=1770217660206 event=effdet_model input_type=UINT8 input_size=320 out0=[1, 19206, 90] out1=[1, 19206, 4] anchors=19206 classes=90
+ts=1770217748150 event=effdet_model input_type=UINT8 input_size=320 out0=[1, 19206, 90] out1=[1, 19206, 4] anchors=19206 classes=90
