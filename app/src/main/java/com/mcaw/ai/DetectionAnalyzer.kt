@@ -20,6 +20,7 @@ import com.mcaw.util.PublicLogWriter
 
 
 class DetectionAnalyzer(
+    private val analyzerLogFileName = "mcaw_analyzer_${System.currentTimeMillis()}.txt"
     private val ctx: Context,
     private val yolo: YoloOnnxDetector?,
     private val det: EfficientDetTFLiteDetector?,
@@ -39,6 +40,7 @@ class DetectionAnalyzer(
     private val postProcessor = DetectionPostProcessor(
         DetectionPostProcessor.Config(debug = AppPreferences.debugOverlay)
     )
+    
     private val tracker = TemporalTracker(minConsecutiveForAlert = 3)
 
     private var lastDistance = Float.POSITIVE_INFINITY
@@ -46,7 +48,13 @@ class DetectionAnalyzer(
     private var lastAlertLevel = 0
 
     private var tts: TextToSpeech? = null
+    
+    private fun flog(msg: String) {
+        if (!AppPreferences.debugOverlay) return
+        PublicLogWriter.appendLogLine(ctx, analyzerLogFileName, msg)
+    }
 
+    
     init {
         if (AppPreferences.voice) {
             tts = TextToSpeech(ctx) { status ->
@@ -64,6 +72,8 @@ class DetectionAnalyzer(
             }
             val rotation = image.imageInfo.rotationDegrees
             val bitmap = ImageUtils.rotateBitmap(rawBitmap, rotation)
+            flog("frame proxy=${image.width}x${image.height} rot=${image.imageInfo.rotationDegrees} bmp=${bitmap.width}x${bitmap.height} model=${AppPreferences.selectedModel}")
+
             if (AppPreferences.debugOverlay) {
                 Log.d(
                     "DetectionAnalyzer",
@@ -83,6 +93,8 @@ class DetectionAnalyzer(
             }
 
             val post = postProcessor.process(rawDetections, bitmap.width.toFloat(), bitmap.height.toFloat())
+            flog("counts raw=${post.counts.raw} thr=${post.counts.threshold} nms=${post.counts.nms} accepted=${post.counts.filters}")
+
             val tracked = tracker.update(post.accepted)
             val bestTrack = tracked
                 .filter { it.alertGatePassed }
@@ -115,6 +127,8 @@ class DetectionAnalyzer(
 
             val label = best.label ?: "unknown"
             sendOverlayUpdate(best.box, bitmap.width.toFloat(), bitmap.height.toFloat(), distance, relSpeed, speed, ttc, label)
+            flog("best label=${best.label} score=${best.score} box=${best.box.x1},${best.box.y1},${best.box.x2},${best.box.y2} dist=$distance rel=$relSpeed rider=$speed ttc=$ttc")
+
             sendMetricsUpdate(distance, relSpeed, speed, ttc, level, label)
 
             if (AppPreferences.debugOverlay) {
