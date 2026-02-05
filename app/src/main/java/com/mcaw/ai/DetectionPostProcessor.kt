@@ -12,22 +12,23 @@ class DetectionPostProcessor(
 
     data class Config(
         val classThresholds: Map<String, Float> = mapOf(
-            "car" to 0.35f,
-            "van" to 0.35f,
-            "bus" to 0.35f,
-            "truck" to 0.35f,
-            "motorcycle" to 0.40f,
-            "bicycle" to 0.50f,
-            "person" to 0.45f
+            "car" to 0.30f,
+            "van" to 0.30f,
+            "bus" to 0.30f,
+            "truck" to 0.30f,
+            "motorcycle" to 0.35f,
+            "bicycle" to 0.40f,
+            "person" to 0.35f
         ),
-        val defaultThreshold: Float = 0.40f,
+        val defaultThreshold: Float = 0.25f,
         val nmsIouThreshold: Float = 0.45f,
-        val minAreaRatio: Float = 0.002f,
-        val maxAreaRatio: Float = 0.90f,
-        val minAspect: Float = 0.2f,
-        val maxAspect: Float = 4.5f,
+        val minAreaRatio: Float = 0.0002f,
+        val maxAreaRatio: Float = 0.95f,
+        val minAspect: Float = 0.15f,
+        val maxAspect: Float = 6.0f,
         val edgeMarginRatio: Float = 0.07f,
-        val edgeFilterEnabled: Boolean = true,
+        val edgeFilterEnabled: Boolean = false,
+        val roiFilterEnabled: Boolean = false,
         val roi: RectNorm = RectNorm(0.45f, 0.10f, 1.0f, 0.95f),
         val debug: Boolean = false
     )
@@ -50,19 +51,25 @@ class DetectionPostProcessor(
     )
 
     fun process(raw: List<Detection>, frameWidth: Float, frameHeight: Float): Result {
-        val canonical = raw.mapNotNull { d ->
-            val normalized = DetectionLabelMapper.toCanonical(d.label) ?: return@mapNotNull null
-            d.copy(label = normalized)
+        val rejected = mutableListOf<RejectedDetection>()
+
+        val normalized = raw.map { detection ->
+            val canonical = DetectionLabelMapper.toCanonical(detection.label)
+            detection.copy(label = canonical ?: detection.label?.trim()?.lowercase() ?: "unknown")
         }
-        val thresholded = canonical.filter { d ->
+
+        val thresholded = normalized.filter { d ->
             val threshold = config.classThresholds[d.label] ?: config.defaultThreshold
-            d.score >= threshold
+            val passed = d.score >= threshold
+            if (!passed) rejected.add(RejectedDetection(d, "lowScore"))
+            passed
         }
-        val nms = classAwareNms(thresholded)
+
+        val nmsResult = classAwareNms(thresholded)
+        rejected.addAll(nmsResult.rejected)
 
         val accepted = mutableListOf<Detection>()
-        val rejected = mutableListOf<RejectedDetection>()
-        for (det in nms) {
+        for (det in nmsResult.accepted) {
             val reason = rejectionReason(det, frameWidth, frameHeight)
             if (reason == null) {
                 accepted.add(det)
@@ -74,22 +81,22 @@ class DetectionPostProcessor(
         if (config.debug) {
             Log.d(
                 "DetectionPostProcessor",
-                "counts raw=${raw.size} threshold=${thresholded.size} nms=${nms.size} accepted=${accepted.size}"
+                "counts raw=${raw.size} threshold=${thresholded.size} nms=${nmsResult.accepted.size} accepted=${accepted.size}"
             )
         }
 
         return Result(
             accepted = accepted,
             rejected = rejected,
-            counts = Counts(raw.size, thresholded.size, nms.size, accepted.size)
+            counts = Counts(raw.size, thresholded.size, nmsResult.accepted.size, accepted.size)
         )
     }
 
     private fun rejectionReason(det: Detection, frameW: Float, frameH: Float): String? {
-        if (frameW <= 0f || frameH <= 0f) return "invalid_frame"
+        if (frameW <= 0f || frameH <= 0f) return "invalidFrame"
         val b = det.box
         val areaRatio = b.area / (frameW * frameH)
-        if (areaRatio < config.minAreaRatio || areaRatio > config.maxAreaRatio) return "area"
+        if (areaRatio < config.minAreaRatio || areaRatio > config.maxAreaRatio) return "minArea"
         val aspect = if (b.h > 0f) b.w / b.h else Float.POSITIVE_INFINITY
         if (aspect < config.minAspect || aspect > config.maxAspect) return "aspect"
 
@@ -100,28 +107,44 @@ class DetectionPostProcessor(
             if (cx < m || cx > 1f - m || cy < m || cy > 1f - m) return "edge"
         }
 
-        val roi = config.roi
-        if (cx !in roi.left..roi.right || cy !in roi.top..roi.bottom) return "roi"
+        if (config.roiFilterEnabled) {
+            val roi = config.roi
+            if (cx !in roi.left..roi.right || cy !in roi.top..roi.bottom) return "outsideROI"
+        }
         return null
     }
 
-    private fun classAwareNms(input: List<Detection>): List<Detection> {
-        return input.groupBy { it.label ?: "unknown" }
+    private data class NmsResult(
+        val accepted: List<Detection>,
+        val rejected: List<RejectedDetection>
+    )
+
+    private fun classAwareNms(input: List<Detection>): NmsResult {
+        val accepted = mutableListOf<Detection>()
+        val rejected = mutableListOf<RejectedDetection>()
+
+        input.groupBy { it.label ?: "unknown" }
             .values
-            .flatMap { list ->
+            .forEach { list ->
                 val mutable = list.sortedByDescending { it.score }.toMutableList()
-                val out = mutableListOf<Detection>()
                 while (mutable.isNotEmpty()) {
                     val best = mutable.removeAt(0)
-                    out.add(best)
+                    accepted.add(best)
                     val it = mutable.iterator()
                     while (it.hasNext()) {
-                        if (iou(best.box, it.next().box) > config.nmsIouThreshold) it.remove()
+                        val candidate = it.next()
+                        if (iou(best.box, candidate.box) > config.nmsIouThreshold) {
+                            rejected.add(RejectedDetection(candidate, "NMS"))
+                            it.remove()
+                        }
                     }
                 }
-                out
             }
-            .sortedByDescending { it.score }
+
+        return NmsResult(
+            accepted = accepted.sortedByDescending { it.score },
+            rejected = rejected
+        )
     }
 
     private fun iou(a: Box, b: Box): Float {

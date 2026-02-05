@@ -22,6 +22,8 @@ class EfficientDetTFLiteDetector(
 
     private val interpreter: Interpreter
     private val inputType: DataType
+    private val modelLabel: String = modelName
+    private var modelInfoLogged = false
 
     init {
         val model = FileUtil.loadMappedFile(ctx, "models/$modelName")
@@ -33,6 +35,16 @@ class EfficientDetTFLiteDetector(
         val resized = Bitmap.createScaledBitmap(bitmap, inputSize, inputSize, true)
         val input = preprocess(resized)
         val outputCount = interpreter.outputTensorCount
+
+        if (AppPreferences.debugOverlay && !modelInfoLogged) {
+            modelInfoLogged = true
+            val outputs = (0 until outputCount)
+                .joinToString { idx -> "out$idx=${interpreter.getOutputTensor(idx).shape().contentToString()}" }
+            Log.d(
+                "EfficientDet",
+                "model=$modelLabel input=${interpreter.getInputTensor(0).shape().contentToString()} type=$inputType $outputs"
+            )
+        }
 
         return if (outputCount >= 4) {
             runFourOutput(bitmap, input)
@@ -91,18 +103,20 @@ class EfficientDetTFLiteDetector(
             outputs[1] = boxes
         }
         interpreter.runForMultipleInputsOutputs(arrayOf(input), outputs)
+
+        val interestedClassIds = listOf(0, 1, 2, 3, 5, 7, 4, 6, 8).filter { it < classesN }
         val out = mutableListOf<Detection>()
         for (i in 0 until anchors) {
             var bestClass = -1
             var bestScore = 0f
-            for (c in scores[0][i].indices) {
+            for (c in interestedClassIds) {
                 val score = scores[0][i][c]
                 if (score > bestScore) {
                     bestScore = score
                     bestClass = c
                 }
             }
-            if (bestScore < scoreThreshold) continue
+            if (bestScore < scoreThreshold || bestClass < 0) continue
             val label = DetectionLabelMapper.cocoLabel(bestClass)
             val b = boxes[0][i]
             out.add(
@@ -112,6 +126,9 @@ class EfficientDetTFLiteDetector(
                     label
                 )
             )
+            if (AppPreferences.debugOverlay && out.size <= 3) {
+                Log.d("EfficientDet", "raw2 classId=$bestClass score=$bestScore label=$label")
+            }
         }
         return out
     }
