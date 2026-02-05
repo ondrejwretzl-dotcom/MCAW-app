@@ -6,37 +6,79 @@ import kotlin.math.ln
 object DetectionPhysics {
 
     /**
-     * Hrub˝ monokul·rnÌ odhad vzd·lenosti dle v˝öky boxu v pixelech.
-     * Vyûaduje odhad fok·lnÌ dÈlky v pixelech (focalPx) a re·lnou v˝öku objektu (m).
+     * Hrub√Ω monokul√°rn√≠ odhad vzd√°lenosti dle v√Ω≈°ky boxu v pixelech.
+     * Vy≈æaduje odhad fok√°ln√≠ d√©lky v pixelech (focalPx) a re√°lnou v√Ω≈°ku objektu (m).
      */
-    fun estimateDistanceMeters(
+   fun estimateDistanceMeters(
         bbox: Box,
         frameHeightPx: Int,
         focalPx: Float,
-        realHeightM: Float = 1.5f // typick· v˝öka auta/motorky (lze pozdÏji p¯epsat dle labelu)
+        realHeightM: Float = 1.5f, // detekovana vyska, treba motorka, auto
+        // tuning knobs:
+        minBoxHeightPx: Float = 18f,     // pod to je v√Ωpoƒçet extr√©mnƒõ ≈°umov√Ω
+        minDistanceM: Float = 0.7f,
+        maxDistanceM: Float = 150f
     ): Float? {
-        val h = bbox.h
-        if (h <= 1f || focalPx <= 0f) return null
+        if (frameHeightPx <= 0 || focalPx <= 0f || realHeightM <= 0f) return null
+
+        // bbox.h m≈Ø≈æe b√Ωt buƒè v pixelech, nebo v normalizovan√Ωch 0..1
+        val hRaw = bbox.h
+        if (hRaw <= 0f) return null
+
+        val hPx = when {
+            // typicky normalizovan√© hodnoty (0..1), nƒõkdy do ~2 kv≈Øli chyb√°m/rotaci
+            hRaw <= 2.0f -> hRaw * frameHeightPx.toFloat()
+            else -> hRaw
+        }
+
+        if (hPx < minBoxHeightPx) return null
+
         // Z ~ f * H / h
-        return (focalPx * realHeightM / h).coerceAtLeast(0f)
+        val dist = (focalPx * realHeightM / hPx)
+        if (!dist.isFinite()) return null
+
+        return dist.coerceIn(minDistanceM, maxDistanceM)
     }
 
+
     /**
-     * TTC z r˘stu velikosti bboxu (logaritmick· derivace).
-     * prevH, currH v pixelech; dtSec v sekund·ch.
+     * TTC z r≈Østu velikosti bboxu (logaritmick√° derivace).
+     * prevH, currH v pixelech; dtSec v sekund√°ch.
      * TTC ? -1 / (d(ln h)/dt) = - dt / ln(currH/prevH)
      */
-    fun computeTtcFromHeights(prevH: Float, currH: Float, dtSec: Float): Float? {
-        if (prevH <= 1f || currH <= 1f || dtSec <= 0f) return null
+    fun computeTtcFromHeights(
+        prevH: Float,
+        currH: Float,
+        dtSec: Float,
+        // tuning knobs:
+        minDtSec: Float = 0.06f,          // men≈°√≠ dt je ≈°um (z√°le≈æ√≠ na FPS)
+        minGrowthRatio: Float = 1.03f,    // mus√≠ se zvƒõt≈°it aspo≈à o ~3 %
+        minDeltaHPx: Float = 2.0f,        // alternativn√≠ ochrana proti jitteru (plat√≠ pro px i normalizovan√© ‚Äûsp√≠≈° m√≠≈à‚Äú)
+        maxTtcSec: Float = 20f
+    ): Float? {
+        if (prevH <= 0f || currH <= 0f) return null
+        if (dtSec <= minDtSec) return null
+
         val ratio = currH / prevH
-        if (ratio <= 0f || ratio == 1f) return null
+        if (!ratio.isFinite() || ratio <= 0f) return null
+
+        // jitter guard ‚Äì mus√≠ to re√°lnƒõ r≈Øst
+        if (ratio < minGrowthRatio) return null
+        if ((currH - prevH) < minDeltaHPx) return null
+
         val dln = ln(ratio)
-        if (dln >= 0f) return null // nezvÏtöuje se => nep¯ibliûuje se
-        return (-dtSec / dln).takeIf { it.isFinite() && it > 0f }
+        // p≈ôi p≈ôibli≈æov√°n√≠ je dln > 0; kdy≈æ <= 0, nep≈ôibli≈æuje se
+        if (dln <= 0f) return null
+
+        val ttc = dtSec / dln
+        if (!ttc.isFinite() || ttc <= 0f) return null
+
+        return ttc.coerceAtMost(maxTtcSec)
     }
 
+
     /**
-     * Jednoduch˝ adaptivnÌ pr·h pro TTC (ËÌm vÏtöÌ relativnÌ rychlost, tÌm p¯ÌsnÏjöÌ pr·h).
+     * Jednoduch√Ω adaptivn√≠ pr√°h pro TTC (ƒç√≠m vƒõt≈°√≠ relativn√≠ rychlost, t√≠m p≈ô√≠snƒõj≈°√≠ pr√°h).
      */
     fun adaptiveTtcThreshold(relSpeedMps: Float?): Float {
         val v = (relSpeedMps ?: 0f).coerceAtLeast(0f)
