@@ -1,85 +1,38 @@
 package com.mcaw.ai
 
+import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.ImageFormat
-import android.graphics.Rect
-import android.graphics.YuvImage
+import android.graphics.Matrix
 import androidx.camera.core.ImageProxy
-import java.io.ByteArrayOutputStream
-import java.nio.ByteBuffer
+import androidx.camera.core.internal.utils.ImageUtil
+import androidx.camera.core.internal.utils.YuvToRgbConverter
 
 /**
  * ImageUtils
  * ----------
- * - Konverze YUV_420_888 � Bitmap
- * - Pou��v� JPEG kompresn� transformaci (rychl� a stabiln�)
+ * Bezpečná konverze ImageProxy (YUV_420_888) -> Bitmap pomocí CameraX YuvToRgbConverter.
+ * Opravuje problémy se stride/pixelStride, které způsobují posun/rozpad obrazu a špatné boxy.
  */
 object ImageUtils {
 
-    fun imageProxyToBitmap(image: ImageProxy): Bitmap? {
+    @Volatile
+    private var converter: YuvToRgbConverter? = null
+
+    fun imageProxyToBitmap(image: ImageProxy, context: Context): Bitmap? {
         return try {
-            yuv420ToBitmap(image)
-        } catch (e: Exception) {
+            val c = converter ?: YuvToRgbConverter(context).also { converter = it }
+            val bmp = Bitmap.createBitmap(image.width, image.height, Bitmap.Config.ARGB_8888)
+            c.yuvToRgb(image.image ?: return null, bmp)
+            bmp
+        } catch (_: Exception) {
             null
         }
     }
 
     fun rotateBitmap(source: Bitmap, degrees: Int): Bitmap {
         if (degrees == 0) return source
-        val matrix = android.graphics.Matrix().apply {
-            postRotate(degrees.toFloat())
-        }
+        val matrix = Matrix().apply { postRotate(degrees.toFloat()) }
         return Bitmap.createBitmap(source, 0, 0, source.width, source.height, matrix, true)
     }
-
-    // ---------------------------------------------------------
-    // YUV � Bitmap (univerz�ln� metoda pro CameraX)
-    // ---------------------------------------------------------
-    private fun yuv420ToBitmap(image: ImageProxy): Bitmap? {
-        val yBuffer = image.planes[0].buffer // Y
-        val uBuffer = image.planes[1].buffer // U
-        val vBuffer = image.planes[2].buffer // V
-
-        val ySize = yBuffer.remaining()
-        val uSize = uBuffer.remaining()
-        val vSize = vBuffer.remaining()
-
-        // NV21 = Y + VU
-        val nv21 = ByteArray(ySize + uSize + vSize)
-
-        yBuffer.get(nv21, 0, ySize)
-
-        // V a U jsou prohozen� oproti NV21, proto je ukl�d�me opa�n�
-        val chromaStart = ySize
-        val vPos = chromaStart
-        val uPos = chromaStart + 1
-
-        var vIndex = 0
-        var uIndex = 0
-
-        while (vIndex < vSize) {
-            nv21[vPos + vIndex] = vBuffer[vIndex]
-            vIndex += 2
-        }
-
-        while (uIndex < uSize) {
-            nv21[uPos + uIndex] = uBuffer[uIndex]
-            uIndex += 2
-        }
-
-        // Te� m�me NV21 � zkomprimujeme do JPEG � dek�dujeme na Bitmap
-        val yuvImage = YuvImage(
-            nv21,
-            ImageFormat.NV21,
-            image.width,
-            image.height,
-            null
-        )
-
-        val out = ByteArrayOutputStream()
-        yuvImage.compressToJpeg(Rect(0, 0, image.width, image.height), 90, out)
-        val jpegBytes = out.toByteArray()
-
-        return android.graphics.BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.size)
-    }
 }
+

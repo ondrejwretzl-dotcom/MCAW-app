@@ -7,9 +7,9 @@ import kotlin.math.min
 
 class TemporalTracker(
     private val minConsecutiveForAlert: Int = 3,
-    private val iouMatchThreshold: Float = 0.3f,
-    private val maxMisses: Int = 2,
-    private val emaAlpha: Float = 0.5f
+    private val iouMatchThreshold: Float = 0.2f, // puvodne 0.3
+    private val maxMisses: Int = 3, // puvodne 2
+    private val emaAlpha: Float = 0.25f // puvodne 0.5
 ) {
     data class TrackedDetection(
         val id: Long,

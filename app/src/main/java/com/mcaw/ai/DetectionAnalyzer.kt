@@ -56,10 +56,21 @@ class DetectionAnalyzer(
     override fun analyze(image: ImageProxy) {
         try {
             val ts = System.currentTimeMillis()
-            val rawBitmap = ImageUtils.imageProxyToBitmap(image) ?: run {
+            val rawBitmap = ImageUtils.imageProxyToBitmap(image, ctx) ?: run {
                 sendOverlayClear()
                 return
             }
+            if (AppPreferences.debugOverlay) {
+                Log.d(
+                    "DetectionAnalyzer",
+                    "frame imageProxy=${image.width}x${image.height} rot=${image.imageInfo.rotationDegrees}"
+                )
+            }
+            
+            if (AppPreferences.debugOverlay) {
+                Log.d("DetectionAnalyzer", "bitmap(afterRotate)=${bitmap.width}x${bitmap.height}")
+            }
+
             val rotation = image.imageInfo.rotationDegrees
             val bitmap = ImageUtils.rotateBitmap(rawBitmap, rotation)
             val speed = speedProvider.getCurrent().speedMps
