@@ -20,7 +20,6 @@ import com.mcaw.util.PublicLogWriter
 
 
 class DetectionAnalyzer(
-    private val analyzerLogFileName = "mcaw_analyzer_${System.currentTimeMillis()}.txt"
     private val ctx: Context,
     private val yolo: YoloOnnxDetector?,
     private val det: EfficientDetTFLiteDetector?,
@@ -36,6 +35,8 @@ class DetectionAnalyzer(
         const val EXTRA_LEVEL = "extra_level"
         const val EXTRA_LABEL = "extra_label"
     }
+    private val analyzerLogFileName: String = "mcaw_analyzer_${System.currentTimeMillis()}.txt"
+
 
     private val postProcessor = DetectionPostProcessor(
         DetectionPostProcessor.Config(debug = AppPreferences.debugOverlay)

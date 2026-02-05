@@ -121,23 +121,6 @@ class YoloOnnxDetector(
           return out
       }
 
-            val score = obj * bestClassScore
-            if (score < scoreThreshold || bestClass < 0) continue
-
-            val x1 = ((cx - w / 2f) / inputSize.toFloat() * frameW).coerceIn(0f, frameW.toFloat())
-            val y1 = ((cy - h / 2f) / inputSize.toFloat() * frameH).coerceIn(0f, frameH.toFloat())
-            val x2 = ((cx + w / 2f) / inputSize.toFloat() * frameW).coerceIn(0f, frameW.toFloat())
-            val y2 = ((cy + h / 2f) / inputSize.toFloat() * frameH).coerceIn(0f, frameH.toFloat())
-            val label = DetectionLabelMapper.cocoLabel(bestClass)
-            out.add(Detection(Box(x1, y1, x2, y2), score, label))
-
-            if (AppPreferences.debugOverlay && out.size <= 3) {
-                Log.d("YoloOnnxDetector", "raw classId=$bestClass obj=$obj class=$bestClassScore score=$score label=$label")
-            }
-        }
-        return out
-    }
-
     private fun FloatBuffer.toArray(): FloatArray {
         val dup = duplicate()
         dup.rewind()
