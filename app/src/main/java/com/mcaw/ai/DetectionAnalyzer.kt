@@ -16,6 +16,8 @@ import com.mcaw.location.SpeedProvider
 import com.mcaw.model.Box
 import com.mcaw.model.Detection
 import java.util.Locale
+import com.mcaw.util.PublicLogWriter
+
 
 class DetectionAnalyzer(
     private val ctx: Context,
