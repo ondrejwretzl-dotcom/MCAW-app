@@ -35,13 +35,13 @@ class DetectionAnalyzer(
         const val EXTRA_LEVEL = "extra_level"
         const val EXTRA_LABEL = "extra_label"
     }
-    private val analyzerLogFileName: String = "mcaw_analyzer_${System.currentTimeMillis()}.txt"
 
+    private val analyzerLogFileName: String = "mcaw_analyzer_${System.currentTimeMillis()}.txt"
 
     private val postProcessor = DetectionPostProcessor(
         DetectionPostProcessor.Config(debug = AppPreferences.debugOverlay)
     )
-    
+
     private val tracker = TemporalTracker(minConsecutiveForAlert = 3)
 
     private var lastDistance = Float.POSITIVE_INFINITY
@@ -49,13 +49,12 @@ class DetectionAnalyzer(
     private var lastAlertLevel = 0
 
     private var tts: TextToSpeech? = null
-    
+
     private fun flog(msg: String) {
         if (!AppPreferences.debugOverlay) return
         PublicLogWriter.appendLogLine(ctx, analyzerLogFileName, msg)
     }
 
-    
     init {
         if (AppPreferences.voice) {
             tts = TextToSpeech(ctx) { status ->
@@ -67,24 +66,33 @@ class DetectionAnalyzer(
     override fun analyze(image: ImageProxy) {
         try {
             val ts = System.currentTimeMillis()
+
             val rawBitmap = ImageUtils.imageProxyToBitmap(image, ctx) ?: run {
                 sendOverlayClear()
                 return
             }
+
             val rotation = image.imageInfo.rotationDegrees
+
+            // ? Detekuj i kresli ve stejné orientaci (otoèený bitmap)
             val bitmap = ImageUtils.rotateBitmap(rawBitmap, rotation)
-            flog("frame proxy=${image.width}x${image.height} rot=${image.imageInfo.rotationDegrees} bmp=${bitmap.width}x${bitmap.height} model=${AppPreferences.selectedModel}")
+
+            val frameW = bitmap.width.toFloat()
+            val frameH = bitmap.height.toFloat()
+
+            flog(
+                "frame proxy=${image.width}x${image.height} rot=$rotation " +
+                    "bmpRaw=${rawBitmap.width}x${rawBitmap.height} bmpRot=${bitmap.width}x${bitmap.height} " +
+                    "model=${AppPreferences.selectedModel}"
+            )
 
             if (AppPreferences.debugOverlay) {
                 Log.d(
                     "DetectionAnalyzer",
-                    "frame imageProxy=${image.width}x${image.height} rot=${image.imageInfo.rotationDegrees}"
+                    "frame imageProxy=${image.width}x${image.height} rot=$rotation bmpRot=${bitmap.width}x${bitmap.height}"
                 )
             }
-            
-            if (AppPreferences.debugOverlay) {
-                Log.d("DetectionAnalyzer", "bitmap(afterRotate)=${bitmap.width}x${bitmap.height}")
-            }
+
             val speed = speedProvider.getCurrent().speedMps
 
             val rawDetections = when (AppPreferences.selectedModel) {
@@ -93,7 +101,8 @@ class DetectionAnalyzer(
                 else -> emptyList()
             }
 
-            val post = postProcessor.process(rawDetections, bitmap.width.toFloat(), bitmap.height.toFloat())
+            // ? Postprocess ve stejném frame (otoèený bitmap)
+            val post = postProcessor.process(rawDetections, frameW, frameH)
             flog("counts raw=${post.counts.raw} thr=${post.counts.threshold} nms=${post.counts.nms} accepted=${post.counts.filters}")
 
             val tracked = tracker.update(post.accepted)
@@ -108,12 +117,16 @@ class DetectionAnalyzer(
                 return
             }
 
-            val best = bestTrack.detection
+            // ? Clamp + canonical label
+            val best0 = bestTrack.detection
+            val bestBox = clampBox(best0.box, frameW, frameH)
+            val label = DetectionLabelMapper.toCanonical(best0.label) ?: (best0.label ?: "unknown")
+
             val distance = DetectionPhysics.estimateDistanceMeters(
-                bbox = best.box,
+                bbox = bestBox,
                 frameHeightPx = bitmap.height,
                 focalPx = estimateFocalLengthPx(bitmap.height),
-                realHeightM = if (best.label == "motorcycle" || best.label == "bicycle") 1.3f else 1.5f
+                realHeightM = if (label == "motorcycle" || label == "bicycle") 1.3f else 1.5f
             ) ?: Float.POSITIVE_INFINITY
 
             val relSpeed = computeRelativeSpeed(distance, ts)
@@ -126,9 +139,8 @@ class DetectionAnalyzer(
                 handleAlerts(level)
             }
 
-            val label = best.label ?: "unknown"
-            sendOverlayUpdate(best.box, bitmap.width.toFloat(), bitmap.height.toFloat(), distance, relSpeed, speed, ttc, label)
-            flog("best label=${best.label} score=${best.score} box=${best.box.x1},${best.box.y1},${best.box.x2},${best.box.y2} dist=$distance rel=$relSpeed rider=$speed ttc=$ttc")
+            sendOverlayUpdate(bestBox, frameW, frameH, distance, relSpeed, speed, ttc, label)
+            flog("best label=$label score=${best0.score} box=${bestBox.x1},${bestBox.y1},${bestBox.x2},${bestBox.y2} dist=$distance rel=$relSpeed rider=$speed ttc=$ttc")
 
             sendMetricsUpdate(distance, relSpeed, speed, ttc, level, label)
 
@@ -150,6 +162,18 @@ class DetectionAnalyzer(
         }
     }
 
+    private fun clampBox(b: Box, w: Float, h: Float): Box {
+        val x1 = b.x1.coerceIn(0f, w)
+        val y1 = b.y1.coerceIn(0f, h)
+        val x2 = b.x2.coerceIn(0f, w)
+        val y2 = b.y2.coerceIn(0f, h)
+        val left = minOf(x1, x2)
+        val top = minOf(y1, y2)
+        val right = maxOf(x1, x2)
+        val bottom = maxOf(y1, y2)
+        return Box(left, top, right, bottom)
+    }
+
     private fun stopActiveAlerts() {
         lastAlertLevel = 0
         val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -165,7 +189,9 @@ class DetectionAnalyzer(
                 val vib = ctx.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
                 if (vib.hasVibrator()) vib.vibrate(VibrationEffect.createOneShot(200, 150))
             }
-            if (AppPreferences.voice) tts?.speak("Pozor, objekt v pruhu", TextToSpeech.QUEUE_FLUSH, null, "tts_warn")
+            if (AppPreferences.voice) {
+                tts?.speak("Pozor, objekt v pruhu", TextToSpeech.QUEUE_FLUSH, null, "tts_warn")
+            }
         }
     }
 
@@ -201,7 +227,14 @@ class DetectionAnalyzer(
         ctx.sendBroadcast(i)
     }
 
-    private fun sendMetricsUpdate(dist: Float, relSpeed: Float, objectSpeed: Float, ttc: Float, level: Int, label: String) {
+    private fun sendMetricsUpdate(
+        dist: Float,
+        relSpeed: Float,
+        objectSpeed: Float,
+        ttc: Float,
+        level: Int,
+        label: String
+    ) {
         val i = Intent(ACTION_METRICS_UPDATE).setPackage(ctx.packageName)
         i.putExtra(EXTRA_DISTANCE, dist)
         i.putExtra(EXTRA_SPEED, relSpeed)
@@ -213,7 +246,14 @@ class DetectionAnalyzer(
     }
 
     private fun sendMetricsClear() {
-        sendMetricsUpdate(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY, 0, "")
+        sendMetricsUpdate(
+            Float.POSITIVE_INFINITY,
+            Float.POSITIVE_INFINITY,
+            Float.POSITIVE_INFINITY,
+            Float.POSITIVE_INFINITY,
+            0,
+            ""
+        )
     }
 
     private fun thresholdsForMode(mode: Int): AlertThresholds {
@@ -232,9 +272,17 @@ class DetectionAnalyzer(
     }
 
     private fun alertLevel(distance: Float, relSpeed: Float, ttc: Float, t: AlertThresholds): Int {
-        val red = (ttc.isFinite() && ttc <= t.ttcRed) || (distance.isFinite() && distance <= t.distRed) || (relSpeed.isFinite() && relSpeed >= t.speedRed)
+        val red =
+            (ttc.isFinite() && ttc <= t.ttcRed) ||
+                (distance.isFinite() && distance <= t.distRed) ||
+                (relSpeed.isFinite() && relSpeed >= t.speedRed)
         if (red) return 2
-        val orange = (ttc.isFinite() && ttc <= t.ttcOrange) || (distance.isFinite() && distance <= t.distOrange) || (relSpeed.isFinite() && relSpeed >= t.speedOrange)
+
+        val orange =
+            (ttc.isFinite() && ttc <= t.ttcOrange) ||
+                (distance.isFinite() && distance <= t.distOrange) ||
+                (relSpeed.isFinite() && relSpeed >= t.speedOrange)
+
         return if (orange) 1 else 0
     }
 
