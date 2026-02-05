@@ -2,23 +2,22 @@ package com.mcaw.ai
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.util.Log
 import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
+import com.mcaw.config.AppPreferences
 import com.mcaw.model.Box
 import com.mcaw.model.Detection
 import java.nio.FloatBuffer
-import kotlin.math.max
-import kotlin.math.min
 
 class YoloOnnxDetector(
     private val context: Context,
     private val modelName: String = "yolov8n.onnx",
     val inputSize: Int = 640,
-    val scoreThreshold: Float = 0.35f,
+    val scoreThreshold: Float = 0.25f,
     val iouThreshold: Float = 0.45f
 ) {
-
     private val env: OrtEnvironment = OrtEnvironment.getEnvironment()
     private val session: OrtSession
 
@@ -29,168 +28,101 @@ class YoloOnnxDetector(
 
     fun detect(bitmap: Bitmap): List<Detection> {
         val resized = Bitmap.createScaledBitmap(bitmap, inputSize, inputSize, false)
-        val input = preprocess(resized)
-
+        val input = preprocessNchw(resized)
         val inputName = session.inputNames.iterator().next()
         val outputs = session.run(mapOf(inputName to input))
-
         val out = outputs[0] as OnnxTensor
-        val fb = out.floatBuffer
-        val arr = FloatArray(fb.remaining())
-        fb.get(arr)
-
-        val detections = parseYoloOutput(arr, out.info.shape)
-        val scaleX = bitmap.width.toFloat() / inputSize
-        val scaleY = bitmap.height.toFloat() / inputSize
-        val scaled = detections.map {
-            val b = it.box
-            it.copy(
-                box = Box(
-                    b.x1 * scaleX,
-                    b.y1 * scaleY,
-                    b.x2 * scaleX,
-                    b.y2 * scaleY
-                )
-            )
-        }
-
-        return nonMaxSuppression(scaled.toMutableList())
+        val arr = out.floatBuffer.toArray()
+        return parseYoloOutput(arr, out.info.shape, bitmap.width, bitmap.height)
     }
 
-    private fun preprocess(bmp: Bitmap): OnnxTensor {
-        val data = FloatArray(1 * 3 * inputSize * inputSize)
-        var i = 0
+    private fun preprocessNchw(bmp: Bitmap): OnnxTensor {
+        val hw = inputSize * inputSize
+        val data = FloatArray(3 * hw)
+        var pixelIndex = 0
         for (y in 0 until inputSize) {
             for (x in 0 until inputSize) {
                 val px = bmp.getPixel(x, y)
-                data[i++] = ((px shr 16) and 0xFF) / 255f
-                data[i++] = ((px shr 8) and 0xFF) / 255f
-                data[i++] = (px and 0xFF) / 255f
+                data[pixelIndex] = ((px shr 16) and 0xFF) / 255f
+                data[hw + pixelIndex] = ((px shr 8) and 0xFF) / 255f
+                data[2 * hw + pixelIndex] = (px and 0xFF) / 255f
+                pixelIndex++
             }
         }
-        val shape = longArrayOf(1, 3, inputSize.toLong(), inputSize.toLong())
-        return OnnxTensor.createTensor(env, FloatBuffer.wrap(data), shape)
+        return OnnxTensor.createTensor(env, FloatBuffer.wrap(data), longArrayOf(1, 3, inputSize.toLong(), inputSize.toLong()))
     }
 
-    private fun parseYoloOutput(arr: FloatArray, shape: LongArray): List<Detection> {
+    private fun parseYoloOutput(arr: FloatArray, shape: LongArray, frameW: Int, frameH: Int): List<Detection> {
         if (shape.size < 3) return emptyList()
-        val dim1 = shape[1].toInt()
-        val dim2 = shape[2].toInt()
-        val interleaved = dim1 > dim2
-        val channels = if (interleaved) dim2 else dim1
-        val elements = if (interleaved) dim1 else dim2
-        if (channels < 5) return emptyList()
+        val rows: Int
+        val cols: Int
+        val channelFirst = shape[1] < shape[2]
+        if (channelFirst) {
+            cols = shape[1].toInt()
+            rows = shape[2].toInt()
+        } else {
+            rows = shape[1].toInt()
+            cols = shape[2].toInt()
+        }
+        if (cols < 6) return emptyList()
 
-        val results = mutableListOf<Detection>()
-        for (i in 0 until elements) {
+        val out = mutableListOf<Detection>()
+        for (i in 0 until rows) {
             val cx: Float
             val cy: Float
             val w: Float
             val h: Float
-            val bestScore: Float
-            val bestClass: Int
-            if (interleaved) {
-                val base = i * channels
+            val obj: Float
+            var bestClass = -1
+            var bestClassScore = 0f
+            if (channelFirst) {
+                cx = arr[i]
+                cy = arr[rows + i]
+                w = arr[2 * rows + i]
+                h = arr[3 * rows + i]
+                obj = arr[4 * rows + i]
+                for (c in 5 until cols) {
+                    val classScore = arr[c * rows + i]
+                    if (classScore > bestClassScore) {
+                        bestClassScore = classScore
+                        bestClass = c - 5
+                    }
+                }
+            } else {
+                val base = i * cols
                 cx = arr[base]
                 cy = arr[base + 1]
                 w = arr[base + 2]
                 h = arr[base + 3]
-                val (score, cls) = bestClassScoreInterleaved(arr, base + 4, channels - 4)
-                bestScore = score
-                bestClass = cls
-            } else {
-                cx = arr[i]
-                cy = arr[elements + i]
-                w = arr[(2 * elements) + i]
-                h = arr[(3 * elements) + i]
-                val (score, cls) = bestClassScoreChannelFirst(arr, elements, i, channels - 4)
-                bestScore = score
-                bestClass = cls
+                obj = arr[base + 4]
+                for (c in 5 until cols) {
+                    val classScore = arr[base + c]
+                    if (classScore > bestClassScore) {
+                        bestClassScore = classScore
+                        bestClass = c - 5
+                    }
+                }
             }
+            val score = obj * bestClassScore
+            if (score < scoreThreshold || bestClass < 0) continue
 
-            if (bestScore <= scoreThreshold) continue
+            val x1 = ((cx - w / 2f) / inputSize.toFloat() * frameW).coerceIn(0f, frameW.toFloat())
+            val y1 = ((cy - h / 2f) / inputSize.toFloat() * frameH).coerceIn(0f, frameH.toFloat())
+            val x2 = ((cx + w / 2f) / inputSize.toFloat() * frameW).coerceIn(0f, frameW.toFloat())
+            val y2 = ((cy + h / 2f) / inputSize.toFloat() * frameH).coerceIn(0f, frameH.toFloat())
+            val label = DetectionLabelMapper.cocoLabel(bestClass)
+            out.add(Detection(Box(x1, y1, x2, y2), score, label))
 
-            val normalized = cx <= 1f && cy <= 1f && w <= 1f && h <= 1f
-            val scale = if (normalized) inputSize.toFloat() else 1f
-            val x1 = (cx - w / 2f) * scale
-            val y1 = (cy - h / 2f) * scale
-            val x2 = (cx + w / 2f) * scale
-            val y2 = (cy + h / 2f) * scale
-            val label = labelForClassId(bestClass.toInt())
-
-            results.add(Detection(Box(x1, y1, x2, y2), bestScore, label))
-        }
-        return results
-    }
-
-    private fun bestClassScoreInterleaved(
-        arr: FloatArray,
-        start: Int,
-        count: Int
-    ): Pair<Float, Int> {
-        var bestScore = 0f
-        var bestClass = -1
-        for (i in 0 until count) {
-            val score = arr[start + i]
-            if (score > bestScore) {
-                bestScore = score
-                bestClass = i
-            }
-        }
-        return bestScore to bestClass
-    }
-
-    private fun bestClassScoreChannelFirst(
-        arr: FloatArray,
-        elements: Int,
-        index: Int,
-        classCount: Int
-    ): Pair<Float, Int> {
-        var bestScore = 0f
-        var bestClass = -1
-        for (cls in 0 until classCount) {
-            val score = arr[(4 + cls) * elements + index]
-            if (score > bestScore) {
-                bestScore = score
-                bestClass = cls
-            }
-        }
-        return bestScore to bestClass
-    }
-
-    private fun labelForClassId(classId: Int): String {
-        return when (classId) {
-            1 -> "bicycle"
-            2 -> "car"
-            3 -> "motorcycle"
-            5 -> "bus"
-            7 -> "truck"
-            else -> "unknown"
-        }
-    }
-
-    private fun nonMaxSuppression(list: MutableList<Detection>): List<Detection> {
-        val out = mutableListOf<Detection>()
-        list.sortByDescending { it.score }
-        while (list.isNotEmpty()) {
-            val best = list.removeAt(0)
-            out.add(best)
-            val it = list.iterator()
-            while (it.hasNext()) {
-                val other = it.next()
-                if (iou(best.box, other.box) > iouThreshold) it.remove()
+            if (AppPreferences.debugOverlay && out.size <= 3) {
+                Log.d("YoloOnnxDetector", "raw classId=$bestClass obj=$obj class=$bestClassScore score=$score label=$label")
             }
         }
         return out
     }
 
-    private fun iou(a: Box, b: Box): Float {
-        val x1 = max(a.x1, b.x1)
-        val y1 = max(a.y1, b.y1)
-        val x2 = min(a.x2, b.x2)
-        val y2 = min(a.y2, b.y2)
-        val inter = max(0f, x2 - x1) * max(0f, y2 - y1)
-        val union = a.area + b.area - inter
-        return if (union <= 0f) 0f else inter / union
+    private fun FloatBuffer.toArray(): FloatArray {
+        val dup = duplicate()
+        dup.rewind()
+        return FloatArray(dup.remaining()).also { dup.get(it) }
     }
 }

@@ -15,6 +15,7 @@ import com.mcaw.ai.DetectionAnalyzer
 import com.mcaw.app.BuildConfig
 import com.mcaw.app.R
 import com.mcaw.location.SpeedMonitor
+import com.mcaw.location.SpeedProvider
 import com.mcaw.service.McawService
 import com.mcaw.util.PublicLogWriter
 import com.mcaw.util.LabelMapper
@@ -31,6 +32,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var txtActivityLog: TextView
     private lateinit var txtBuildInfo: TextView
     private var pendingAction: PendingAction? = null
+    private lateinit var speedProvider: SpeedProvider
     private lateinit var speedMonitor: SpeedMonitor
     private val logLines: ArrayDeque<String> = ArrayDeque()
     private val speedHandler = Handler(Looper.getMainLooper())
@@ -103,7 +105,8 @@ class MainActivity : ComponentActivity() {
         txtDetectedObject = findViewById(R.id.txtDetectedObject)
         txtActivityLog = findViewById(R.id.txtActivityLog)
         txtBuildInfo = findViewById(R.id.txtBuildInfo)
-        speedMonitor = SpeedMonitor(this)
+        speedProvider = SpeedProvider(this)
+        speedMonitor = SpeedMonitor(speedProvider)
         activityLogFileName = "mcaw_activity_${sessionStamp()}.txt"
 
         txtBuildInfo.text =
@@ -263,7 +266,7 @@ class MainActivity : ComponentActivity() {
     private fun startSpeedUpdates() {
         speedHandler.post(object : Runnable {
             override fun run() {
-                val speedMps = com.mcaw.config.AppPreferences.lastSpeedMps
+                val speedMps = speedMonitor.pollCurrentSpeedMps()
                 val speedKmh = speedMps * 3.6f
                 txtRiderSpeed.text = "Rychlost jezdce: %.1f km/h".format(speedKmh)
                 speedHandler.postDelayed(this, 1000L)
