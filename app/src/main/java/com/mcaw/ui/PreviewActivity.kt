@@ -28,6 +28,7 @@ import com.mcaw.app.BuildConfig
 import com.mcaw.app.R
 import com.mcaw.config.AppPreferences
 import com.mcaw.location.SpeedMonitor
+import com.mcaw.location.SpeedProvider
 import com.mcaw.service.McawService
 import com.mcaw.util.LabelMapper
 import java.util.concurrent.Executors
@@ -37,6 +38,7 @@ class PreviewActivity : ComponentActivity() {
     private lateinit var previewView: PreviewView
     private lateinit var overlay: OverlayView
     private lateinit var analyzer: DetectionAnalyzer
+    private lateinit var speedProvider: SpeedProvider
     private lateinit var speedMonitor: SpeedMonitor
     private lateinit var txtDetectionLabel: TextView
     private val searchHandler = Handler(Looper.getMainLooper())
@@ -89,7 +91,8 @@ class PreviewActivity : ComponentActivity() {
         overlay = findViewById(R.id.overlay)
         val txtPreviewBuild = findViewById<TextView>(R.id.txtPreviewBuild)
         txtDetectionLabel = findViewById(R.id.txtDetectionLabel)
-        speedMonitor = SpeedMonitor(this)
+        speedProvider = SpeedProvider(this)
+        speedMonitor = SpeedMonitor(speedProvider)
         activityLogFileName = "mcaw_activity_${sessionStamp()}.txt"
         overlay.showTelemetry = AppPreferences.debugOverlay
         txtPreviewBuild.text =
@@ -140,7 +143,7 @@ class PreviewActivity : ComponentActivity() {
         } else {
             logActivity("models_loaded yolo=${yolo != null} efficient=${eff != null}")
         }
-        analyzer = DetectionAnalyzer(this, yolo, eff)
+        analyzer = DetectionAnalyzer(this, yolo, eff, speedProvider)
         startCamera()
     }
 
