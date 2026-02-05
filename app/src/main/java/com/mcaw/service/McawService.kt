@@ -24,6 +24,8 @@ import com.mcaw.ai.DetectionAnalyzer
 import com.mcaw.ai.EfficientDetTFLiteDetector
 import com.mcaw.ai.YoloOnnxDetector
 import com.mcaw.config.AppPreferences
+import com.mcaw.location.SpeedMonitor
+import com.mcaw.location.SpeedProvider
 import com.mcaw.util.PublicLogWriter
 import java.util.Locale
 import java.util.concurrent.Executors
@@ -40,6 +42,8 @@ class McawService : LifecycleService() {
     }
 
     private var analyzer: DetectionAnalyzer? = null
+    private lateinit var speedProvider: SpeedProvider
+    private lateinit var speedMonitor: SpeedMonitor
     private var cameraProvider: ProcessCameraProvider? = null
     private var analysisExecutor = Executors.newSingleThreadExecutor()
     private var analysisRunning = false
@@ -54,6 +58,8 @@ class McawService : LifecycleService() {
         super.onCreate()
         AppPreferences.init(this)
         serviceLogFileName = "mcaw_service_${sessionStamp()}.txt"
+        speedProvider = SpeedProvider(this)
+        speedMonitor = SpeedMonitor(speedProvider)
         startForegroundNotification()
         isRunning = true
         logService("service_create")
@@ -121,7 +127,7 @@ class McawService : LifecycleService() {
             logService("analysis_start_failed models_unavailable")
             return
         }
-        analyzer = DetectionAnalyzer(this, yolo, eff)
+        analyzer = DetectionAnalyzer(this, yolo, eff, speedProvider)
         val providerFuture = ProcessCameraProvider.getInstance(this)
         providerFuture.addListener({
             runCatching {
@@ -148,6 +154,7 @@ class McawService : LifecycleService() {
                     analysis
                 )
                 updateCameraCalibration(camera)
+                speedMonitor.start()
                 analysisRunning = true
                 retryAttempts = 0
                 logService("analysis_started")
@@ -167,6 +174,7 @@ class McawService : LifecycleService() {
         cameraProvider?.unbindAll()
         cameraProvider = null
         analyzer = null
+        speedMonitor.stop()
         cameraLifecycleOwner?.stop()
         cameraLifecycleOwner = null
         logService("analysis_stopped")
