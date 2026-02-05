@@ -60,6 +60,8 @@ class DetectionAnalyzer(
                 sendOverlayClear()
                 return
             }
+            val rotation = image.imageInfo.rotationDegrees
+            val bitmap = ImageUtils.rotateBitmap(rawBitmap, rotation)
             if (AppPreferences.debugOverlay) {
                 Log.d(
                     "DetectionAnalyzer",
@@ -70,9 +72,6 @@ class DetectionAnalyzer(
             if (AppPreferences.debugOverlay) {
                 Log.d("DetectionAnalyzer", "bitmap(afterRotate)=${bitmap.width}x${bitmap.height}")
             }
-
-            val rotation = image.imageInfo.rotationDegrees
-            val bitmap = ImageUtils.rotateBitmap(rawBitmap, rotation)
             val speed = speedProvider.getCurrent().speedMps
 
             val rawDetections = when (AppPreferences.selectedModel) {
