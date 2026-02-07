@@ -45,7 +45,7 @@ class DetectionAnalyzer(
 private val analyzerLogFileName: String = "mcaw_analyzer_${System.currentTimeMillis()}.txt"
 
     private val postProcessor = DetectionPostProcessor(
-        DetectionPostProcessor.Config(context = ctx, debug = AppPreferences.debugOverlay)
+        DetectionPostProcessor.Config(debug = AppPreferences.debugOverlay)
     )
 
     private val tracker = TemporalTracker(minConsecutiveForAlert = 3)
@@ -79,7 +79,7 @@ private val analyzerLogFileName: String = "mcaw_analyzer_${System.currentTimeMil
         try {
             val ts = System.currentTimeMillis()
 
-            val rawBitmap = ImageUtils.imageProxyToBitmap(image) ?: run {
+            val rawBitmap = ImageUtils.imageProxyToBitmap(ctx, image) ?: run {
                 sendOverlayClear()
                 return
             }
@@ -95,6 +95,10 @@ private val analyzerLogFileName: String = "mcaw_analyzer_${System.currentTimeMil
 
             // ROI (zúžené zorné pole) pro rychlost a stabilitu: typicky střed + spodní část obrazu
 
+            val roiLeftPx = 0f
+            val roiTopPx = 0f
+            val roiRightPx = frameW
+            val roiBottomPx = frameH
             val roiBoxPx = Box(roiLeftPx, roiTopPx, roiRightPx, roiBottomPx)
             lastFrameW = frameW
             lastFrameH = frameH
@@ -124,12 +128,12 @@ flog(
 
             
             val mappedDetections = rawDetections
-// ? Postprocess ve stejném frame (otočený bitmap)
+            // Postprocess ve stejném frame (otočený bitmap)
             val post = postProcessor.process(
                 mappedDetections,
                 frameW,
                 frameH,
-                ) else null
+                roiNorm = null
             )
             flog("counts raw=${post.counts.raw} thr=${post.counts.threshold} nms=${post.counts.nms} accepted=${post.counts.filters}")
 
