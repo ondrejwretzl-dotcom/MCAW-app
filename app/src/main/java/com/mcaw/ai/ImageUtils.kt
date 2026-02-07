@@ -13,8 +13,13 @@ import java.nio.ByteBuffer
 
 object ImageUtils {
 
+    // Reuse to reduce allocations in fallback YUV->JPEG path.
     private val jpegStream = ByteArrayOutputStream(1024 * 256)
 
+    /**
+     * Fast path for ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888.
+     * Fallback path for YUV_420_888 uses YuvImage->JPEG (slower).
+     */
     fun imageProxyToBitmap(image: ImageProxy): Bitmap? {
         return try {
             when (image.format) {
@@ -38,6 +43,7 @@ object ImageUtils {
 
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
 
+        // If rowStride == width*4 we can copy directly. Otherwise, compact rows.
         if (rowStride == width * 4) {
             bitmap.copyPixelsFromBuffer(buffer)
             return bitmap
@@ -47,11 +53,11 @@ object ImageUtils {
         buffer.get(tmp)
 
         val out = ByteBuffer.allocateDirect(width * height * 4)
-        var srcIdx = 0
+        var src = 0
         val rowBytes = width * 4
         for (row in 0 until height) {
-            out.put(tmp, srcIdx, rowBytes)
-            srcIdx += rowStride
+            out.put(tmp, src, rowBytes)
+            src += rowStride
         }
         out.rewind()
         bitmap.copyPixelsFromBuffer(out)
@@ -75,6 +81,9 @@ object ImageUtils {
         return Bitmap.createBitmap(source, 0, 0, source.width, source.height, matrix, true)
     }
 
+    /**
+     * YUV_420_888 (CameraX) -> NV21 (Y + VU interleaved), respects rowStride/pixelStride.
+     */
     private fun yuv420888ToNv21(image: ImageProxy): ByteArray {
         val yPlane = image.planes[0]
         val uPlane = image.planes[1]
@@ -87,6 +96,7 @@ object ImageUtils {
         val uvSize = width * height / 2
         val out = ByteArray(ySize + uvSize)
 
+        // Copy Y
         val yBuffer = yPlane.buffer
         val yRowStride = yPlane.rowStride
         val yPixelStride = yPlane.pixelStride
@@ -100,6 +110,7 @@ object ImageUtils {
             }
         }
 
+        // Copy VU (NV21)
         val uBuffer = uPlane.buffer
         val vBuffer = vPlane.buffer
         val uRowStride = uPlane.rowStride
@@ -121,6 +132,7 @@ object ImageUtils {
                 vIn += vPixelStride
             }
         }
+
         return out
     }
 }
