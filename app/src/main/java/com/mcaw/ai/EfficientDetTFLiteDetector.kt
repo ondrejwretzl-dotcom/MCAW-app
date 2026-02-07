@@ -7,15 +7,16 @@ import android.util.Log
 import com.mcaw.config.AppPreferences
 import com.mcaw.model.Box
 import com.mcaw.model.Detection
-import com.mcaw.util.PublicLogWriter
 import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Interpreter
 import org.tensorflow.lite.nnapi.NnApiDelegate
 import org.tensorflow.lite.support.common.FileUtil
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import kotlin.math.abs
-import kotlin.math.max
+import kotlin.math.ceil
+import kotlin.math.exp
+import kotlin.math.pow
+import kotlin.math.sqrt
 
 class EfficientDetTFLiteDetector(
     private val ctx: Context,
@@ -34,12 +35,15 @@ class EfficientDetTFLiteDetector(
     private val pixels = IntArray(inputSize * inputSize)
     private val inputBuffer: ByteBuffer
 
-    // Debug logging to file (so it ends up in your exported logs, not only Logcat).
-    private val detLogFileName: String = "mcaw_effdet_${System.currentTimeMillis()}.txt"
-    private fun dlog(msg: String) {
-        if (!AppPreferences.debugOverlay) return
-        PublicLogWriter.appendLogLine(ctx, detLogFileName, msg)
-    }
+    // 4-output layout reuse (common TF2 detection API)
+    private val outBoxes4 = Array(1) { Array(100) { FloatArray(4) } }   // [1,100,4] ymin,xmin,ymax,xmax (normalized)
+    private val outClasses4 = Array(1) { FloatArray(100) }
+    private val outScores4 = Array(1) { FloatArray(100) }
+    private val outCount4 = FloatArray(1)
+
+    // EfficientDet "raw" heads (class logits + box regression) need anchor decoding.
+    // For input 320, anchors = 19206 (levels 3..7, 3 scales, 3 aspect ratios).
+    private var anchorsCache: FloatArray? = null // packed [y, x, h, w] per anchor (all normalized 0..1)
 
     init {
         val model = FileUtil.loadMappedFile(ctx, "models/$modelName")
@@ -66,237 +70,271 @@ class EfficientDetTFLiteDetector(
 
         if (AppPreferences.debugOverlay && !modelInfoLogged) {
             modelInfoLogged = true
-            val outputs = (0 until outputCount).joinToString { idx ->
-                "out$idx=${interpreter.getOutputTensor(idx).shape().contentToString()}"
-            }
-            val msg =
-                "EfficientDet model=$modelLabel input=${interpreter.getInputTensor(0).shape().contentToString()} type=$inputType $outputs"
-            Log.d("EfficientDet", msg)
-            dlog(msg)
+            val outputs = (0 until outputCount)
+                .joinToString { idx -> "out$idx=${interpreter.getOutputTensor(idx).shape().contentToString()}" }
+            Log.d(
+                "EfficientDet",
+                "model=$modelLabel input=${interpreter.getInputTensor(0).shape().contentToString()} type=$inputType $outputs"
+            )
         }
 
-        return when {
-            outputCount >= 4 -> runFlexibleFourOutput(bitmap, input)
-            outputCount == 2 -> runTwoOutput(bitmap, input)
-            else -> emptyList()
-        }
+        return if (outputCount >= 4) runFourOutput(bitmap, input) else runTwoOutputWithAnchors(bitmap, input)
     }
 
-    /**
-     * Fix pro posunuté boxy (vlevo nahoře):
-     * Na různých TF Lite exportech se liší pořadí výstupů (indexy), ale tvůj kód je měl natvrdo 0..3.
-     * Když se zamění (např. boxes <-> scores), vzniknou malé hodnoty a po clampu skončí box u (0,0).
-     *
-     * Proto výstupy mapujeme podle SHAPE, ne podle indexu.
-     */
-    private fun runFlexibleFourOutput(bitmap: Bitmap, input: ByteBuffer): List<Detection> {
-        // Find tensors by shape signature.
-        var boxesIdx = -1
-        var scoresIdx = -1
-        var classesIdx = -1
-        var countIdx = -1
-
-        for (i in 0 until interpreter.outputTensorCount) {
-            val sh = interpreter.getOutputTensor(i).shape()
-            // count: [1] or [1,1]
-            if (countIdx < 0 && (sh.contentEquals(intArrayOf(1)) || sh.contentEquals(intArrayOf(1, 1)))) {
-                countIdx = i
-                continue
-            }
-            // boxes: [1,N,4]
-            if (boxesIdx < 0 && sh.size == 3 && sh[0] == 1 && sh[2] == 4) {
-                boxesIdx = i
-                continue
-            }
-            // scores/classes: [1,N]
-            if (sh.size == 2 && sh[0] == 1) {
-                if (scoresIdx < 0) scoresIdx = i else if (classesIdx < 0) classesIdx = i
-            }
-        }
-
-        // Fallback (older assumption).
-        if (boxesIdx < 0 || scoresIdx < 0 || classesIdx < 0 || countIdx < 0) {
-            boxesIdx = 0
-            classesIdx = 1
-            scoresIdx = 2
-            countIdx = 3
-        }
-
-        val boxesShape = interpreter.getOutputTensor(boxesIdx).shape()
-        val n = boxesShape[1].coerceIn(1, 1000) // usually 100
-        val outBoxes = Array(1) { Array(n) { FloatArray(4) } }
-        val outScores = Array(1) { FloatArray(n) }
-        val outClasses = Array(1) { FloatArray(n) }
-        val outCount = FloatArray(1)
-
-        val outputs = hashMapOf<Int, Any>(
-            boxesIdx to outBoxes,
-            scoresIdx to outScores,
-            classesIdx to outClasses,
-            countIdx to outCount
-        )
+    private fun runFourOutput(bitmap: Bitmap, input: ByteBuffer): List<Detection> {
+        outCount4[0] = 0f
+        val outputs = mapOf(0 to outBoxes4, 1 to outClasses4, 2 to outScores4, 3 to outCount4)
         interpreter.runForMultipleInputsOutputs(arrayOf(input), outputs)
 
-        val validCount = outCount[0].toInt().coerceIn(0, n)
-        val frameW = bitmap.width.toFloat()
-        val frameH = bitmap.height.toFloat()
-
-        val result = ArrayList<Detection>(max(4, validCount))
-
+        val validCount = outCount4[0].toInt().coerceIn(0, 100)
+        val result = ArrayList<Detection>(validCount)
         for (i in 0 until validCount) {
-            val score = outScores[0][i]
+            val score = outScores4[0][i]
             if (score < scoreThreshold) continue
-
-            val classId = outClasses[0][i].toInt()
+            val classId = outClasses4[0][i].toInt()
             val label = DetectionLabelMapper.cocoLabel(classId)
-            val raw = outBoxes[0][i]
-
-            // Official TF Object Detection API EfficientDet Lite: boxes are normalized corners [ymin,xmin,ymax,xmax].
-            val decoded = decodeOfficialCornersOrPixels(raw, frameW, frameH) ?: continue
-
+            val box = outBoxes4[0][i] // [ymin,xmin,ymax,xmax] normalized
             result.add(
                 Detection(
-                    box = decoded,
+                    box = Box(
+                        (box[1] * bitmap.width).coerceIn(0f, bitmap.width.toFloat()),
+                        (box[0] * bitmap.height).coerceIn(0f, bitmap.height.toFloat()),
+                        (box[3] * bitmap.width).coerceIn(0f, bitmap.width.toFloat()),
+                        (box[2] * bitmap.height).coerceIn(0f, bitmap.height.toFloat())
+                    ),
                     score = score,
                     label = label
                 )
             )
-
-            if (AppPreferences.debugOverlay && i < 5) {
-                dlog("i=$i score=$score classId=$classId raw=${raw.contentToString()} box=${decoded.x1},${decoded.y1},${decoded.x2},${decoded.y2}")
-            }
         }
-
-        return result
-    }
-
-    private fun runTwoOutput(bitmap: Bitmap, input: ByteBuffer): List<Detection> {
-        // Some exports: [1,N,4] + [1,N,C] (scores per class) or swapped order.
-        val sh0 = interpreter.getOutputTensor(0).shape()
-        val sh1 = interpreter.getOutputTensor(1).shape()
-
-        val boxesIdx = if (sh0.size >= 3 && sh0.last() == 4) 0 else 1
-        val scoresIdx = 1 - boxesIdx
-
-        val boxesShape = interpreter.getOutputTensor(boxesIdx).shape()
-        val n = boxesShape.getOrNull(1)?.coerceIn(1, 20000) ?: 1
-        val classesN = interpreter.getOutputTensor(scoresIdx).shape().last().coerceAtLeast(1)
-
-        val outBoxes = Array(1) { Array(n) { FloatArray(4) } }
-        val outScores = Array(1) { Array(n) { FloatArray(classesN) } }
-
-        val outputs = hashMapOf<Int, Any>(
-            boxesIdx to outBoxes,
-            scoresIdx to outScores
-        )
-
-        interpreter.runForMultipleInputsOutputs(arrayOf(input), outputs)
-
-        val frameW = bitmap.width.toFloat()
-        val frameH = bitmap.height.toFloat()
-
-        val interested = listOf(0, 1, 2, 3, 5, 7, 4, 6, 8).filter { it < classesN }
-        val result = ArrayList<Detection>(64)
-
-        for (i in 0 until n) {
-            var bestC = -1
-            var bestS = 0f
-            val row = outScores[0][i]
-            for (c in interested) {
-                val s = row[c]
-                if (s > bestS) {
-                    bestS = s
-                    bestC = c
-                }
-            }
-            if (bestS < scoreThreshold || bestC < 0) continue
-
-            val raw = outBoxes[0][i]
-            val decoded = decodeOfficialCornersOrPixels(raw, frameW, frameH) ?: continue
-
-            result.add(
-                Detection(
-                    box = decoded,
-                    score = bestS,
-                    label = DetectionLabelMapper.cocoLabel(bestC)
-                )
-            )
-
-            if (AppPreferences.debugOverlay && result.size <= 5) {
-                dlog("i=$i score=$bestS classId=$bestC raw=${raw.contentToString()} box=${decoded.x1},${decoded.y1},${decoded.x2},${decoded.y2}")
-            }
-        }
-
         return result
     }
 
     /**
-     * Deterministický dekodér pro oficiální EfficientDet Lite exporty:
-     * - očekává [ymin,xmin,ymax,xmax] NORMALIZED 0..1
-     * - nebo stejný formát v PIXELECH 0..inputSize (některé konverze)
+     * EfficientDet-Lite "raw" heads:
+     * - outScores: [1, anchors, numClasses]  (already in 0..1 for many exports; if logits, values > 1 will appear)
+     * - outBoxes:  [1, anchors, 4]          (box regression deltas dy,dx,dh,dw)
      *
-     * Nezkouší "center-size" (to by byl jiný export). Když se ukáže, že raw nesedí,
-     * logy v mcaw_effdet_*.txt to prozradí a upravíme přesně.
+     * We must decode using generated anchors (levels 3..7, 3 scales, 3 aspect ratios, anchorScale=4).
      */
-    private fun decodeOfficialCornersOrPixels(raw: FloatArray, frameW: Float, frameH: Float): Box? {
-        if (raw.size < 4) return null
-        val inputSizeF = inputSize.toFloat().coerceAtLeast(1f)
+    private fun runTwoOutputWithAnchors(bitmap: Bitmap, input: ByteBuffer): List<Detection> {
+        val shape0 = interpreter.getOutputTensor(0).shape()
+        val shape1 = interpreter.getOutputTensor(1).shape()
 
-        val a0 = raw[0]
-        val a1 = raw[1]
-        val a2 = raw[2]
-        val a3 = raw[3]
+        val anchorsN = (shape0.getOrNull(1) ?: 0).coerceAtLeast(shape1.getOrNull(1) ?: 0)
+        val classesN = maxOf(shape0.last(), shape1.last())
 
-        // Detect pixels-vs-normalized.
-        val maxV = max(max(a0, a1), max(a2, a3))
-        val minV = minOf(a0, a1, a2, a3)
-        val looksPixel = minV >= 0f && maxV > 2f && maxV <= inputSizeF * 2.0f
+        // Allocate per-frame arrays (TFLite requires Java arrays), but keep sizes minimal.
+        val rawBoxes = Array(1) { Array(anchorsN) { FloatArray(4) } }
+        val rawScores = Array(1) { Array(anchorsN) { FloatArray(classesN) } }
 
-        val y1n = if (looksPixel) a0 / inputSizeF else a0
-        val x1n = if (looksPixel) a1 / inputSizeF else a1
-        val y2n = if (looksPixel) a2 / inputSizeF else a2
-        val x2n = if (looksPixel) a3 / inputSizeF else a3
+        val outputs = mutableMapOf<Int, Any>()
+        // Identify which output is boxes vs scores by last dimension.
+        if (shape0.last() == 4) {
+            outputs[0] = rawBoxes
+            outputs[1] = rawScores
+        } else {
+            outputs[0] = rawScores
+            outputs[1] = rawBoxes
+        }
 
-        if (!x1n.isFinite() || !y1n.isFinite() || !x2n.isFinite() || !y2n.isFinite()) return null
-        if (x2n - x1n <= 0f || y2n - y1n <= 0f) return null
+        interpreter.runForMultipleInputsOutputs(arrayOf(input), outputs)
 
-        // Reject wild values (helps avoid swapped outputs creating nonsense).
-        val maxAbs = maxOf(abs(x1n), abs(y1n), abs(x2n), abs(y2n))
-        if (maxAbs > 3f) return null
+        val anchors = getOrCreateAnchorsPacked(anchorsN)
 
-        val left = (x1n * frameW).coerceIn(0f, frameW)
-        val top = (y1n * frameH).coerceIn(0f, frameH)
-        val right = (x2n * frameW).coerceIn(0f, frameW)
-        val bottom = (y2n * frameH).coerceIn(0f, frameH)
+        // COCO "vehicle-like" focus (keeps performance; labels still mapped through DetectionLabelMapper).
+        val interestedClassIds = intArrayOf(0, 1, 2, 3, 4, 5, 6, 7, 8)
+            .filter { it < classesN }
+            .toIntArray()
 
-        if (right - left <= 1f || bottom - top <= 1f) return null
-        return Box(left, top, right, bottom)
+        val out = ArrayList<Detection>(16)
+        for (i in 0 until anchorsN) {
+            // pick best class among interested ones
+            var bestClass = -1
+            var bestScore = 0f
+            val sRow = rawScores[0][i]
+            for (c in interestedClassIds) {
+                val s = sRow[c]
+                if (s > bestScore) {
+                    bestScore = s
+                    bestClass = c
+                }
+            }
+            // Heuristic: if model gives logits, they are often > 1. Convert with sigmoid.
+            val prob = if (bestScore > 1.5f) sigmoid(bestScore) else bestScore
+            if (prob < scoreThreshold || bestClass < 0) continue
+
+            val b = rawBoxes[0][i] // dy,dx,dh,dw
+            val aOff = i * 4
+            val ay = anchors[aOff]
+            val ax = anchors[aOff + 1]
+            val ah = anchors[aOff + 2]
+            val aw = anchors[aOff + 3]
+
+            val yCenter = b[0] * ah + ay
+            val xCenter = b[1] * aw + ax
+            val h = exp(b[2]) * ah
+            val w = exp(b[3]) * aw
+
+            var yMin = yCenter - h / 2f
+            var xMin = xCenter - w / 2f
+            var yMax = yCenter + h / 2f
+            var xMax = xCenter + w / 2f
+
+            // clip normalized
+            yMin = yMin.coerceIn(0f, 1f)
+            xMin = xMin.coerceIn(0f, 1f)
+            yMax = yMax.coerceIn(0f, 1f)
+            xMax = xMax.coerceIn(0f, 1f)
+
+            val label = DetectionLabelMapper.cocoLabel(bestClass)
+
+            out.add(
+                Detection(
+                    box = Box(
+                        xMin * bitmap.width,
+                        yMin * bitmap.height,
+                        xMax * bitmap.width,
+                        yMax * bitmap.height
+                    ),
+                    score = prob,
+                    label = label
+                )
+            )
+        }
+
+        if (AppPreferences.debugOverlay && out.isNotEmpty()) {
+            // minimal debug for field verification
+            val top = out.maxByOrNull { it.score }
+            Log.d(
+                "EfficientDet",
+                "decoded anchors=$anchorsN classes=$classesN top=${top?.label} score=${top?.score} box=${top?.box?.x1},${top?.box?.y1},${top?.box?.x2},${top?.box?.y2}"
+            )
+        }
+
+        return out
+    }
+
+    private fun sigmoid(x: Float): Float {
+        // stable-ish sigmoid for small positives/negatives typical of TFLite logits
+        return (1f / (1f + exp(-x)))
+    }
+
+    private fun getOrCreateAnchorsPacked(expectedAnchors: Int): FloatArray {
+        val cached = anchorsCache
+        if (cached != null && cached.size == expectedAnchors * 4) return cached
+
+        val packed = generateAnchorsPacked(
+            inputSize = inputSize,
+            minLevel = 3,
+            maxLevel = 7,
+            numScales = 3,
+            aspectRatios = floatArrayOf(1.0f, 2.0f, 0.5f),
+            anchorScale = 4.0f
+        )
+
+        // Defensive: if a model variant changes anchors, keep something usable (trim/extend).
+        anchorsCache = when {
+            packed.size == expectedAnchors * 4 -> packed
+            packed.size > expectedAnchors * 4 -> packed.copyOf(expectedAnchors * 4)
+            else -> {
+                // extend by repeating last anchor (should not happen for lite0 320)
+                val ext = FloatArray(expectedAnchors * 4)
+                packed.copyInto(ext, 0, 0, packed.size)
+                for (i in packed.size until ext.size) ext[i] = packed[packed.size - 1]
+                ext
+            }
+        }
+
+        if (AppPreferences.debugOverlay) {
+            Log.d("EfficientDet", "anchors generated=${anchorsCache!!.size / 4} expected=$expectedAnchors input=$inputSize")
+        }
+        return anchorsCache!!
+    }
+
+    private fun generateAnchorsPacked(
+        inputSize: Int,
+        minLevel: Int,
+        maxLevel: Int,
+        numScales: Int,
+        aspectRatios: FloatArray,
+        anchorScale: Float
+    ): FloatArray {
+        val anchors = ArrayList<Float>(expectedCapacity(inputSize, minLevel, maxLevel, numScales, aspectRatios.size))
+
+        val scalesPerOctave = numScales.coerceAtLeast(1)
+        for (level in minLevel..maxLevel) {
+            val stride = 2.0.pow(level.toDouble()).toFloat()
+            val feat = ceil(inputSize / stride).toInt().coerceAtLeast(1)
+
+            // normalized base scale
+            val baseScale = (anchorScale * stride) / inputSize.toFloat()
+
+            for (y in 0 until feat) {
+                val yCenter = (y + 0.5f) / feat.toFloat()
+                for (x in 0 until feat) {
+                    val xCenter = (x + 0.5f) / feat.toFloat()
+
+                    for (s in 0 until scalesPerOctave) {
+                        val octaveScale = 2.0.pow(s.toDouble() / scalesPerOctave.toDouble()).toFloat()
+                        val scale = baseScale * octaveScale
+
+                        for (ar in aspectRatios) {
+                            val ratioSqrt = sqrt(ar)
+                            val anchorH = scale / ratioSqrt
+                            val anchorW = scale * ratioSqrt
+
+                            anchors.add(yCenter)
+                            anchors.add(xCenter)
+                            anchors.add(anchorH)
+                            anchors.add(anchorW)
+                        }
+                    }
+                }
+            }
+        }
+        // packed [y,x,h,w]
+        val out = FloatArray(anchors.size)
+        for (i in anchors.indices) out[i] = anchors[i]
+        return out
+    }
+
+    private fun expectedCapacity(
+        inputSize: Int,
+        minLevel: Int,
+        maxLevel: Int,
+        numScales: Int,
+        numRatios: Int
+    ): Int {
+        var total = 0
+        for (level in minLevel..maxLevel) {
+            val stride = 2.0.pow(level.toDouble()).toFloat()
+            val feat = ceil(inputSize / stride).toInt().coerceAtLeast(1)
+            total += feat * feat
+        }
+        return total * numScales * numRatios * 4
     }
 
     private fun preprocess(bitmap: Bitmap): ByteBuffer {
         inputBuffer.rewind()
         bitmap.getPixels(pixels, 0, inputSize, 0, 0, inputSize, inputSize)
 
-        if (inputType == DataType.FLOAT32) {
-            for (i in pixels.indices) {
-                val px = pixels[i]
-                val r = (px shr 16) and 0xFF
-                val g = (px shr 8) and 0xFF
-                val b = px and 0xFF
+        var i = 0
+        for (px in pixels) {
+            val r = (px shr 16) and 0xFF
+            val g = (px shr 8) and 0xFF
+            val b = px and 0xFF
+
+            if (inputType == DataType.FLOAT32) {
                 inputBuffer.putFloat(r / 255f)
                 inputBuffer.putFloat(g / 255f)
                 inputBuffer.putFloat(b / 255f)
-            }
-        } else {
-            for (i in pixels.indices) {
-                val px = pixels[i]
-                val r = (px shr 16) and 0xFF
-                val g = (px shr 8) and 0xFF
-                val b = px and 0xFF
+            } else {
                 inputBuffer.put(r.toByte())
                 inputBuffer.put(g.toByte())
                 inputBuffer.put(b.toByte())
             }
+            i++
         }
 
         inputBuffer.rewind()
