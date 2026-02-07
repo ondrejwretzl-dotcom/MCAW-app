@@ -215,6 +215,35 @@ private val analyzerLogFileName: String = "mcaw_analyzer_${System.currentTimeMil
         }
     }
 
+
+    /**
+     * Prioritizace cílového objektu (středový pruh + spodní část obrazu).
+     * Cíl: méně přeskakování mezi objekty => stabilnější TTC a včasnější alerty.
+     */
+    private fun priorityScore(d: Detection, frameW: Int, frameH: Int): Float {
+        val b = d.box
+        val w = frameW.toFloat().coerceAtLeast(1f)
+        val h = frameH.toFloat().coerceAtLeast(1f)
+
+        // 0..1: 1 = přesně uprostřed
+        val centerDistNorm = (abs(b.cx - w / 2f) / (w / 2f)).coerceIn(0f, 1f)
+        val centerBias = 1f - centerDistNorm
+
+        // 0..1: 1 = dole (blíž), 0 = nahoře (dál / méně relevantní)
+        val bottomBias = (b.y2 / h).coerceIn(0f, 1f)
+
+        // 0..1: velikost boxu (větší = pravděpodobně blíž / relevantnější)
+        val areaNorm = (b.area / (w * h)).coerceIn(0f, 1f)
+
+        // kombinace: conf je stále primární, ale preferujeme střed + dole
+        return (
+            0.65f * d.score +
+            0.22f * centerBias +
+            0.10f * bottomBias +
+            0.03f * areaNorm
+        )
+    }
+
     private fun clampBox(b: Box, w: Float, h: Float): Box {
         val x1 = b.x1.coerceIn(0f, w)
         val y1 = b.y1.coerceIn(0f, h)
