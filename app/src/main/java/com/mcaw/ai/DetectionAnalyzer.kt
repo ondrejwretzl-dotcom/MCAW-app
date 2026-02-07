@@ -11,6 +11,7 @@ import android.util.Log
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import com.mcaw.app.R
+import com.mcaw.app.MCAWApp
 import com.mcaw.config.AppPreferences
 import com.mcaw.location.SpeedProvider
 import com.mcaw.model.Box
@@ -62,8 +63,14 @@ private val analyzerLogFileName: String = "mcaw_analyzer_${System.currentTimeMil
 
     init {
         if (AppPreferences.voice) {
-            tts = TextToSpeech(ctx) { status ->
-                if (status == TextToSpeech.SUCCESS) tts?.language = Locale.getDefault()
+            // Reuse app-level TTS if available (avoid double init).
+            tts = (ctx.applicationContext as? MCAWApp)?.getTts()
+            if (tts == null) {
+                runCatching {
+                    tts = TextToSpeech(ctx) { status ->
+                        if (status == TextToSpeech.SUCCESS) tts?.language = Locale.getDefault()
+                    }
+                }
             }
         }
     }
@@ -72,7 +79,7 @@ private val analyzerLogFileName: String = "mcaw_analyzer_${System.currentTimeMil
         try {
             val ts = System.currentTimeMillis()
 
-            val rawBitmap = ImageUtils.imageProxyToBitmap(image, ctx) ?: run {
+            val rawBitmap = ImageUtils.imageProxyToBitmap(image) ?: run {
                 sendOverlayClear()
                 return
             }
@@ -98,24 +105,8 @@ private val analyzerLogFileName: String = "mcaw_analyzer_${System.currentTimeMil
             lastFrameH = frameH
             lastRoiBox = roiBoxPx
 
-            val detectBitmap = if (roiEnabled) {
-                try {
-                    android.graphics.Bitmap.createBitmap(
-                        bitmap,
-                        roiLeftPx.toInt(),
-                        roiTopPx.toInt(),
-                        (roiRightPx - roiLeftPx).toInt(),
-                        (roiBottomPx - roiTopPx).toInt()
-                    )
-                } catch (e: Exception) {
-                    // fallback: pokud by ROI vyjela mimo, jedeme full-frame
-                    bitmap
-                }
-            } else {
-                bitmap
-            }
-
-            flog(
+            val detectBitmap = bitmap
+flog(
                 "frame proxy=${image.width}x${image.height} rot=$rotation " +
                     "bmpRaw=${rawBitmap.width}x${rawBitmap.height} bmpRot=${bitmap.width}x${bitmap.height} " +
                     "model=${AppPreferences.selectedModel}"
@@ -137,25 +128,19 @@ private val analyzerLogFileName: String = "mcaw_analyzer_${System.currentTimeMil
             }
 
             
-            val mappedDetections = if (roiEnabled && detectBitmap !== bitmap) {
-                val dx = roiLeftPx
-                val dy = roiTopPx
-                rawDetections.map { d ->
-                    d.copy(
-                        box = Box(
-                            d.box.x1 + dx,
-                            d.box.y1 + dy,
-                            d.box.x2 + dx,
-                            d.box.y2 + dy
-                        )
-                    )
-                }
-            } else {
-                rawDetections
-            }
-
-            // ? Postprocess ve stejném frame (otočený bitmap)
-            val post = postProcessor.process(mappedDetections, frameW, frameH)
+            val mappedDetections = rawDetections
+// ? Postprocess ve stejném frame (otočený bitmap)
+            val post = postProcessor.process(
+                mappedDetections,
+                frameW,
+                frameH,
+                roiNorm = if (roiEnabled) DetectionPostProcessor.RectNorm(
+                    AppPreferences.roiLeftNorm,
+                    AppPreferences.roiTopNorm,
+                    AppPreferences.roiRightNorm,
+                    AppPreferences.roiBottomNorm
+                ) else null
+            )
             flog("counts raw=${post.counts.raw} thr=${post.counts.threshold} nms=${post.counts.nms} accepted=${post.counts.filters}")
 
             val tracked = tracker.update(post.accepted)

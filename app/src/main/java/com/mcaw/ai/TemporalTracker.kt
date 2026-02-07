@@ -32,11 +32,20 @@ class TemporalTracker(
     fun update(detections: List<Detection>): List<TrackedDetection> {
         val unmatched = detections.toMutableList()
 
-        tracks.forEach { track ->
-            val best = unmatched
-                .filter { (it.label == track.detection.label) }
-                .maxByOrNull { iou(track.detection.box, it.box) }
-            if (best != null && iou(track.detection.box, best.box) >= iouMatchThreshold) {
+        for (track in tracks) {
+            var best: Detection? = null
+            var bestIou = 0f
+
+            for (cand in unmatched) {
+                if (cand.label != track.detection.label) continue
+                val iouVal = iou(track.detection.box, cand.box)
+                if (iouVal > bestIou) {
+                    bestIou = iouVal
+                    best = cand
+                }
+            }
+
+            if (best != null && bestIou >= iouMatchThreshold) {
                 track.detection = blend(track.detection, best)
                 track.consecutive += 1
                 track.misses = 0
@@ -47,7 +56,7 @@ class TemporalTracker(
             }
         }
 
-        unmatched.forEach { det ->
+        for (det in unmatched) {
             tracks.add(Track(nextId++, det, 1, 0))
         }
 

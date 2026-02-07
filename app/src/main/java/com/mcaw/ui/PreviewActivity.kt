@@ -31,6 +31,7 @@ import com.mcaw.location.SpeedMonitor
 import com.mcaw.location.SpeedProvider
 import com.mcaw.service.McawService
 import com.mcaw.util.LabelMapper
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 class PreviewActivity : ComponentActivity() {
@@ -38,6 +39,8 @@ class PreviewActivity : ComponentActivity() {
     private lateinit var previewView: PreviewView
     private lateinit var overlay: OverlayView
     private lateinit var analyzer: DetectionAnalyzer
+
+    private lateinit var analysisExecutor: ExecutorService
     private lateinit var speedProvider: SpeedProvider
     private lateinit var speedMonitor: SpeedMonitor
     private lateinit var txtDetectionLabel: TextView
@@ -167,15 +170,44 @@ class PreviewActivity : ComponentActivity() {
         startCamera()
     }
 
-    private fun startCamera() {
+        private fun startCamera() {
         val providerFuture = ProcessCameraProvider.getInstance(this)
         providerFuture.addListener({
             val provider = providerFuture.get()
             provider.unbindAll()
 
-            val preview = androidx.camera.core.Preview.Builder().build().also {
-                it.setSurfaceProvider(previewView.surfaceProvider)
+            val preview = androidx.camera.core.Preview.Builder()
+                .setTargetRotation(previewView.display.rotation)
+                .build().also {
+                    it.setSurfaceProvider(previewView.surfaceProvider)
+                }
+
+            if (!::analysisExecutor.isInitialized) {
+                analysisExecutor = Executors.newSingleThreadExecutor { r ->
+                    Thread(r, "mcaw-analysis").apply { isDaemon = true }
+                }
             }
+
+            val analysis = ImageAnalysis.Builder()
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
+                .setTargetResolution(Size(960, 540))
+                .setTargetRotation(previewView.display.rotation)
+                .build()
+                .apply {
+                    setAnalyzer(analysisExecutor, analyzer)
+                }
+
+            val camera = provider.bindToLifecycle(
+                this,
+                CameraSelector.DEFAULT_BACK_CAMERA,
+                preview,
+                analysis
+            )
+            updateCameraCalibration(camera)
+        }, ContextCompat.getMainExecutor(this))
+    }
+
 
             val analysis = ImageAnalysis.Builder()
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
@@ -198,6 +230,9 @@ class PreviewActivity : ComponentActivity() {
         unregisterReceiver(receiver)
         speedMonitor.stop()
         stopSearching()
+        if (::analysisExecutor.isInitialized) {
+            analysisExecutor.shutdown()
+        }
         super.onDestroy()
     }
 

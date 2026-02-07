@@ -22,31 +22,29 @@ object AppPreferences {
         migrateIfNeeded()
     }
 
+    fun ensureInit(ctx: Context) {
+        if (!::prefs.isInitialized) init(ctx)
+    }
+
     private fun migrateIfNeeded() {
-        // One-time migration: shift default ROI up by 15% to avoid dashboard / cockpit at the bottom.
+        // One-time migration: shift default ROI up by 15% (avoid dashboard/cockpit in bottom area).
         val key = "roi_migrated_v1"
         if (prefs.getBoolean(key, false)) return
 
-        val storedTop = prefs.getFloat("roiTopNorm", 0.10f)
-        val storedBottom = prefs.getFloat("roiBottomNorm", 0.80f)
+        val storedTop = prefs.getFloat("roiTopNorm", 0.25f)
+        val storedBottom = prefs.getFloat("roiBottomNorm", 0.95f)
 
-        // Migrate only if user likely never customized ROI (old defaults).
-        val isOldDefault = kotlin.math.abs(storedTop - 0.25f) < 0.001f && kotlin.math.abs(storedBottom - 0.95f) < 0.001f
-        if (isOldDefault) {
-            prefs.edit()
-                .putFloat("roiTopNorm", 0.10f)
-                .putFloat("roiBottomNorm", 0.80f)
-                .putBoolean(key, true)
-                .apply()
-        } else {
-            prefs.edit().putBoolean(key, true).apply()
-        }
-    }
+        val isOldDefault =
+            kotlin.math.abs(storedTop - 0.25f) < 0.001f &&
+                kotlin.math.abs(storedBottom - 0.95f) < 0.001f
 
-    fun ensureInit(ctx: Context) {
-        if (!::prefs.isInitialized) {
-            init(ctx)
-        }
+        prefs.edit().apply {
+            if (isOldDefault) {
+                putFloat("roiTopNorm", 0.10f)
+                putFloat("roiBottomNorm", 0.80f)
+            }
+            putBoolean(key, true)
+        }.apply()
     }
 
     // MODE SETTINGS
@@ -55,6 +53,7 @@ object AppPreferences {
         set(v) = prefs.edit().putInt("mode", v).apply()
 
     // MODEL SETTINGS
+    // 0 = YOLO (ONNX), 1 = EfficientDet (TFLite)
     var selectedModel: Int
         get() = prefs.getInt("model", 1)
         set(v) = prefs.edit().putInt("model", v).apply()
@@ -76,8 +75,7 @@ object AppPreferences {
         get() = prefs.getBoolean("debugOverlay", false)
         set(v) = prefs.edit().putBoolean("debugOverlay", v).apply()
 
-    // ROI (Region of Interest) - zúžení oblasti detekce pro rychlost a stabilitu
-    // hodnoty jsou normalizované v rozsahu 0..1 vůči OTOČENÉMU bitmapu (tj. tomu, který jde do detektoru / overlay)
+    // ROI (Region of Interest) - normalizované 0..1 vůči bitmapu v orientaci pro detekci/overlay
     var roiEnabled: Boolean
         get() = prefs.getBoolean("roiEnabled", true)
         set(v) = prefs.edit().putBoolean("roiEnabled", v).apply()
@@ -98,7 +96,7 @@ object AppPreferences {
         get() = prefs.getFloat("roiBottomNorm", 0.80f)
         set(v) = prefs.edit().putFloat("roiBottomNorm", v.coerceIn(0f, 1f)).apply()
 
-    // YOLO ONNX input size (nižší = rychlejší, ale může klesnout přesnost)
+    // YOLO ONNX input size
     var yoloInputSize: Int
         get() = prefs.getInt("yoloInputSize", 480)
         set(v) = prefs.edit().putInt("yoloInputSize", v.coerceIn(320, 640)).apply()
@@ -136,4 +134,3 @@ object AppPreferences {
         get() = prefs.getFloat("user_speed_red", 5f)
         set(v) = prefs.edit().putFloat("user_speed_red", v).apply()
 }
-

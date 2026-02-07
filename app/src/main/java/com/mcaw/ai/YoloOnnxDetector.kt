@@ -21,9 +21,20 @@ class YoloOnnxDetector(
     private val env: OrtEnvironment = OrtEnvironment.getEnvironment()
     private val session: OrtSession
 
+    // Reuse to reduce GC.
+    private val pixels = IntArray(inputSize * inputSize)
+    private val chw = FloatArray(3 * inputSize * inputSize)
+
     init {
         val bytes = context.assets.open("models/$modelName").readBytes()
-        session = env.createSession(bytes)
+
+        val opts = OrtSession.SessionOptions().apply {
+            setIntraOpNumThreads(4)
+            setInterOpNumThreads(1)
+            setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+        }
+
+        session = env.createSession(bytes, opts)
     }
 
     fun detect(bitmap: Bitmap): List<Detection> {
@@ -41,27 +52,25 @@ class YoloOnnxDetector(
     }
 
     private fun preprocessNchw(bmp: Bitmap): OnnxTensor {
+        bmp.getPixels(pixels, 0, inputSize, 0, 0, inputSize, inputSize)
         val hw = inputSize * inputSize
-        val data = FloatArray(3 * hw)
-        var pixelIndex = 0
-        for (y in 0 until inputSize) {
-            for (x in 0 until inputSize) {
-                val px = bmp.getPixel(x, y)
-                data[pixelIndex] = ((px shr 16) and 0xFF) / 255f
-                data[hw + pixelIndex] = ((px shr 8) and 0xFF) / 255f
-                data[2 * hw + pixelIndex] = (px and 0xFF) / 255f
-                pixelIndex++
-            }
+
+        var i = 0
+        for (px in pixels) {
+            chw[i] = ((px shr 16) and 0xFF) / 255f
+            chw[hw + i] = ((px shr 8) and 0xFF) / 255f
+            chw[2 * hw + i] = (px and 0xFF) / 255f
+            i++
         }
+
         return OnnxTensor.createTensor(
             env,
-            FloatBuffer.wrap(data),
+            FloatBuffer.wrap(chw),
             longArrayOf(1, 3, inputSize.toLong(), inputSize.toLong())
         )
     }
 
     private fun squeezeShape(shape: LongArray): LongArray {
-        // Some exports add singleton dims, e.g. [1,1,84,8400]. We squeeze only while >3 dims.
         if (shape.size <= 3) return shape
         val s = shape.toMutableList()
         for (i in s.size - 1 downTo 0) {
@@ -75,27 +84,19 @@ class YoloOnnxDetector(
         if (shape.size < 3) return emptyList()
 
         val channelFirst = shape[1] < shape[2]
-        val cols = if (channelFirst) shape[1].toInt() else shape[2].toInt()   // attributes
-        val rows = if (channelFirst) shape[2].toInt() else shape[1].toInt()   // boxes
+        val cols = if (channelFirst) shape[1].toInt() else shape[2].toInt()
+        val rows = if (channelFirst) shape[2].toInt() else shape[1].toInt()
         if (cols < 6 || rows <= 0) return emptyList()
 
-        // YOLOv8 ONNX typicky:
-        // - 84 = 4 box (cx,cy,w,h) + 80 class conf (bez obj)
-        // - 85 = 4 box + obj + 80 class conf
-        val hasObjectness = (cols == 85) || (cols > 85 && (cols - 5) >= 1)
+        val hasObjectness = cols >= 85
         val classStart = if (hasObjectness) 5 else 4
         val objIndex = 4
 
         fun get(attr: Int, i: Int): Float {
-            return if (channelFirst) {
-                arr[attr * rows + i]
-            } else {
-                arr[i * cols + attr]
-            }
+            return if (channelFirst) arr[attr * rows + i] else arr[i * cols + attr]
         }
 
-        val out = mutableListOf<Detection>()
-
+        val out = ArrayList<Detection>(16)
         for (i in 0 until rows) {
             val cx = get(0, i)
             val cy = get(1, i)
@@ -117,7 +118,6 @@ class YoloOnnxDetector(
             val score = obj * bestClassScore
             if (score < scoreThreshold || bestClass < 0) continue
 
-            // Některé exporty dávají xywh v rozsahu 0..1, jiné 0..inputSize
             val scale = if (cx <= 2f && cy <= 2f && w <= 2f && h <= 2f) inputSize.toFloat() else 1f
             val cxPx = cx * scale
             val cyPx = cy * scale
@@ -133,13 +133,9 @@ class YoloOnnxDetector(
             out.add(Detection(Box(x1, y1, x2, y2), score, label))
 
             if (AppPreferences.debugOverlay && out.size <= 3) {
-                Log.d(
-                    "YoloOnnxDetector",
-                    "yolo cols=$cols rows=$rows chFirst=$channelFirst hasObj=$hasObjectness cls=$bestClass score=$score box=($x1,$y1,$x2,$y2)"
-                )
+                Log.d("YoloOnnxDetector", "cols=$cols rows=$rows chFirst=$channelFirst hasObj=$hasObjectness cls=$bestClass score=$score")
             }
         }
-
         return out
     }
 
@@ -149,4 +145,3 @@ class YoloOnnxDetector(
         return FloatArray(dup.remaining()).also { dup.get(it) }
     }
 }
-
