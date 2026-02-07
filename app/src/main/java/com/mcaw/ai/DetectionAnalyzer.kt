@@ -45,17 +45,12 @@ class DetectionAnalyzer(
 private val analyzerLogFileName: String = "mcaw_analyzer_${System.currentTimeMillis()}.txt"
 
     private val postProcessor = DetectionPostProcessor(
-        DetectionPostProcessor.Config(debug = AppPreferences.debugOverlay)
+        DetectionPostProcessor.Config(context = ctx, debug = AppPreferences.debugOverlay)
     )
 
     private val tracker = TemporalTracker(minConsecutiveForAlert = 3)
 
     private var lastDistance = Float.POSITIVE_INFINITY
-    private var filteredRelSpeed = 0f
-    private var lastRelSpeedTs = -1L
-    private var lastBoxHeightPx = 0f
-    private var lastBoxHeightTs = -1L
-    private var filteredTtc = Float.POSITIVE_INFINITY
     private var lastDistanceTimestamp = -1L
     private var lastAlertLevel = 0
 
@@ -99,11 +94,6 @@ private val analyzerLogFileName: String = "mcaw_analyzer_${System.currentTimeMil
 
 
             // ROI (zúžené zorné pole) pro rychlost a stabilitu: typicky střed + spodní část obrazu
-            val roiEnabled = AppPreferences.roiEnabled
-            val roiLeftPx = (frameW * AppPreferences.roiLeftNorm).coerceIn(0f, frameW - 2f)
-            val roiTopPx = (frameH * AppPreferences.roiTopNorm).coerceIn(0f, frameH - 2f)
-            val roiRightPx = (frameW * AppPreferences.roiRightNorm).coerceIn(roiLeftPx + 2f, frameW)
-            val roiBottomPx = (frameH * AppPreferences.roiBottomNorm).coerceIn(roiTopPx + 2f, frameH)
 
             val roiBoxPx = Box(roiLeftPx, roiTopPx, roiRightPx, roiBottomPx)
             lastFrameW = frameW
@@ -139,11 +129,6 @@ flog(
                 mappedDetections,
                 frameW,
                 frameH,
-                roiNorm = if (roiEnabled) DetectionPostProcessor.RectNorm(
-                    AppPreferences.roiLeftNorm,
-                    AppPreferences.roiTopNorm,
-                    AppPreferences.roiRightNorm,
-                    AppPreferences.roiBottomNorm
                 ) else null
             )
             flog("counts raw=${post.counts.raw} thr=${post.counts.threshold} nms=${post.counts.nms} accepted=${post.counts.filters}")
@@ -165,32 +150,15 @@ flog(
             val bestBox = clampBox(best0.box, frameW, frameH)
             val label = DetectionLabelMapper.toCanonical(best0.label) ?: (best0.label ?: "unknown")
 
-            
-val distance = DetectionPhysics.estimateDistanceMeters(
-    bbox = bestBox,
-    frameHeightPx = bitmap.height,
-    focalPx = estimateFocalLengthPx(bitmap.height),
-    realHeightM = if (label == "motorcycle" || label == "bicycle") 1.3f else 1.5f
-) ?: Float.POSITIVE_INFINITY
+            val distance = DetectionPhysics.estimateDistanceMeters(
+                bbox = bestBox,
+                frameHeightPx = bitmap.height,
+                focalPx = estimateFocalLengthPx(bitmap.height),
+                realHeightM = if (label == "motorcycle" || label == "bicycle") 1.3f else 1.5f
+            ) ?: Float.POSITIVE_INFINITY
 
-val relSpeed = computeRelativeSpeed(distance, ts)
-
-// TTC stabilization:
-// Prefer TTC from bbox height growth (stable); fallback to distance/relSpeed only when clearly approaching.
-val ttcFromHeights = computeTtcFromBoxHeights(bestBox, ts)
-val ttcRaw = ttcFromHeights
-    ?: DetectionPhysics.computeTtcFromDistanceMeters(distance, relSpeed)
-    ?: Float.POSITIVE_INFINITY
-
-filteredTtc = if (!ttcRaw.isFinite()) {
-    Float.POSITIVE_INFINITY
-} else {
-    val alphaTtc = 0.18f
-    if (!filteredTtc.isFinite() || filteredTtc == Float.POSITIVE_INFINITY) ttcRaw
-    else alphaTtc * ttcRaw + (1f - alphaTtc) * filteredTtc
-}
-
-val ttc = filteredTtc
+            val relSpeed = computeRelativeSpeed(distance, ts)
+            val ttc = if (speed > 0.01f && relSpeed > 0.01f) distance / relSpeed else Float.POSITIVE_INFINITY
             val level = if (speed <= 0.01f) 0 else alertLevel(distance, relSpeed, ttc, thresholdsForMode(AppPreferences.detectionMode))
 
             if (speed <= 0.01f) {
@@ -389,61 +357,23 @@ val ttc = filteredTtc
         return if (orange) 1 else 0
     }
 
-    
-
-private fun computeTtcFromBoxHeights(bestBox: Box, ts: Long): Float? {
-    val hPx = bestBox.h.coerceAtLeast(0f)
-    if (hPx <= 0f) return null
-
-    if (lastBoxHeightTs <= 0L || lastBoxHeightPx <= 0f) {
-        lastBoxHeightPx = hPx
-        lastBoxHeightTs = ts
-        return null
-    }
-
-    val dtSec = ((ts - lastBoxHeightTs).coerceAtLeast(1L)).toFloat() / 1000f
-    val ttc = DetectionPhysics.computeTtcFromHeights(
-        prevH = lastBoxHeightPx,
-        currH = hPx,
-        dtSec = dtSec
-    )
-
-    lastBoxHeightPx = hPx
-    lastBoxHeightTs = ts
-    return ttc
-}
-
-private fun computeRelativeSpeed(currentDistanceM: Float, ts: Long): Float {
-    // Signed relative speed: + = approaching, - = pulling away.
-    if (!currentDistanceM.isFinite()) {
+    private fun computeRelativeSpeed(currentDistanceM: Float, ts: Long): Float {
+        if (!currentDistanceM.isFinite()) {
+            lastDistance = currentDistanceM
+            lastDistanceTimestamp = ts
+            return 0f
+        }
+        if (lastDistanceTimestamp <= 0L || !lastDistance.isFinite()) {
+            lastDistance = currentDistanceM
+            lastDistanceTimestamp = ts
+            return 0f
+        }
+        val dtSec = ((ts - lastDistanceTimestamp).coerceAtLeast(1L)).toFloat() / 1000f
+        val speedToward = ((lastDistance - currentDistanceM) / dtSec).coerceAtLeast(0f)
         lastDistance = currentDistanceM
         lastDistanceTimestamp = ts
-        filteredRelSpeed = 0f
-        lastRelSpeedTs = ts
-        return 0f
+        return speedToward
     }
-    if (lastDistanceTimestamp <= 0L || !lastDistance.isFinite()) {
-        lastDistance = currentDistanceM
-        lastDistanceTimestamp = ts
-        filteredRelSpeed = 0f
-        lastRelSpeedTs = ts
-        return 0f
-    }
-
-    val dtSec = ((ts - lastDistanceTimestamp).coerceAtLeast(1L)).toFloat() / 1000f
-    val raw = (lastDistance - currentDistanceM) / dtSec
-
-    // If gap is large (lag/pause), reset filter to avoid spikes.
-    val gapMs = (ts - lastRelSpeedTs).coerceAtLeast(0L)
-    val alpha = if (gapMs > 600L) 1.0f else 0.25f
-
-    filteredRelSpeed = (alpha * raw) + ((1f - alpha) * filteredRelSpeed)
-
-    lastDistance = currentDistanceM
-    lastDistanceTimestamp = ts
-    lastRelSpeedTs = ts
-    return filteredRelSpeed
-}
 
     private fun estimateFocalLengthPx(frameHeightPx: Int): Float {
         val focalMm = AppPreferences.cameraFocalLengthMm
