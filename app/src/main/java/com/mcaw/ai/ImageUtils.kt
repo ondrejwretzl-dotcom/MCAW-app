@@ -36,11 +36,14 @@ object ImageUtils {
         val plane = image.planes[0]
         val buffer = plane.buffer
         buffer.rewind()
+
         val rowStride = plane.rowStride
         val width = image.width
         val height = image.height
 
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+
+        // If rowStride == width*4 we can copy directly. Otherwise, compact rows.
         if (rowStride == width * 4) {
             bitmap.copyPixelsFromBuffer(buffer)
             return bitmap
@@ -52,11 +55,9 @@ object ImageUtils {
         val out = ByteBuffer.allocateDirect(width * height * 4)
         var src = 0
         val rowBytes = width * 4
-        var y = 0
-        while (y < height) {
+        for (row in 0 until height) {
             out.put(tmp, src, rowBytes)
             src += rowStride
-            y++
         }
         out.rewind()
         bitmap.copyPixelsFromBuffer(out)
@@ -101,16 +102,12 @@ object ImageUtils {
         val yPixelStride = yPlane.pixelStride
         var outIndex = 0
 
-        var row = 0
-        while (row < height) {
+        for (row in 0 until height) {
             var inIndex = row * yRowStride
-            var col = 0
-            while (col < width) {
+            for (col in 0 until width) {
                 out[outIndex++] = yBuffer.get(inIndex)
                 inIndex += yPixelStride
-                col++
             }
-            row++
         }
 
         // Copy VU (NV21)
@@ -125,20 +122,17 @@ object ImageUtils {
         val chromaWidth = width / 2
 
         var uvOutIndex = ySize
-        row = 0
-        while (row < chromaHeight) {
+        for (row in 0 until chromaHeight) {
             var uIn = row * uRowStride
             var vIn = row * vRowStride
-            var c = 0
-            while (c < chromaWidth) {
+            for (col in 0 until chromaWidth) {
                 out[uvOutIndex++] = vBuffer.get(vIn)
                 out[uvOutIndex++] = uBuffer.get(uIn)
                 uIn += uPixelStride
                 vIn += vPixelStride
-                c++
             }
-            row++
         }
+
         return out
     }
 }

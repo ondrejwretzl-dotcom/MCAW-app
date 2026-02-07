@@ -11,8 +11,8 @@ import android.hardware.camera2.CameraManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
-import android.os.Looper
 import android.util.Size
+import android.os.Looper
 import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.camera.camera2.interop.Camera2CameraInfo
@@ -32,8 +32,8 @@ import com.mcaw.location.SpeedMonitor
 import com.mcaw.location.SpeedProvider
 import com.mcaw.service.McawService
 import com.mcaw.util.LabelMapper
-import java.util.concurrent.Executors
 import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 class PreviewActivity : ComponentActivity() {
 
@@ -171,16 +171,17 @@ class PreviewActivity : ComponentActivity() {
         startCamera()
     }
 
-    private fun startCamera() {
+        private fun startCamera() {
         val providerFuture = ProcessCameraProvider.getInstance(this)
         providerFuture.addListener({
             val provider = providerFuture.get()
             provider.unbindAll()
 
-            val preview = Preview.Builder()
+            val preview = androidx.camera.core.Preview.Builder()
                 .setTargetRotation(previewView.display.rotation)
-                .build()
-                .also { it.setSurfaceProvider(previewView.surfaceProvider) }
+                .build().also {
+                    it.setSurfaceProvider(previewView.surfaceProvider)
+                }
 
             if (!::analysisExecutor.isInitialized) {
                 analysisExecutor = Executors.newSingleThreadExecutor { r ->
@@ -190,13 +191,13 @@ class PreviewActivity : ComponentActivity() {
 
             val analysis = ImageAnalysis.Builder()
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                // Speed: avoids YUV->JPEG path in ImageUtils.
                 .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
-                // Moderate resolution to keep FPS stable.
                 .setTargetResolution(Size(960, 540))
                 .setTargetRotation(previewView.display.rotation)
                 .build()
-                .apply { setAnalyzer(analysisExecutor, analyzer) }
+                .apply {
+                    setAnalyzer(analysisExecutor, analyzer)
+                }
 
             val camera = provider.bindToLifecycle(
                 this,
