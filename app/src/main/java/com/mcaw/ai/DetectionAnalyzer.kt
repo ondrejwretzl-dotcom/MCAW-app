@@ -79,7 +79,7 @@ private val analyzerLogFileName: String = "mcaw_analyzer_${System.currentTimeMil
         try {
             val ts = System.currentTimeMillis()
 
-            val rawBitmap = ImageUtils.imageProxyToBitmap(ctx, image) ?: run {
+            val rawBitmap = ImageUtils.imageProxyToBitmap(image) ?: run {
                 sendOverlayClear()
                 return
             }
@@ -133,7 +133,7 @@ flog(
                 mappedDetections,
                 frameW,
                 frameH,
-                roiNorm = null
+                null
             )
             flog("counts raw=${post.counts.raw} thr=${post.counts.threshold} nms=${post.counts.nms} accepted=${post.counts.filters}")
 
