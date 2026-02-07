@@ -108,7 +108,12 @@ class DetectionPostProcessor(
         }
 
         if (roi != null) {
-            if (cx !in roi.left..roi.right || cy !in roi.top..roi.bottom) return "outsideROI"
+            val l = roi.left * frameW
+            val t = roi.top * frameH
+            val r = roi.right * frameW
+            val btm = roi.bottom * frameH
+            // Stricter: whole box must be inside ROI (not only center).
+            if (b.x1 < l || b.y1 < t || b.x2 > r || b.y2 > btm) return "outsideROI"
         }
         return null
     }

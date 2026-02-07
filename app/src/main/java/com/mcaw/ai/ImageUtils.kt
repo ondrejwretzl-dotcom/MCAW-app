@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.ImageFormat
 import android.graphics.Matrix
+import android.graphics.PixelFormat
 import android.graphics.Rect
 import android.graphics.YuvImage
 import androidx.camera.core.ImageProxy
@@ -22,11 +23,11 @@ object ImageUtils {
     fun imageProxyToBitmap(image: ImageProxy): Bitmap? {
         return try {
             when (image.format) {
-                ImageFormat.RGBA_8888 -> rgba8888ToBitmap(image)
+                PixelFormat.RGBA_8888 -> rgba8888ToBitmap(image)
                 ImageFormat.YUV_420_888 -> yuvToBitmapFallback(image)
                 else -> yuvToBitmapFallback(image)
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             null
         }
     }
@@ -51,9 +52,11 @@ object ImageUtils {
         val out = ByteBuffer.allocateDirect(width * height * 4)
         var src = 0
         val rowBytes = width * 4
-        for (_ in 0 until height) {
+        var y = 0
+        while (y < height) {
             out.put(tmp, src, rowBytes)
             src += rowStride
+            y++
         }
         out.rewind()
         bitmap.copyPixelsFromBuffer(out)
@@ -78,8 +81,7 @@ object ImageUtils {
     }
 
     /**
-     * Korektní převod YUV_420_888 (CameraX) -> NV21 (Y + VU interleaved),
-     * respektuje rowStride/pixelStride.
+     * YUV_420_888 (CameraX) -> NV21 (Y + VU interleaved), respects rowStride/pixelStride.
      */
     private fun yuv420888ToNv21(image: ImageProxy): ByteArray {
         val yPlane = image.planes[0]
@@ -99,12 +101,16 @@ object ImageUtils {
         val yPixelStride = yPlane.pixelStride
         var outIndex = 0
 
-        for (row in 0 until height) {
+        var row = 0
+        while (row < height) {
             var inIndex = row * yRowStride
-            for (_ in 0 until width) {
+            var col = 0
+            while (col < width) {
                 out[outIndex++] = yBuffer.get(inIndex)
                 inIndex += yPixelStride
+                col++
             }
+            row++
         }
 
         // Copy VU (NV21)
@@ -119,15 +125,19 @@ object ImageUtils {
         val chromaWidth = width / 2
 
         var uvOutIndex = ySize
-        for (row in 0 until chromaHeight) {
+        row = 0
+        while (row < chromaHeight) {
             var uIn = row * uRowStride
             var vIn = row * vRowStride
-            for (_ in 0 until chromaWidth) {
+            var c = 0
+            while (c < chromaWidth) {
                 out[uvOutIndex++] = vBuffer.get(vIn)
                 out[uvOutIndex++] = uBuffer.get(uIn)
                 uIn += uPixelStride
                 vIn += vPixelStride
+                c++
             }
+            row++
         }
         return out
     }
