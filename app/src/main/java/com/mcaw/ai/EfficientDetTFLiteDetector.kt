@@ -70,17 +70,32 @@ class EfficientDetTFLiteDetector(
             val box = boxes[0][i]
             result.add(
                 Detection(
-                    box = Box(
-                        (box[1] * bitmap.width).coerceIn(0f, bitmap.width.toFloat()),
-                        (box[0] * bitmap.height).coerceIn(0f, bitmap.height.toFloat()),
-                        (box[3] * bitmap.width).coerceIn(0f, bitmap.width.toFloat()),
-                        (box[2] * bitmap.height).coerceIn(0f, bitmap.height.toFloat())
-                    ),
+                    box = run {
+                        // některé EfficientDet exporty mají pořadí [ymin,xmin,ymax,xmax], jiné [xmin,ymin,xmax,ymax]
+                        val x1a = (box[1] * bitmap.width).coerceIn(0f, bitmap.width.toFloat())
+                        val y1a = (box[0] * bitmap.height).coerceIn(0f, bitmap.height.toFloat())
+                        val x2a = (box[3] * bitmap.width).coerceIn(0f, bitmap.width.toFloat())
+                        val y2a = (box[2] * bitmap.height).coerceIn(0f, bitmap.height.toFloat())
+                        val areaA = kotlin.math.max(0f, x2a - x1a) * kotlin.math.max(0f, y2a - y1a)
+
+                        val x1b = (box[0] * bitmap.width).coerceIn(0f, bitmap.width.toFloat())
+                        val y1b = (box[1] * bitmap.height).coerceIn(0f, bitmap.height.toFloat())
+                        val x2b = (box[2] * bitmap.width).coerceIn(0f, bitmap.width.toFloat())
+                        val y2b = (box[3] * bitmap.height).coerceIn(0f, bitmap.height.toFloat())
+                        val areaB = kotlin.math.max(0f, x2b - x1b) * kotlin.math.max(0f, y2b - y1b)
+
+                        if (areaB > areaA * 1.2f) {
+                            Box(x1b, y1b, x2b, y2b)
+                        } else {
+                            Box(x1a, y1a, x2a, y2a)
+                        }
+                    },
                     score = score,
                     label = label
                 )
             )
             if (AppPreferences.debugOverlay && i < 3) {
+                Log.d("EfficientDet", "raw box=$i vals=${box.contentToString()}")
                 Log.d("EfficientDet", "raw classId=$classId score=$score label=$label")
             }
         }

@@ -26,6 +26,15 @@ class OverlayView @JvmOverloads constructor(
         strokeWidth = 4f
     }
 
+
+    private val roiPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.RED
+        style = Paint.Style.STROKE
+        strokeWidth = 3f
+        pathEffect = DashPathEffect(floatArrayOf(14f, 10f), 0f)
+    }
+
+
     private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.GREEN
         style = Paint.Style.FILL
@@ -48,6 +57,17 @@ class OverlayView @JvmOverloads constructor(
      * Jediný box, který se má vykreslit (nastavuje PreviewActivity).
      */
     var box: Box? = null
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+
+    /**
+     * ROI (Region of Interest) v pixelech v souřadnicích frame (otočený bitmap).
+     * Slouží jen pro vizualizaci oblasti, ve které aktuálně běží detekce.
+     */
+    var roiBox: Box? = null
         set(value) {
             field = value
             invalidate()
@@ -123,6 +143,14 @@ class OverlayView @JvmOverloads constructor(
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
+
+        // ROI vykreslujeme i v okamžiku, kdy ještě nemáme detekci
+        roiBox?.let { r ->
+            val mappedRoi = mapToView(r)
+            if (mappedRoi != null) {
+                canvas.drawRect(mappedRoi, roiPaint)
+            }
+        }
 
         val b = box
         if (b == null) {

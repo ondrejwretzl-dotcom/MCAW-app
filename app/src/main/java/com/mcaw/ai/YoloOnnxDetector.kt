@@ -14,7 +14,7 @@ import java.nio.FloatBuffer
 class YoloOnnxDetector(
     private val context: Context,
     private val modelName: String = "yolov8n.onnx",
-    val inputSize: Int = 640,
+    val inputSize: Int = AppPreferences.yoloInputSize,
     val scoreThreshold: Float = 0.25f,
     val iouThreshold: Float = 0.45f
 ) {
@@ -98,7 +98,7 @@ class YoloOnnxDetector(
               val score = obj * bestClassScore
               if (score < scoreThreshold || bestClass < 0) continue
 
-              // Nìkteré exporty dávají xywh v rozsahu 0..1, jiné 0..inputSize
+              // NÄ›kterÃ© exporty dÃ¡vajÃ­ xywh v rozsahu 0..1, jinÃ© 0..inputSize
               val scale = if (cx <= 2f && cy <= 2f && w <= 2f && h <= 2f) inputSize.toFloat() else 1f
               val cxPx = cx * scale
               val cyPx = cy * scale

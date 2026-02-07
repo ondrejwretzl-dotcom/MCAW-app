@@ -54,6 +54,33 @@ object AppPreferences {
         get() = prefs.getBoolean("debugOverlay", false)
         set(v) = prefs.edit().putBoolean("debugOverlay", v).apply()
 
+    // ROI (Region of Interest) - zúžení oblasti detekce pro rychlost a stabilitu
+    // hodnoty jsou normalizované v rozsahu 0..1 vůči OTOČENÉMU bitmapu (tj. tomu, který jde do detektoru / overlay)
+    var roiEnabled: Boolean
+        get() = prefs.getBoolean("roiEnabled", true)
+        set(v) = prefs.edit().putBoolean("roiEnabled", v).apply()
+
+    var roiLeftNorm: Float
+        get() = prefs.getFloat("roiLeftNorm", 0.20f)
+        set(v) = prefs.edit().putFloat("roiLeftNorm", v.coerceIn(0f, 1f)).apply()
+
+    var roiTopNorm: Float
+        get() = prefs.getFloat("roiTopNorm", 0.25f)
+        set(v) = prefs.edit().putFloat("roiTopNorm", v.coerceIn(0f, 1f)).apply()
+
+    var roiRightNorm: Float
+        get() = prefs.getFloat("roiRightNorm", 0.80f)
+        set(v) = prefs.edit().putFloat("roiRightNorm", v.coerceIn(0f, 1f)).apply()
+
+    var roiBottomNorm: Float
+        get() = prefs.getFloat("roiBottomNorm", 0.95f)
+        set(v) = prefs.edit().putFloat("roiBottomNorm", v.coerceIn(0f, 1f)).apply()
+
+    // YOLO ONNX input size (nižší = rychlejší, ale může klesnout přesnost)
+    var yoloInputSize: Int
+        get() = prefs.getInt("yoloInputSize", 480)
+        set(v) = prefs.edit().putInt("yoloInputSize", v.coerceIn(320, 640)).apply()
+
     var laneFilter: Boolean
         get() = prefs.getBoolean("laneFilter", false)
         set(v) = prefs.edit().putBoolean("laneFilter", v).apply()

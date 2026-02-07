@@ -56,6 +56,18 @@ class PreviewActivity : ComponentActivity() {
                 overlay.objectSpeed = -1f
                 overlay.ttc = -1f
                 overlay.label = ""
+
+                // ROI vizualizace i při clear (aby bylo jasné, kde se hledá)
+                overlay.frameWidth = i.getFloatExtra("frame_w", overlay.frameWidth)
+                overlay.frameHeight = i.getFloatExtra("frame_h", overlay.frameHeight)
+                if (i.hasExtra("roi_left")) {
+                    overlay.roiBox = com.mcaw.model.Box(
+                        i.getFloatExtra("roi_left", 0f),
+                        i.getFloatExtra("roi_top", 0f),
+                        i.getFloatExtra("roi_right", 0f),
+                        i.getFloatExtra("roi_bottom", 0f)
+                    )
+                }
                 searching = true
                 updateSearchingLabel()
                 logActivity("detection_clear")
@@ -64,6 +76,14 @@ class PreviewActivity : ComponentActivity() {
             searching = false
             overlay.frameWidth = i.getFloatExtra("frame_w", 0f)
             overlay.frameHeight = i.getFloatExtra("frame_h", 0f)
+            if (i.hasExtra("roi_left")) {
+                overlay.roiBox = com.mcaw.model.Box(
+                    i.getFloatExtra("roi_left", 0f),
+                    i.getFloatExtra("roi_top", 0f),
+                    i.getFloatExtra("roi_right", 0f),
+                    i.getFloatExtra("roi_bottom", 0f)
+                )
+            }
             overlay.box = com.mcaw.model.Box(
                 i.getFloatExtra("left", 0f),
                 i.getFloatExtra("top", 0f),
