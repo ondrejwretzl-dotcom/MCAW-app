@@ -19,6 +19,28 @@ object AppPreferences {
 
     fun init(ctx: Context) {
         prefs = ctx.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+        migrateIfNeeded()
+    }
+
+    private fun migrateIfNeeded() {
+        // One-time migration: shift default ROI up by 15% to avoid dashboard / cockpit at the bottom.
+        val key = "roi_migrated_v1"
+        if (prefs.getBoolean(key, false)) return
+
+        val storedTop = prefs.getFloat("roiTopNorm", 0.10f)
+        val storedBottom = prefs.getFloat("roiBottomNorm", 0.80f)
+
+        // Migrate only if user likely never customized ROI (old defaults).
+        val isOldDefault = kotlin.math.abs(storedTop - 0.25f) < 0.001f && kotlin.math.abs(storedBottom - 0.95f) < 0.001f
+        if (isOldDefault) {
+            prefs.edit()
+                .putFloat("roiTopNorm", 0.10f)
+                .putFloat("roiBottomNorm", 0.80f)
+                .putBoolean(key, true)
+                .apply()
+        } else {
+            prefs.edit().putBoolean(key, true).apply()
+        }
     }
 
     fun ensureInit(ctx: Context) {
@@ -65,7 +87,7 @@ object AppPreferences {
         set(v) = prefs.edit().putFloat("roiLeftNorm", v.coerceIn(0f, 1f)).apply()
 
     var roiTopNorm: Float
-        get() = prefs.getFloat("roiTopNorm", 0.25f)
+        get() = prefs.getFloat("roiTopNorm", 0.10f)
         set(v) = prefs.edit().putFloat("roiTopNorm", v.coerceIn(0f, 1f)).apply()
 
     var roiRightNorm: Float
@@ -73,7 +95,7 @@ object AppPreferences {
         set(v) = prefs.edit().putFloat("roiRightNorm", v.coerceIn(0f, 1f)).apply()
 
     var roiBottomNorm: Float
-        get() = prefs.getFloat("roiBottomNorm", 0.95f)
+        get() = prefs.getFloat("roiBottomNorm", 0.80f)
         set(v) = prefs.edit().putFloat("roiBottomNorm", v.coerceIn(0f, 1f)).apply()
 
     // YOLO ONNX input size (nižší = rychlejší, ale může klesnout přesnost)
@@ -114,3 +136,4 @@ object AppPreferences {
         get() = prefs.getFloat("user_speed_red", 5f)
         set(v) = prefs.edit().putFloat("user_speed_red", v).apply()
 }
+
