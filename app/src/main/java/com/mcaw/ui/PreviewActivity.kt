@@ -179,9 +179,8 @@ class PreviewActivity : ComponentActivity() {
 
             val preview = androidx.camera.core.Preview.Builder()
                 .setTargetRotation(previewView.display.rotation)
-                .build().also {
-                    it.setSurfaceProvider(previewView.surfaceProvider)
-                }
+                .build()
+                .also { it.setSurfaceProvider(previewView.surfaceProvider) }
 
             if (!::analysisExecutor.isInitialized) {
                 analysisExecutor = Executors.newSingleThreadExecutor { r ->
@@ -209,23 +208,6 @@ class PreviewActivity : ComponentActivity() {
         }, ContextCompat.getMainExecutor(this))
     }
 
-
-            val analysis = ImageAnalysis.Builder()
-                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                .build()
-                .apply {
-                    setAnalyzer(Executors.newSingleThreadExecutor(), analyzer)
-                }
-
-            val camera = provider.bindToLifecycle(
-                this,
-                CameraSelector.DEFAULT_BACK_CAMERA,
-                preview,
-                analysis
-            )
-            updateCameraCalibration(camera)
-        }, ContextCompat.getMainExecutor(this))
-    }
 
     override fun onDestroy() {
         unregisterReceiver(receiver)
