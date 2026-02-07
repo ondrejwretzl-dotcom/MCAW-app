@@ -11,13 +11,11 @@ import android.util.Log
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import com.mcaw.app.R
-import com.mcaw.app.MCAWApp
 import com.mcaw.config.AppPreferences
 import com.mcaw.location.SpeedProvider
 import com.mcaw.model.Box
 import com.mcaw.model.Detection
 import java.util.Locale
-import kotlin.math.abs
 import com.mcaw.util.PublicLogWriter
 
 
@@ -38,11 +36,7 @@ class DetectionAnalyzer(
         const val EXTRA_LABEL = "extra_label"
     }
 
-    
-    private var lastFrameW: Float = 0f
-    private var lastFrameH: Float = 0f
-    private var lastRoiBox: Box? = null
-private val analyzerLogFileName: String = "mcaw_analyzer_${System.currentTimeMillis()}.txt"
+    private val analyzerLogFileName: String = "mcaw_analyzer_${System.currentTimeMillis()}.txt"
 
     private val postProcessor = DetectionPostProcessor(
         DetectionPostProcessor.Config(debug = AppPreferences.debugOverlay)
@@ -63,14 +57,8 @@ private val analyzerLogFileName: String = "mcaw_analyzer_${System.currentTimeMil
 
     init {
         if (AppPreferences.voice) {
-            // Reuse app-level TTS if available (avoid double init).
-            tts = (ctx.applicationContext as? MCAWApp)?.getTts()
-            if (tts == null) {
-                runCatching {
-                    tts = TextToSpeech(ctx) { status ->
-                        if (status == TextToSpeech.SUCCESS) tts?.language = Locale.getDefault()
-                    }
-                }
+            tts = TextToSpeech(ctx) { status ->
+                if (status == TextToSpeech.SUCCESS) tts?.language = Locale.getDefault()
             }
         }
     }
@@ -79,34 +67,20 @@ private val analyzerLogFileName: String = "mcaw_analyzer_${System.currentTimeMil
         try {
             val ts = System.currentTimeMillis()
 
-            val rawBitmap = ImageUtils.imageProxyToBitmap(image) ?: run {
+            val rawBitmap = ImageUtils.imageProxyToBitmap(image, ctx) ?: run {
                 sendOverlayClear()
                 return
             }
 
             val rotation = image.imageInfo.rotationDegrees
 
-            // ? Detekuj i kresli ve stejné orientaci (otočený bitmap)
+            // ? Detekuj i kresli ve stejn� orientaci (oto�en� bitmap)
             val bitmap = ImageUtils.rotateBitmap(rawBitmap, rotation)
 
             val frameW = bitmap.width.toFloat()
             val frameH = bitmap.height.toFloat()
 
-
-            // ROI (zúžené zorné pole) pro rychlost a stabilitu: typicky střed + spodní část obrazu
-            val roiEnabled = AppPreferences.roiEnabled
-            val roiLeftPx = (frameW * AppPreferences.roiLeftNorm).coerceIn(0f, frameW - 2f)
-            val roiTopPx = (frameH * AppPreferences.roiTopNorm).coerceIn(0f, frameH - 2f)
-            val roiRightPx = (frameW * AppPreferences.roiRightNorm).coerceIn(roiLeftPx + 2f, frameW)
-            val roiBottomPx = (frameH * AppPreferences.roiBottomNorm).coerceIn(roiTopPx + 2f, frameH)
-
-            val roiBoxPx = Box(roiLeftPx, roiTopPx, roiRightPx, roiBottomPx)
-            lastFrameW = frameW
-            lastFrameH = frameH
-            lastRoiBox = roiBoxPx
-
-            val detectBitmap = bitmap
-flog(
+            flog(
                 "frame proxy=${image.width}x${image.height} rot=$rotation " +
                     "bmpRaw=${rawBitmap.width}x${rawBitmap.height} bmpRot=${bitmap.width}x${bitmap.height} " +
                     "model=${AppPreferences.selectedModel}"
@@ -122,31 +96,19 @@ flog(
             val speed = speedProvider.getCurrent().speedMps
 
             val rawDetections = when (AppPreferences.selectedModel) {
-                0 -> yolo?.detect(detectBitmap).orEmpty()
-                1 -> det?.detect(detectBitmap).orEmpty()
+                0 -> yolo?.detect(bitmap).orEmpty()
+                1 -> det?.detect(bitmap).orEmpty()
                 else -> emptyList()
             }
 
-            
-            val mappedDetections = rawDetections
-// ? Postprocess ve stejném frame (otočený bitmap)
-            val post = postProcessor.process(
-                mappedDetections,
-                frameW,
-                frameH,
-                roiNorm = if (roiEnabled) DetectionPostProcessor.RectNorm(
-                    AppPreferences.roiLeftNorm,
-                    AppPreferences.roiTopNorm,
-                    AppPreferences.roiRightNorm,
-                    AppPreferences.roiBottomNorm
-                ) else null
-            )
+            // ? Postprocess ve stejn�m frame (oto�en� bitmap)
+            val post = postProcessor.process(rawDetections, frameW, frameH)
             flog("counts raw=${post.counts.raw} thr=${post.counts.threshold} nms=${post.counts.nms} accepted=${post.counts.filters}")
 
             val tracked = tracker.update(post.accepted)
             val bestTrack = tracked
                 .filter { it.alertGatePassed }
-                .maxByOrNull { priorityScore(it.detection, frameW, frameH) }
+                .maxByOrNull { it.detection.score }
 
             if (bestTrack == null) {
                 stopActiveAlerts()
@@ -200,34 +162,6 @@ flog(
         }
     }
 
-
-    /**
-     * Prioritizace cílového objektu (středový pruh + spodní část obrazu).
-     * Cíl: méně přeskakování mezi objekty => stabilnější TTC a včasnější alerty.
-     */
-    private fun priorityScore(d: Detection, frameW: Float, frameH: Float): Float {
-        val b = d.box
-        val w = frameW.coerceAtLeast(1f)
-        val h = frameH.coerceAtLeast(1f)
-        // 0..1: 1 = přesně uprostřed
-        val centerDistNorm = (abs(b.cx - w / 2f) / (w / 2f)).coerceIn(0f, 1f)
-        val centerBias = 1f - centerDistNorm
-
-        // 0..1: 1 = dole (blíž), 0 = nahoře (dál / méně relevantní)
-        val bottomBias = (b.y2 / h).coerceIn(0f, 1f)
-
-        // 0..1: velikost boxu (větší = pravděpodobně blíž / relevantnější)
-        val areaNorm = (b.area / (w * h)).coerceIn(0f, 1f)
-
-        // kombinace: conf je stále primární, ale preferujeme střed + dole
-        return (
-            0.65f * d.score +
-            0.22f * centerBias +
-            0.10f * bottomBias +
-            0.03f * areaNorm
-        )
-    }
-
     private fun clampBox(b: Box, w: Float, h: Float): Box {
         val x1 = b.x1.coerceIn(0f, w)
         val y1 = b.y1.coerceIn(0f, h)
@@ -275,12 +209,6 @@ flog(
         i.putExtra("clear", false)
         i.putExtra("frame_w", frameW)
         i.putExtra("frame_h", frameH)
-        lastRoiBox?.let { r ->
-            i.putExtra("roi_left", r.x1)
-            i.putExtra("roi_top", r.y1)
-            i.putExtra("roi_right", r.x2)
-            i.putExtra("roi_bottom", r.y2)
-        }
         i.putExtra("left", box.x1)
         i.putExtra("top", box.y1)
         i.putExtra("right", box.x2)
@@ -296,17 +224,8 @@ flog(
     private fun sendOverlayClear() {
         val i = Intent("MCAW_DEBUG_UPDATE").setPackage(ctx.packageName)
         i.putExtra("clear", true)
-        i.putExtra("frame_w", lastFrameW)
-        i.putExtra("frame_h", lastFrameH)
-        lastRoiBox?.let { r ->
-            i.putExtra("roi_left", r.x1)
-            i.putExtra("roi_top", r.y1)
-            i.putExtra("roi_right", r.x2)
-            i.putExtra("roi_bottom", r.y2)
-        }
         ctx.sendBroadcast(i)
     }
-
 
     private fun sendMetricsUpdate(
         dist: Float,

@@ -14,130 +14,112 @@ import java.nio.FloatBuffer
 class YoloOnnxDetector(
     private val context: Context,
     private val modelName: String = "yolov8n.onnx",
-    val inputSize: Int = AppPreferences.yoloInputSize,
+    val inputSize: Int = 640,
     val scoreThreshold: Float = 0.25f,
     val iouThreshold: Float = 0.45f
 ) {
     private val env: OrtEnvironment = OrtEnvironment.getEnvironment()
     private val session: OrtSession
 
-    // Reuse to reduce GC.
-    private val pixels = IntArray(inputSize * inputSize)
-    private val chw = FloatArray(3 * inputSize * inputSize)
-
     init {
         val bytes = context.assets.open("models/$modelName").readBytes()
-
-        val opts = OrtSession.SessionOptions().apply {
-            setIntraOpNumThreads(4)
-            setInterOpNumThreads(1)
-            setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
-        }
-
-        session = env.createSession(bytes, opts)
+        session = env.createSession(bytes)
     }
 
     fun detect(bitmap: Bitmap): List<Detection> {
         val resized = Bitmap.createScaledBitmap(bitmap, inputSize, inputSize, false)
+        val input = preprocessNchw(resized)
         val inputName = session.inputNames.iterator().next()
-
-        preprocessNchw(resized).use { input ->
-            session.run(mapOf(inputName to input)).use { outputs ->
-                val out = outputs[0] as? OnnxTensor ?: return emptyList()
-                val arr = out.floatBuffer.toArray()
-                val shape = squeezeShape(out.info.shape)
-                return parseYoloOutput(arr, shape, bitmap.width, bitmap.height)
-            }
-        }
+        val outputs = session.run(mapOf(inputName to input))
+        val out = outputs[0] as OnnxTensor
+        val arr = out.floatBuffer.toArray()
+        return parseYoloOutput(arr, out.info.shape, bitmap.width, bitmap.height)
     }
 
     private fun preprocessNchw(bmp: Bitmap): OnnxTensor {
-        bmp.getPixels(pixels, 0, inputSize, 0, 0, inputSize, inputSize)
         val hw = inputSize * inputSize
-
-        var i = 0
-        for (px in pixels) {
-            chw[i] = ((px shr 16) and 0xFF) / 255f
-            chw[hw + i] = ((px shr 8) and 0xFF) / 255f
-            chw[2 * hw + i] = (px and 0xFF) / 255f
-            i++
+        val data = FloatArray(3 * hw)
+        var pixelIndex = 0
+        for (y in 0 until inputSize) {
+            for (x in 0 until inputSize) {
+                val px = bmp.getPixel(x, y)
+                data[pixelIndex] = ((px shr 16) and 0xFF) / 255f
+                data[hw + pixelIndex] = ((px shr 8) and 0xFF) / 255f
+                data[2 * hw + pixelIndex] = (px and 0xFF) / 255f
+                pixelIndex++
+            }
         }
-
-        return OnnxTensor.createTensor(
-            env,
-            FloatBuffer.wrap(chw),
-            longArrayOf(1, 3, inputSize.toLong(), inputSize.toLong())
-        )
-    }
-
-    private fun squeezeShape(shape: LongArray): LongArray {
-        if (shape.size <= 3) return shape
-        val s = shape.toMutableList()
-        for (i in s.size - 1 downTo 0) {
-            if (s.size <= 3) break
-            if (s[i] == 1L) s.removeAt(i)
-        }
-        return s.toLongArray()
+        return OnnxTensor.createTensor(env, FloatBuffer.wrap(data), longArrayOf(1, 3, inputSize.toLong(), inputSize.toLong()))
     }
 
     private fun parseYoloOutput(arr: FloatArray, shape: LongArray, frameW: Int, frameH: Int): List<Detection> {
-        if (shape.size < 3) return emptyList()
+          if (shape.size < 3) return emptyList()
 
-        val channelFirst = shape[1] < shape[2]
-        val cols = if (channelFirst) shape[1].toInt() else shape[2].toInt()
-        val rows = if (channelFirst) shape[2].toInt() else shape[1].toInt()
-        if (cols < 6 || rows <= 0) return emptyList()
+          val channelFirst = shape[1] < shape[2]
+          val cols = if (channelFirst) shape[1].toInt() else shape[2].toInt()   // attributes
+          val rows = if (channelFirst) shape[2].toInt() else shape[1].toInt()   // boxes
+          if (cols < 6 || rows <= 0) return emptyList()
 
-        val hasObjectness = cols >= 85
-        val classStart = if (hasObjectness) 5 else 4
-        val objIndex = 4
+          // YOLOv8 ONNX typicky:
+          // - 84 = 4 box (cx,cy,w,h) + 80 class conf (bez obj)
+          // - 85 = 4 box + obj + 80 class conf
+          val hasObjectness = (cols == 85) || (cols > 85 && (cols - 5) >= 1)
+          val classStart = if (hasObjectness) 5 else 4
+          val objIndex = 4
 
-        fun get(attr: Int, i: Int): Float {
-            return if (channelFirst) arr[attr * rows + i] else arr[i * cols + attr]
-        }
+          fun get(attr: Int, i: Int): Float {
+              return if (channelFirst) {
+                  arr[attr * rows + i]
+              } else {
+                  arr[i * cols + attr]
+              }
+          }
 
-        val out = ArrayList<Detection>(16)
-        for (i in 0 until rows) {
-            val cx = get(0, i)
-            val cy = get(1, i)
-            val w = get(2, i)
-            val h = get(3, i)
+          val out = mutableListOf<Detection>()
 
-            val obj = if (hasObjectness) get(objIndex, i) else 1f
+          for (i in 0 until rows) {
+              val cx = get(0, i)
+              val cy = get(1, i)
+              val w  = get(2, i)
+              val h  = get(3, i)
 
-            var bestClass = -1
-            var bestClassScore = 0f
-            for (c in classStart until cols) {
-                val s = get(c, i)
-                if (s > bestClassScore) {
-                    bestClassScore = s
-                    bestClass = c - classStart
-                }
-            }
+              val obj = if (hasObjectness) get(objIndex, i) else 1f
 
-            val score = obj * bestClassScore
-            if (score < scoreThreshold || bestClass < 0) continue
+              var bestClass = -1
+              var bestClassScore = 0f
+              for (c in classStart until cols) {
+                  val s = get(c, i)
+                  if (s > bestClassScore) {
+                      bestClassScore = s
+                      bestClass = c - classStart
+                  }
+              }
 
-            val scale = if (cx <= 2f && cy <= 2f && w <= 2f && h <= 2f) inputSize.toFloat() else 1f
-            val cxPx = cx * scale
-            val cyPx = cy * scale
-            val wPx = w * scale
-            val hPx = h * scale
+              val score = obj * bestClassScore
+              if (score < scoreThreshold || bestClass < 0) continue
 
-            val x1 = ((cxPx - wPx / 2f) / inputSize.toFloat() * frameW).coerceIn(0f, frameW.toFloat())
-            val y1 = ((cyPx - hPx / 2f) / inputSize.toFloat() * frameH).coerceIn(0f, frameH.toFloat())
-            val x2 = ((cxPx + wPx / 2f) / inputSize.toFloat() * frameW).coerceIn(0f, frameW.toFloat())
-            val y2 = ((cyPx + hPx / 2f) / inputSize.toFloat() * frameH).coerceIn(0f, frameH.toFloat())
+              // Nìkteré exporty dávají xywh v rozsahu 0..1, jiné 0..inputSize
+              val scale = if (cx <= 2f && cy <= 2f && w <= 2f && h <= 2f) inputSize.toFloat() else 1f
+              val cxPx = cx * scale
+              val cyPx = cy * scale
+              val wPx = w * scale
+              val hPx = h * scale
 
-            val label = DetectionLabelMapper.cocoLabel(bestClass)
-            out.add(Detection(Box(x1, y1, x2, y2), score, label))
+              val x1 = ((cxPx - wPx / 2f) / inputSize.toFloat() * frameW).coerceIn(0f, frameW.toFloat())
+              val y1 = ((cyPx - hPx / 2f) / inputSize.toFloat() * frameH).coerceIn(0f, frameH.toFloat())
+              val x2 = ((cxPx + wPx / 2f) / inputSize.toFloat() * frameW).coerceIn(0f, frameW.toFloat())
+              val y2 = ((cyPx + hPx / 2f) / inputSize.toFloat() * frameH).coerceIn(0f, frameH.toFloat())
 
-            if (AppPreferences.debugOverlay && out.size <= 3) {
-                Log.d("YoloOnnxDetector", "cols=$cols rows=$rows chFirst=$channelFirst hasObj=$hasObjectness cls=$bestClass score=$score")
-            }
-        }
-        return out
-    }
+              val label = DetectionLabelMapper.cocoLabel(bestClass)
+              out.add(Detection(Box(x1, y1, x2, y2), score, label))
+
+              if (AppPreferences.debugOverlay && out.size <= 3) {
+                  Log.d("YoloOnnxDetector", "yolo cols=$cols rows=$rows chFirst=$channelFirst hasObj=$hasObjectness cls=$bestClass score=$score box=($x1,$y1,$x2,$y2)")
+              }
+          }
+
+          return out
+      }
 
     private fun FloatBuffer.toArray(): FloatArray {
         val dup = duplicate()

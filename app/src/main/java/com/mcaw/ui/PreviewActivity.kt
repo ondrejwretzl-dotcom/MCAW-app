@@ -11,7 +11,6 @@ import android.hardware.camera2.CameraManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
-import android.util.Size
 import android.os.Looper
 import android.widget.TextView
 import androidx.activity.ComponentActivity
@@ -32,7 +31,6 @@ import com.mcaw.location.SpeedMonitor
 import com.mcaw.location.SpeedProvider
 import com.mcaw.service.McawService
 import com.mcaw.util.LabelMapper
-import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 class PreviewActivity : ComponentActivity() {
@@ -40,8 +38,6 @@ class PreviewActivity : ComponentActivity() {
     private lateinit var previewView: PreviewView
     private lateinit var overlay: OverlayView
     private lateinit var analyzer: DetectionAnalyzer
-
-    private lateinit var analysisExecutor: ExecutorService
     private lateinit var speedProvider: SpeedProvider
     private lateinit var speedMonitor: SpeedMonitor
     private lateinit var txtDetectionLabel: TextView
@@ -60,18 +56,6 @@ class PreviewActivity : ComponentActivity() {
                 overlay.objectSpeed = -1f
                 overlay.ttc = -1f
                 overlay.label = ""
-
-                // ROI vizualizace i při clear (aby bylo jasné, kde se hledá)
-                overlay.frameWidth = i.getFloatExtra("frame_w", overlay.frameWidth)
-                overlay.frameHeight = i.getFloatExtra("frame_h", overlay.frameHeight)
-                if (i.hasExtra("roi_left")) {
-                    overlay.roiBox = com.mcaw.model.Box(
-                        i.getFloatExtra("roi_left", 0f),
-                        i.getFloatExtra("roi_top", 0f),
-                        i.getFloatExtra("roi_right", 0f),
-                        i.getFloatExtra("roi_bottom", 0f)
-                    )
-                }
                 searching = true
                 updateSearchingLabel()
                 logActivity("detection_clear")
@@ -80,14 +64,6 @@ class PreviewActivity : ComponentActivity() {
             searching = false
             overlay.frameWidth = i.getFloatExtra("frame_w", 0f)
             overlay.frameHeight = i.getFloatExtra("frame_h", 0f)
-            if (i.hasExtra("roi_left")) {
-                overlay.roiBox = com.mcaw.model.Box(
-                    i.getFloatExtra("roi_left", 0f),
-                    i.getFloatExtra("roi_top", 0f),
-                    i.getFloatExtra("roi_right", 0f),
-                    i.getFloatExtra("roi_bottom", 0f)
-                )
-            }
             overlay.box = com.mcaw.model.Box(
                 i.getFloatExtra("left", 0f),
                 i.getFloatExtra("top", 0f),
@@ -171,44 +147,15 @@ class PreviewActivity : ComponentActivity() {
         startCamera()
     }
 
-        private fun startCamera() {
+    private fun startCamera() {
         val providerFuture = ProcessCameraProvider.getInstance(this)
         providerFuture.addListener({
             val provider = providerFuture.get()
             provider.unbindAll()
 
-            val preview = androidx.camera.core.Preview.Builder()
-                .setTargetRotation(previewView.display.rotation)
-                .build().also {
-                    it.setSurfaceProvider(previewView.surfaceProvider)
-                }
-
-            if (!::analysisExecutor.isInitialized) {
-                analysisExecutor = Executors.newSingleThreadExecutor { r ->
-                    Thread(r, "mcaw-analysis").apply { isDaemon = true }
-                }
+            val preview = androidx.camera.core.Preview.Builder().build().also {
+                it.setSurfaceProvider(previewView.surfaceProvider)
             }
-
-            val analysis = ImageAnalysis.Builder()
-                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
-                .setTargetResolution(Size(960, 540))
-                .setTargetRotation(previewView.display.rotation)
-                .build()
-                .apply {
-                    setAnalyzer(analysisExecutor, analyzer)
-                }
-
-            val camera = provider.bindToLifecycle(
-                this,
-                CameraSelector.DEFAULT_BACK_CAMERA,
-                preview,
-                analysis
-            )
-            updateCameraCalibration(camera)
-        }, ContextCompat.getMainExecutor(this))
-    }
-
 
             val analysis = ImageAnalysis.Builder()
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
@@ -231,9 +178,6 @@ class PreviewActivity : ComponentActivity() {
         unregisterReceiver(receiver)
         speedMonitor.stop()
         stopSearching()
-        if (::analysisExecutor.isInitialized) {
-            analysisExecutor.shutdown()
-        }
         super.onDestroy()
     }
 

@@ -28,6 +28,8 @@ class DetectionPostProcessor(
         val maxAspect: Float = 6.0f,
         val edgeMarginRatio: Float = 0.07f,
         val edgeFilterEnabled: Boolean = false,
+        val roiFilterEnabled: Boolean = false,
+        val roi: RectNorm = RectNorm(0.45f, 0.10f, 1.0f, 0.95f),
         val debug: Boolean = false
     )
 
@@ -48,10 +50,7 @@ class DetectionPostProcessor(
         val filters: Int
     )
 
-    /**
-     * @param roiNorm If non-null, filters detections whose centers are outside ROI.
-     */
-    fun process(raw: List<Detection>, frameWidth: Float, frameHeight: Float, roiNorm: RectNorm? = null): Result {
+    fun process(raw: List<Detection>, frameWidth: Float, frameHeight: Float): Result {
         val rejected = mutableListOf<RejectedDetection>()
 
         val normalized = raw.map { detection ->
@@ -69,10 +68,14 @@ class DetectionPostProcessor(
         val nmsResult = classAwareNms(thresholded)
         rejected.addAll(nmsResult.rejected)
 
-        val accepted = ArrayList<Detection>(nmsResult.accepted.size)
+        val accepted = mutableListOf<Detection>()
         for (det in nmsResult.accepted) {
-            val reason = rejectionReason(det, frameWidth, frameHeight, roiNorm)
-            if (reason == null) accepted.add(det) else rejected.add(RejectedDetection(det, reason))
+            val reason = rejectionReason(det, frameWidth, frameHeight)
+            if (reason == null) {
+                accepted.add(det)
+            } else {
+                rejected.add(RejectedDetection(det, reason))
+            }
         }
 
         if (config.debug) {
@@ -89,31 +92,24 @@ class DetectionPostProcessor(
         )
     }
 
-    private fun rejectionReason(det: Detection, frameW: Float, frameH: Float, roi: RectNorm?): String? {
+    private fun rejectionReason(det: Detection, frameW: Float, frameH: Float): String? {
         if (frameW <= 0f || frameH <= 0f) return "invalidFrame"
         val b = det.box
-
         val areaRatio = b.area / (frameW * frameH)
         if (areaRatio < config.minAreaRatio || areaRatio > config.maxAreaRatio) return "minArea"
-
         val aspect = if (b.h > 0f) b.w / b.h else Float.POSITIVE_INFINITY
         if (aspect < config.minAspect || aspect > config.maxAspect) return "aspect"
 
         val cx = b.cx / frameW
         val cy = b.cy / frameH
-
         if (config.edgeFilterEnabled) {
             val m = config.edgeMarginRatio
             if (cx < m || cx > 1f - m || cy < m || cy > 1f - m) return "edge"
         }
 
-        if (roi != null) {
-            val l = roi.left * frameW
-            val t = roi.top * frameH
-            val r = roi.right * frameW
-            val btm = roi.bottom * frameH
-            // Stricter: whole box must be inside ROI (not only center).
-            if (b.x1 < l || b.y1 < t || b.x2 > r || b.y2 > btm) return "outsideROI"
+        if (config.roiFilterEnabled) {
+            val roi = config.roi
+            if (cx !in roi.left..roi.right || cy !in roi.top..roi.bottom) return "outsideROI"
         }
         return null
     }
@@ -123,41 +119,32 @@ class DetectionPostProcessor(
         val rejected: List<RejectedDetection>
     )
 
-    /**
-     * Less allocations than groupBy/sortedByDescending for each frame.
-     */
     private fun classAwareNms(input: List<Detection>): NmsResult {
-        val buckets = HashMap<String, MutableList<Detection>>(8)
-        for (d in input) {
-            val k = d.label ?: "unknown"
-            (buckets[k] ?: ArrayList<Detection>(8).also { buckets[k] = it }).add(d)
-        }
+        val accepted = mutableListOf<Detection>()
+        val rejected = mutableListOf<RejectedDetection>()
 
-        val accepted = ArrayList<Detection>(input.size)
-        val rejected = ArrayList<RejectedDetection>(input.size / 2)
-
-        for (list in buckets.values) {
-            list.sortByDescending { it.score }
-            var i = 0
-            while (i < list.size) {
-                val best = list[i]
-                accepted.add(best)
-                var j = i + 1
-                while (j < list.size) {
-                    val cand = list[j]
-                    if (iou(best.box, cand.box) > config.nmsIouThreshold) {
-                        rejected.add(RejectedDetection(cand, "NMS"))
-                        list.removeAt(j)
-                    } else {
-                        j++
+        input.groupBy { it.label ?: "unknown" }
+            .values
+            .forEach { list ->
+                val mutable = list.sortedByDescending { it.score }.toMutableList()
+                while (mutable.isNotEmpty()) {
+                    val best = mutable.removeAt(0)
+                    accepted.add(best)
+                    val it = mutable.iterator()
+                    while (it.hasNext()) {
+                        val candidate = it.next()
+                        if (iou(best.box, candidate.box) > config.nmsIouThreshold) {
+                            rejected.add(RejectedDetection(candidate, "NMS"))
+                            it.remove()
+                        }
                     }
                 }
-                i++
             }
-        }
 
-        accepted.sortByDescending { it.score }
-        return NmsResult(accepted = accepted, rejected = rejected)
+        return NmsResult(
+            accepted = accepted.sortedByDescending { it.score },
+            rejected = rejected
+        )
     }
 
     private fun iou(a: Box, b: Box): Float {

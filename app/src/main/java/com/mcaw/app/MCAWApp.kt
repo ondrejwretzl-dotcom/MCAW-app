@@ -69,7 +69,7 @@ class MCAWApp : Application(), TextToSpeech.OnInitListener {
         try {
             tts?.shutdown()
             ioExecutor.shutdown()
-        } catch (e: Exception) {
+        } catch (_: Exception) {
         }
         super.onTerminate()
     }
@@ -88,7 +88,7 @@ class MCAWApp : Application(), TextToSpeech.OnInitListener {
     fun speakNow(text: String) {
         try {
             tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "app_say")
-        } catch (e: Exception) { /* ignore */ }
+        } catch (_: Exception) { /* ignore */ }
     }
 
     fun getTts(): TextToSpeech? = tts
@@ -110,7 +110,7 @@ class MCAWApp : Application(), TextToSpeech.OnInitListener {
                 "mcaw_crash_$stamp.txt",
                 stack
             )
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             // ignore
         }
     }
