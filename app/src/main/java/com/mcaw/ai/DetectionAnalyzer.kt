@@ -79,7 +79,7 @@ private val analyzerLogFileName: String = "mcaw_analyzer_${System.currentTimeMil
         try {
             val ts = System.currentTimeMillis()
 
-            val rawBitmap = ImageUtils.imageProxyToBitmap(image) ?: run {
+            val rawBitmap = ImageUtils.imageProxyToBitmap(ctx, image) ?: run {
                 sendOverlayClear()
                 return
             }
@@ -94,6 +94,11 @@ private val analyzerLogFileName: String = "mcaw_analyzer_${System.currentTimeMil
 
 
             // ROI (zúžené zorné pole) pro rychlost a stabilitu: typicky střed + spodní část obrazu
+            val roiEnabled = AppPreferences.roiEnabled
+            val roiLeftPx = (frameW * AppPreferences.roiLeftNorm).coerceIn(0f, frameW - 2f)
+            val roiTopPx = (frameH * AppPreferences.roiTopNorm).coerceIn(0f, frameH - 2f)
+            val roiRightPx = (frameW * AppPreferences.roiRightNorm).coerceIn(roiLeftPx + 2f, frameW)
+            val roiBottomPx = (frameH * AppPreferences.roiBottomNorm).coerceIn(roiTopPx + 2f, frameH)
 
             val roiLeftPx = 0f
             val roiTopPx = 0f
@@ -128,12 +133,17 @@ flog(
 
             
             val mappedDetections = rawDetections
-            // Postprocess ve stejném frame (otočený bitmap)
+// ? Postprocess ve stejném frame (otočený bitmap)
             val post = postProcessor.process(
                 mappedDetections,
                 frameW,
                 frameH,
-                null
+                roiNorm = if (roiEnabled) DetectionPostProcessor.RectNorm(
+                    AppPreferences.roiLeftNorm,
+                    AppPreferences.roiTopNorm,
+                    AppPreferences.roiRightNorm,
+                    AppPreferences.roiBottomNorm
+                ) else null
             )
             flog("counts raw=${post.counts.raw} thr=${post.counts.threshold} nms=${post.counts.nms} accepted=${post.counts.filters}")
 
