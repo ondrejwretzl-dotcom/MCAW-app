@@ -222,7 +222,6 @@ private val analyzerLogFileName: String = "mcaw_analyzer_${System.currentTimeMil
      */
     private fun priorityScore(d: Detection, frameW: Float, frameH: Float): Float {
         val b = d.box
-        val w = frameW.toFloat().coerceAtLeast(1f)
         val w = frameW.coerceAtLeast(1f)
         val h = frameH.coerceAtLeast(1f)
         // 0..1: 1 = přesně uprostřed
