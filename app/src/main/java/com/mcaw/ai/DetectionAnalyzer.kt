@@ -220,11 +220,11 @@ private val analyzerLogFileName: String = "mcaw_analyzer_${System.currentTimeMil
      * Prioritizace cílového objektu (středový pruh + spodní část obrazu).
      * Cíl: méně přeskakování mezi objekty => stabilnější TTC a včasnější alerty.
      */
-    private fun priorityScore(d: Detection, frameW: Int, frameH: Int): Float {
+    private fun priorityScore(d: Detection, frameW: Float, frameH: Float): Float {
         val b = d.box
         val w = frameW.toFloat().coerceAtLeast(1f)
-        val h = frameH.toFloat().coerceAtLeast(1f)
-
+        val w = frameW.coerceAtLeast(1f)
+        val h = frameH.coerceAtLeast(1f)
         // 0..1: 1 = přesně uprostřed
         val centerDistNorm = (abs(b.cx - w / 2f) / (w / 2f)).coerceIn(0f, 1f)
         val centerBias = 1f - centerDistNorm
