@@ -2,8 +2,6 @@ package com.mcaw.ai
 
 import android.content.Context
 import android.content.Intent
-import android.graphics.Rect
-import android.graphics.Bitmap
 import android.media.AudioManager
 import android.media.MediaPlayer
 import android.os.VibrationEffect
@@ -16,10 +14,10 @@ import com.mcaw.app.R
 import com.mcaw.config.AppPreferences
 import com.mcaw.location.SpeedProvider
 import com.mcaw.model.Box
-import com.mcaw.model.Detection
 import com.mcaw.util.PublicLogWriter
 import java.util.Locale
 import kotlin.math.abs
+import kotlin.math.max
 
 class DetectionAnalyzer(
     private val ctx: Context,
@@ -46,21 +44,24 @@ class DetectionAnalyzer(
 
     private val tracker = TemporalTracker(minConsecutiveForAlert = 3)
 
-    // Cache for ROI values used for both detection + overlay (normalized 0..1)
-    private var lastRoiN: AppPreferences.RoiN = AppPreferences.RoiN(0.15f, 0.15f, 0.85f, 0.85f)
-
-    // Target lock to reduce "jumping" between objects.
-    private var lockedTrackId: Long = -1L
-    private var lockedMetric: Float = 0f
-    private var lockedLastSeenMs: Long = 0L
-
-
-
+    // Target lock to avoid switching between objects (stability for TTC/alerts)
+    private var lockedTrackId: Long? = null
+    private var lockedPriority: Float = 0f
     private var switchCandidateId: Long? = null
     private var switchCandidateCount: Int = 0
+    private var lastSelectedTrackId: Long = -1L
+
     // Distance/time history (for signed relative speed)
     private var lastDistanceM: Float = Float.NaN
     private var lastDistanceTimestampMs: Long = -1L
+
+    // BBox height history (alternative TTC from bbox growth)
+    private var lastBoxHeightPx: Float = Float.NaN
+    private var lastBoxHeightTimestampMs: Long = -1L
+
+    // Rider speed smoothing (GPS speed is noisy, especially at low speeds)
+    private var riderSpeedEma: Float = 0f
+    private var riderSpeedEmaValid: Boolean = false
 
     // EMA smoothing to reduce jitter (distance estimate is noisy)
     private var relSpeedEma: Float = 0f
@@ -87,8 +88,6 @@ class DetectionAnalyzer(
 
     override fun analyze(image: ImageProxy) {
         try {
-            // Ensure prefs are available before reading ROI / debug flags.
-            AppPreferences.ensureInit(ctx)
             val tsMs = System.currentTimeMillis()
 
             val rawBitmap = ImageUtils.imageProxyToBitmap(image, ctx) ?: run {
@@ -118,13 +117,12 @@ class DetectionAnalyzer(
                 )
             }
 
-            val roiRectPx = currentRoiRectPx(bitmap)
-
-            val riderSpeedMps = speedProvider.getCurrent().speedMps
+            val riderSpeedRawMps = speedProvider.getCurrent().speedMps
+            val riderSpeedMps = smoothRiderSpeed(riderSpeedRawMps)
 
             val rawDetections = when (AppPreferences.selectedModel) {
-                0 -> yolo?.detect(bitmap, roiRectPx).orEmpty()
-                1 -> det?.detect(bitmap, roiRectPx).orEmpty()
+                0 -> yolo?.detect(bitmap).orEmpty()
+                1 -> det?.detect(bitmap).orEmpty()
                 else -> emptyList()
             }
 
@@ -132,94 +130,28 @@ class DetectionAnalyzer(
             val post = postProcessor.process(rawDetections, frameW, frameH)
             flog("counts raw=${post.counts.raw} thr=${post.counts.threshold} nms=${post.counts.nms} accepted=${post.counts.filters}")
 
+            val tracked = tracker.update(post.accepted)
+            val bestTrack = selectLockedTarget(tracked, frameW, frameH)
 
-val tracked = tracker.update(post.accepted)
-
-// Kandidáti pro výstrahy: musí projít gate (stabilita) a mít rozumné score.
-val candidates = tracked
-    .asSequence()
-    .filter { it.alertGatePassed }
-    .filter { it.detection.score >= 0.30f }
-    .toList()
-
-if (candidates.isEmpty()) {
-    lockedTrackId = -1L
-    lockedMetric = 0f
-    lockedLastSeenMs = 0L
-    switchCandidateId = null
-    switchCandidateCount = 0
-    resetMotionHistory()
-    stopActiveAlerts()
-    sendOverlayClear()
-    sendMetricsClear()
-    return
-}
-
-fun priorityMetric(td: TemporalTracker.TrackedDetection): Float {
-    val d = td.detection
-    val area = d.box.area
-    val cxN = ((d.box.x1 + d.box.x2) * 0.5f) / frameW.toFloat()
-    val centerWeightX = (1f - (kotlin.math.abs(cxN - 0.5f) * 2f)).coerceIn(0f, 1f)
-    // Blízkost (area) * jistota (score) * prefer centrum (aby to drželo objekt před námi)
-    return area * d.score * (0.6f + 0.4f * centerWeightX)
-}
-
-val best = candidates.maxByOrNull { priorityMetric(it) }!!
-val locked = if (lockedTrackId > 0) candidates.firstOrNull { it.id == lockedTrackId } else null
-
-val prevLockedId = lockedTrackId
-val selected: TemporalTracker.TrackedDetection =
-    if (locked != null) {
-        val lockedM = priorityMetric(locked)
-        val bestM = priorityMetric(best)
-
-        lockedMetric = lockedM
-        lockedLastSeenMs = tsMs
-
-        if (best.id == locked.id) {
-            switchCandidateId = null
-            switchCandidateCount = 0
-            locked
-        } else {
-            val switchRatio = 1.35f
-            val qualifies = bestM > lockedM * switchRatio && best.consecutiveDetections >= locked.consecutiveDetections
-            if (qualifies) {
-                if (switchCandidateId == best.id) {
-                    switchCandidateCount += 1
-                } else {
-                    switchCandidateId = best.id
-                    switchCandidateCount = 1
-                }
-
-                val confirmFrames = 3
-                if (switchCandidateCount >= confirmFrames) {
-                    switchCandidateId = null
-                    switchCandidateCount = 0
-                    best
-                } else {
-                    locked
-                }
-            } else {
+            if (bestTrack == null) {
+                lockedTrackId = null
                 switchCandidateId = null
                 switchCandidateCount = 0
-                locked
+                stopActiveAlerts()
+                resetMotionState()
+                sendOverlayClear()
+                sendMetricsClear()
+                return
             }
-        }
-    } else {
-        switchCandidateId = null
-        switchCandidateCount = 0
-        best
-    }
 
-lockedTrackId = selected.id
-
-// Pokud jsme přepnuli cíl, musíme resetnout historii pro relSpeed/TTC, jinak budou skoky.
-if (prevLockedId > 0 && selected.id != prevLockedId) {
-    resetMotionHistory()
-}
+            // reset smoothing on target change
+            if (lastSelectedTrackId != bestTrack.id) {
+                lastSelectedTrackId = bestTrack.id
+                resetMotionState()
+            }
 
             // Clamp + canonical label
-            val best0 = selected.detection
+            val best0 = bestTrack.detection
             val bestBox = clampBox(best0.box, frameW, frameH)
             val label = DetectionLabelMapper.toCanonical(best0.label) ?: (best0.label ?: "unknown")
 
@@ -231,20 +163,30 @@ if (prevLockedId > 0 && selected.id != prevLockedId) {
             )
 
             val distanceM = smoothDistance(distanceRaw ?: Float.NaN)
+
             val relSpeedSigned = computeRelativeSpeedSigned(distanceM, tsMs)
+            val approachSpeedFromDist = relSpeedSigned.coerceAtLeast(0f)
 
-            // closing speed for TTC/alerts (only approaching counts)
-            val approachSpeedMps = relSpeedSigned.coerceAtLeast(0f)
+            // TTC from bbox growth tends to be more stable than distance derivative
+            val boxHPx = (bestBox.y2 - bestBox.y1).coerceAtLeast(0f)
+            val ttcFromHeights = computeTtcFromBoxHeights(boxHPx, tsMs)
 
-            val ttc = if (distanceM.isFinite() && approachSpeedMps > 0.30f) {
-                (distanceM / approachSpeedMps).coerceAtMost(120f)
+            val ttcFromDist = if (distanceM.isFinite() && approachSpeedFromDist > 0.30f) {
+                (distanceM / approachSpeedFromDist).coerceAtMost(120f)
             } else {
                 Float.POSITIVE_INFINITY
             }
 
+            val ttc = ttcFromHeights ?: ttcFromDist
+
+            // Use TTC (if available) to derive approach speed for alerting
+            val approachSpeedMps =
+                if (ttc.isFinite() && ttc > 0f && distanceM.isFinite()) (distanceM / ttc).coerceIn(0f, 80f)
+                else approachSpeedFromDist
+
             // Object speed estimate (m/s). If relSpeed is "rider - object", then object = rider - rel.
             val objectSpeedMps =
-                if (riderSpeedMps.isFinite()) riderSpeedMps - relSpeedSigned else Float.POSITIVE_INFINITY
+                if (riderSpeedMps.isFinite()) (riderSpeedMps - relSpeedSigned) else Float.POSITIVE_INFINITY
 
             val thresholds = thresholdsForMode(AppPreferences.detectionMode)
             val level =
@@ -258,8 +200,12 @@ if (prevLockedId > 0 && selected.id != prevLockedId) {
 
             sendOverlayUpdate(bestBox, frameW, frameH, distanceM, relSpeedSigned, objectSpeedMps, ttc, label)
             flog(
-                "best label=$label score=${best0.score} box=${bestBox.x1},${bestBox.y1},${bestBox.x2},${bestBox.y2} " +
-                    "dist=$distanceM rel=$relSpeedSigned approach=$approachSpeedMps rider=$riderSpeedMps obj=$objectSpeedMps ttc=$ttc"
+                "best id=${bestTrack.id} label=$label score=${best0.score} " +
+                    "box=${bestBox.x1},${bestBox.y1},${bestBox.x2},${bestBox.y2} " +
+                    "distRaw=${distanceRaw ?: Float.NaN} dist=$distanceM " +
+                    "rel=$relSpeedSigned aDist=$approachSpeedFromDist aUse=$approachSpeedMps " +
+                    "riderRaw=$riderSpeedRawMps rider=$riderSpeedMps obj=$objectSpeedMps " +
+                    "ttcH=${ttcFromHeights ?: Float.NaN} ttcD=$ttcFromDist ttc=$ttc"
             )
 
             sendMetricsUpdate(distanceM, relSpeedSigned, objectSpeedMps, ttc, level, label)
@@ -342,11 +288,6 @@ if (prevLockedId > 0 && selected.id != prevLockedId) {
     ) {
         val i = Intent("MCAW_DEBUG_UPDATE").setPackage(ctx.packageName)
         i.putExtra("clear", false)
-        // Always include ROI so OverlayView can draw it even when detections are stable.
-        i.putExtra("roi_left_n", lastRoiN.left)
-        i.putExtra("roi_top_n", lastRoiN.top)
-        i.putExtra("roi_right_n", lastRoiN.right)
-        i.putExtra("roi_bottom_n", lastRoiN.bottom)
         i.putExtra("frame_w", frameW)
         i.putExtra("frame_h", frameH)
         i.putExtra("left", box.x1)
@@ -364,32 +305,7 @@ if (prevLockedId > 0 && selected.id != prevLockedId) {
     private fun sendOverlayClear() {
         val i = Intent("MCAW_DEBUG_UPDATE").setPackage(ctx.packageName)
         i.putExtra("clear", true)
-        // Keep ROI visible even when clearing detections.
-        i.putExtra("roi_left_n", lastRoiN.left)
-        i.putExtra("roi_top_n", lastRoiN.top)
-        i.putExtra("roi_right_n", lastRoiN.right)
-        i.putExtra("roi_bottom_n", lastRoiN.bottom)
         ctx.sendBroadcast(i)
-    }
-
-    /**
-     * Current ROI in pixel coords for the given (already rotated) frame.
-     * Returns null when ROI is not usable (should be rare due to prefs sanitation).
-     */
-    private fun currentRoiRectPx(bitmap: Bitmap): Rect? {
-        lastRoiN = AppPreferences.getRoiNormalized()
-
-        val w = bitmap.width
-        val h = bitmap.height
-        if (w <= 1 || h <= 1) return null
-
-        val l = (lastRoiN.left * w).toInt().coerceIn(0, w - 1)
-        val t = (lastRoiN.top * h).toInt().coerceIn(0, h - 1)
-        val r = (lastRoiN.right * w).toInt().coerceIn(l + 1, w)
-        val b = (lastRoiN.bottom * h).toInt().coerceIn(t + 1, h)
-
-        if (r - l < 2 || b - t < 2) return null
-        return Rect(l, t, r, b)
     }
 
     private fun sendMetricsUpdate(
@@ -452,6 +368,145 @@ if (prevLockedId > 0 && selected.id != prevLockedId) {
         return if (orange) 1 else 0
     }
 
+    private fun resetMotionState() {
+        lastDistanceM = Float.NaN
+        lastDistanceTimestampMs = -1L
+        distEmaValid = false
+        distEma = Float.NaN
+        relSpeedEmaValid = false
+        relSpeedEma = 0f
+        lastBoxHeightPx = Float.NaN
+        lastBoxHeightTimestampMs = -1L
+    }
+
+    /**
+     * GPS speed is noisy at low speed and causes "object speed" to look wrong in stationary tests.
+     * We apply a deadband + EMA and keep units in m/s internally.
+     */
+    private fun smoothRiderSpeed(speedRawMps: Float): Float {
+        if (!speedRawMps.isFinite() || speedRawMps < 0f) {
+            riderSpeedEmaValid = false
+            riderSpeedEma = 0f
+            return 0f
+        }
+        // deadband: treat tiny speeds as 0 (standing / GPS drift)
+        val deadband = 0.8f // ~2.9 km/h
+        val v = if (speedRawMps < deadband) 0f else speedRawMps.coerceIn(0f, 80f)
+        val alpha = 0.20f
+        riderSpeedEma = if (!riderSpeedEmaValid) v else (riderSpeedEma + alpha * (v - riderSpeedEma))
+        riderSpeedEmaValid = true
+        return riderSpeedEma
+    }
+
+    /**
+     * TTC estimated directly from bbox height growth (less sensitive to distance quantization).
+     * Returns null if growth is too small/noisy.
+     */
+    private fun computeTtcFromBoxHeights(currHPx: Float, tsMs: Long): Float? {
+        if (currHPx <= 0f || !currHPx.isFinite()) {
+            lastBoxHeightPx = Float.NaN
+            lastBoxHeightTimestampMs = tsMs
+            return null
+        }
+
+        if (!lastBoxHeightPx.isFinite() || lastBoxHeightTimestampMs <= 0L) {
+            lastBoxHeightPx = currHPx
+            lastBoxHeightTimestampMs = tsMs
+            return null
+        }
+
+        val dtSec = ((tsMs - lastBoxHeightTimestampMs).coerceAtLeast(1L)).toFloat() / 1000f
+        if (dtSec > 1.0f) {
+            lastBoxHeightPx = currHPx
+            lastBoxHeightTimestampMs = tsMs
+            return null
+        }
+
+        val ttc = DetectionPhysics.computeTtcFromHeights(
+            prevH = lastBoxHeightPx,
+            currH = currHPx,
+            dtSec = dtSec,
+            minDtSec = 0.05f,
+            minGrowthRatio = 1.01f,
+            minDeltaHPx = 1.0f,
+            maxTtcSec = 120f
+        )
+
+        lastBoxHeightPx = currHPx
+        lastBoxHeightTimestampMs = tsMs
+
+        return ttc
+    }
+
+    private fun selectLockedTarget(
+        tracks: List<TemporalTracker.TrackedDetection>,
+        frameW: Float,
+        frameH: Float
+    ): TemporalTracker.TrackedDetection? {
+        if (tracks.isEmpty() || frameW <= 0f || frameH <= 0f) return null
+
+        // Prefer stable tracks (gate) but allow fallback when starting.
+        val gated = tracks.filter { it.alertGatePassed && it.misses == 0 }
+        val pool = if (gated.isNotEmpty()) gated else tracks.filter { it.misses == 0 }
+        if (pool.isEmpty()) return null
+
+        fun priority(t: TemporalTracker.TrackedDetection): Float {
+            val d = t.detection
+            val b = d.box
+            val areaNorm = (b.area / (frameW * frameH)).coerceIn(0f, 1f)
+            val cxN = (b.cx / frameW).coerceIn(0f, 1f)
+            val cyN = (b.cy / frameH).coerceIn(0f, 1f)
+            val dx = abs(cxN - 0.5f)
+            val dy = abs(cyN - 0.55f) // slightly below center is typical road focus
+            val centerScore = (1f - (dx * 1.4f + dy * 1.0f)).coerceIn(0f, 1f)
+            val score = d.score.coerceIn(0f, 1f)
+            // closeness (area) is most important, then center, then NN confidence
+            return (areaNorm * 0.55f) + (centerScore * 0.30f) + (score * 0.15f)
+        }
+
+        val bestNow = pool.maxByOrNull { priority(it) } ?: return null
+        val bestNowPrio = priority(bestNow)
+
+        val lockedId = lockedTrackId
+        val locked = if (lockedId != null) pool.firstOrNull { it.id == lockedId } else null
+
+        // Lock acquisition
+        if (locked == null) {
+            lockedTrackId = bestNow.id
+            lockedPriority = bestNowPrio
+            switchCandidateId = null
+            switchCandidateCount = 0
+            return bestNow
+        }
+
+        val lockedPrio = priority(locked)
+        lockedPriority = lockedPrio
+
+        // Switching hysteresis: only switch if clearly better for a few frames
+        val switchMargin = 1.25f
+        if (bestNow.id != locked.id && bestNowPrio >= lockedPrio * switchMargin) {
+            if (switchCandidateId == bestNow.id) {
+                switchCandidateCount += 1
+            } else {
+                switchCandidateId = bestNow.id
+                switchCandidateCount = 1
+            }
+
+            if (switchCandidateCount >= 3) {
+                lockedTrackId = bestNow.id
+                lockedPriority = bestNowPrio
+                switchCandidateId = null
+                switchCandidateCount = 0
+                return bestNow
+            }
+        } else {
+            switchCandidateId = null
+            switchCandidateCount = 0
+        }
+
+        return locked
+    }
+
     /**
      * Signed relative speed from distance derivative.
      * + = approaching (distance decreasing)
@@ -487,9 +542,10 @@ if (prevLockedId > 0 && selected.id != prevLockedId) {
         }
 
         val dd = lastDistanceM - currentDistanceM // + when approaching
-        // Guard: ignore tiny delta that is likely just bbox jitter (distance estimate jitter)
-        val minDeltaM = 0.25f
-        val raw = if (abs(dd) < minDeltaM) 0f else dd / dtSec
+        // Deadband against monocular jitter: too large threshold kills TTC completely.
+        // Make it small + slightly distance-dependent.
+        val deadbandM = max(0.03f, currentDistanceM * 0.008f) // ~3 cm or ~0.8% of distance
+        val raw = if (abs(dd) < deadbandM) 0f else dd / dtSec
 
         // Clamp to plausible range (monocular estimate can spike)
         val clamped = raw.coerceIn(-60f, 60f)
@@ -502,19 +558,8 @@ if (prevLockedId > 0 && selected.id != prevLockedId) {
         lastDistanceM = currentDistanceM
         lastDistanceTimestampMs = tsMs
 
-        // Deadband: po EMA odfiltruj kmitání kolem nuly (jinak TTC skáče mezi finite/Infinity)
-        return if (kotlin.math.abs(relSpeedEma) < 0.15f) 0f else relSpeedEma
+        return relSpeedEma
     }
-
-
-private fun resetMotionHistory() {
-    lastDistanceM = Float.NaN
-    lastDistanceTimestampMs = -1L
-    relSpeedEma = 0f
-    relSpeedEmaValid = false
-    distEma = Float.NaN
-    distEmaValid = false
-}
 
     private fun estimateFocalLengthPx(frameHeightPx: Int): Float {
         val focalMm = AppPreferences.cameraFocalLengthMm

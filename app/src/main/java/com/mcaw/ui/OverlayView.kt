@@ -183,8 +183,8 @@ class OverlayView @JvmOverloads constructor(
             if (label.isNotBlank()) add("OBJ  $label")
             add("BOX  [%.0f×%.0f]".format((b.x2 - b.x1), (b.y2 - b.y1)))
             if (distance.isFinite() && distance >= 0f) add("DIST %.2f m".format(distance))
-            if (speed.isFinite()) add("REL  %.2f m/s".format(speed))
-            if (objectSpeed.isFinite()) add("OBJ  %.2f m/s".format(objectSpeed))
+            if (speed.isFinite()) add("REL  %.1f km/h".format(speed * 3.6f))
+            if (objectSpeed.isFinite()) add("OBJ  %.1f km/h".format(objectSpeed * 3.6f))
             if (ttc.isFinite() && ttc >= 0f) add("TTC  %.2f s".format(ttc))
         }
         if (lines.isEmpty()) return

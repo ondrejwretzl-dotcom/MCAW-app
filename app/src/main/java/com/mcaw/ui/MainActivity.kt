@@ -54,12 +54,15 @@ class MainActivity : ComponentActivity() {
             txtDistance.text =
                 if (distance.isFinite()) "Vzdálenost: %.2f m".format(distance) else
                     "Vzdálenost: --.- m"
+            val speedKmh = if (speed.isFinite()) speed * 3.6f else Float.POSITIVE_INFINITY
+            val objKmh = if (objectSpeed.isFinite()) objectSpeed * 3.6f else Float.POSITIVE_INFINITY
+
             txtSpeed.text =
-                if (speed.isFinite()) "Rychlost přiblížení: %.2f m/s".format(speed) else
-                    "Rychlost přiblížení: --.- m/s"
+                if (speedKmh.isFinite()) "Rychlost přiblížení: %.1f km/h".format(speedKmh) else
+                    "Rychlost přiblížení: --.- km/h"
             txtObjectSpeed.text =
-                if (objectSpeed.isFinite()) "Rychlost objektu: %.2f m/s".format(objectSpeed) else
-                    "Rychlost objektu: --.- m/s"
+                if (objKmh.isFinite()) "Rychlost objektu: %.1f km/h".format(objKmh) else
+                    "Rychlost objektu: --.- km/h"
             val mappedLabel = LabelMapper.mapLabel(label)
             txtDetectedObject.text = if (mappedLabel.isNotBlank()) {
                 "Detekovaný objekt: $mappedLabel"
@@ -73,15 +76,17 @@ class MainActivity : ComponentActivity() {
                 else -> android.graphics.Color.parseColor("#00E5A8")
             }
             txtTtc.setTextColor(color)
+            val relKmhLog = if (speed.isFinite()) speed * 3.6f else Float.POSITIVE_INFINITY
+            val objKmhLog = if (objectSpeed.isFinite()) objectSpeed * 3.6f else Float.POSITIVE_INFINITY
             addLog(
                 "Metriky: TTC ${formatMetric(ttc, "s")} · " +
                     "Vzdálenost ${formatMetric(distance, "m")} · " +
-                    "Rel ${formatMetric(speed, "m/s")} · " +
+                    "Rel ${formatMetric(relKmhLog, "km/h")} · " +
                     "Objekt ${mappedLabel.ifBlank { "--" }}"
             )
             logActivity(
                 "metrics ttc=${formatMetric(ttc, "s")} dist=${formatMetric(distance, "m")} " +
-                    "rel=${formatMetric(speed, "m/s")} obj=${formatMetric(objectSpeed, "m/s")} " +
+                    "rel=${formatMetric(relKmhLog, "km/h")} obj=${formatMetric(objKmhLog, "km/h")} " +
                     "level=$level"
             )
         }
