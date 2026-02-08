@@ -73,7 +73,6 @@ object DetectionPhysics {
         val ttc = dtSec / dln
         if (!ttc.isFinite() || ttc <= 0f) return null
 
-        if (ttc < 0.3f) return null
         return ttc.coerceAtMost(maxTtcSec)
     }
 
@@ -81,27 +80,7 @@ object DetectionPhysics {
     /**
      * Jednoduchý adaptivní práh pro TTC (čím větší relativní rychlost, tím přísnější práh).
      */
-    
-
-/**
- * TTC z odhadované vzdálenosti a relativní rychlosti.
- * relSpeedMps: kladné = přibližování, záporné = vzdalování.
- */
-fun computeTtcFromDistanceMeters(
-    distanceM: Float,
-    relSpeedMps: Float,
-    minApproachMps: Float = 0.3f,
-    maxTtcSec: Float = 20f
-): Float? {
-    if (!distanceM.isFinite() || !relSpeedMps.isFinite()) return null
-    if (distanceM <= 0f) return null
-    if (relSpeedMps < minApproachMps) return null
-    val ttc = distanceM / relSpeedMps
-    if (!ttc.isFinite() || ttc <= 0f) return null
-    return ttc.coerceAtMost(maxTtcSec)
-}
-
-fun adaptiveTtcThreshold(relSpeedMps: Float?): Float {
+    fun adaptiveTtcThreshold(relSpeedMps: Float?): Float {
         val v = (relSpeedMps ?: 0f).coerceAtLeast(0f)
         return when {
             v >= 25f -> 1.0f   // ~90 km/h
