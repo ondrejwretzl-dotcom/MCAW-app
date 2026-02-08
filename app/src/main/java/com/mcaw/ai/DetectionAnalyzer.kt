@@ -88,25 +88,68 @@ class DetectionAnalyzer(
             val frameW = bitmap.width.toFloat()
             val frameH = bitmap.height.toFloat()
 
+            val roiN = AppPreferences.getRoiNormalized()
+            val roiPx = roiToPx(roiN.left, roiN.top, roiN.right, roiN.bottom, bitmap.width, bitmap.height)
+            val roiBitmap = if (roiPx.isFullFrame(bitmap.width, bitmap.height)) bitmap else {
+                // V1: jednoduchý crop (alokace). Další krok: reuse buffer.
+                android.graphics.Bitmap.createBitmap(bitmap, roiPx.x, roiPx.y, roiPx.w, roiPx.h)
+            }
+
             flog(
                 "frame proxy=${image.width}x${image.height} rot=$rotation " +
                     "bmpRaw=${rawBitmap.width}x${rawBitmap.height} bmpRot=${bitmap.width}x${bitmap.height} " +
-                    "model=${AppPreferences.selectedModel}"
+                    "roiN=${roiN.left},${roiN.top},${roiN.right},${roiN.bottom} " +
+                    "roiPx=${roiPx.x},${roiPx.y},${roiPx.w}x${roiPx.h} model=${AppPreferences.selectedModel}"
             )
 
             if (AppPreferences.debugOverlay) {
                 Log.d(
                     "DetectionAnalyzer",
-                    "frame imageProxy=${image.width}x${image.height} rot=$rotation bmpRot=${bitmap.width}x${bitmap.height}"
+                    "frame imageProxy=${image.width}x${image.height} rot=$rotation bmpRot=${bitmap.width}x${bitmap.height} roi=${roiPx.w}x${roiPx.h}"
                 )
             }
 
             val riderSpeedMps = speedProvider.getCurrent().speedMps
 
-            val rawDetections = when (AppPreferences.selectedModel) {
-                0 -> yolo?.detect(bitmap).orEmpty()
-                1 -> det?.detect(bitmap).orEmpty()
+            val rawDetectionsRoi = when (AppPreferences.selectedModel) {
+                0 -> yolo?.detect(roiBitmap).orEmpty()
+                1 -> det?.detect(roiBitmap).orEmpty()
                 else -> emptyList()
+            }
+
+            // Přemapuj ROI boxy do souřadnic celého frame + bezpečně ořízni na hranice ROI
+            // (některé modely mohou vrátit koordináty mimo crop).
+            val rawDetections = if (roiPx.isFullFrame(bitmap.width, bitmap.height)) {
+                rawDetectionsRoi
+            } else {
+                val roiWf = roiPx.w.toFloat()
+                val roiHf = roiPx.h.toFloat()
+                rawDetectionsRoi.mapNotNull { d ->
+                    // clamp do ROI bitmap prostoru
+                    val x1 = d.box.x1.coerceIn(0f, roiWf)
+                    val y1 = d.box.y1.coerceIn(0f, roiHf)
+                    val x2 = d.box.x2.coerceIn(0f, roiWf)
+                    val y2 = d.box.y2.coerceIn(0f, roiHf)
+                    if (x2 <= x1 || y2 <= y1) return@mapNotNull null
+
+                    val fx1 = x1 + roiPx.x
+                    val fy1 = y1 + roiPx.y
+                    val fx2 = x2 + roiPx.x
+                    val fy2 = y2 + roiPx.y
+                    val cxN = ((fx1 + fx2) * 0.5f) / bitmap.width.toFloat()
+                    val cyN = ((fy1 + fy2) * 0.5f) / bitmap.height.toFloat()
+
+                    // tvrdý gate: centrum boxu musí ležet v ROI
+                    if (cxN !in roiN.left..roiN.right || cyN !in roiN.top..roiN.bottom) {
+                        return@mapNotNull null
+                    }
+
+                    d.copy(box = Box(fx1, fy1, fx2, fy2))
+                }
+            }
+
+            if (!roiPx.isFullFrame(bitmap.width, bitmap.height)) {
+                flog("roiGate rawRoi=${rawDetectionsRoi.size} kept=${rawDetections.size}")
             }
 
             // Postprocess ve stejném frame (otočený bitmap)
@@ -120,12 +163,11 @@ class DetectionAnalyzer(
 
             if (bestTrack == null) {
                 stopActiveAlerts()
-                sendOverlayClear()
+                sendOverlayClear(roiN)
                 sendMetricsClear()
                 return
             }
 
-            // Clamp + canonical label
             val best0 = bestTrack.detection
             val bestBox = clampBox(best0.box, frameW, frameH)
             val label = DetectionLabelMapper.toCanonical(best0.label) ?: (best0.label ?: "unknown")
@@ -140,7 +182,6 @@ class DetectionAnalyzer(
             val distanceM = smoothDistance(distanceRaw ?: Float.NaN)
             val relSpeedSigned = computeRelativeSpeedSigned(distanceM, tsMs)
 
-            // closing speed for TTC/alerts (only approaching counts)
             val approachSpeedMps = relSpeedSigned.coerceAtLeast(0f)
 
             val ttc = if (distanceM.isFinite() && approachSpeedMps > 0.05f) {
@@ -149,7 +190,7 @@ class DetectionAnalyzer(
                 Float.POSITIVE_INFINITY
             }
 
-            // Object speed estimate (m/s). If relSpeed is "rider - object", then object = rider - rel.
+            // If relSpeed = rider - object, then object = rider - rel
             val objectSpeedMps =
                 if (riderSpeedMps.isFinite()) riderSpeedMps - relSpeedSigned else Float.POSITIVE_INFINITY
 
@@ -157,35 +198,14 @@ class DetectionAnalyzer(
             val level =
                 if (riderSpeedMps <= 0.01f) 0 else alertLevel(distanceM, approachSpeedMps, ttc, thresholds)
 
-            if (riderSpeedMps <= 0.01f) {
-                stopActiveAlerts()
-            } else {
-                handleAlerts(level)
-            }
+            if (riderSpeedMps <= 0.01f) stopActiveAlerts() else handleAlerts(level)
 
-            sendOverlayUpdate(bestBox, frameW, frameH, distanceM, relSpeedSigned, objectSpeedMps, ttc, label)
-            flog(
-                "best label=$label score=${best0.score} box=${bestBox.x1},${bestBox.y1},${bestBox.x2},${bestBox.y2} " +
-                    "dist=$distanceM rel=$relSpeedSigned approach=$approachSpeedMps rider=$riderSpeedMps obj=$objectSpeedMps ttc=$ttc"
-            )
-
+            sendOverlayUpdate(bestBox, frameW, frameH, distanceM, relSpeedSigned, objectSpeedMps, ttc, label, roiN)
             sendMetricsUpdate(distanceM, relSpeedSigned, objectSpeedMps, ttc, level, label)
 
-            if (AppPreferences.debugOverlay) {
-                Log.d(
-                    "DetectionAnalyzer",
-                    "pipeline raw=${post.counts.raw} thr=${post.counts.threshold} nms=${post.counts.nms} filters=${post.counts.filters} tracks=${tracked.size} gate=${tracked.count { it.alertGatePassed }}"
-                )
-                post.rejected.take(5).forEach {
-                    Log.d(
-                        "DetectionAnalyzer",
-                        "rejected reason=${it.reason} label=${it.detection.label} score=${it.detection.score}"
-                    )
-                }
-            }
         } catch (e: Exception) {
             Log.e("DetectionAnalyzer", "Detection failed", e)
-            sendOverlayClear()
+            sendOverlayClear(AppPreferences.getRoiNormalized())
             sendMetricsClear()
         } finally {
             image.close()
@@ -198,8 +218,7 @@ class DetectionAnalyzer(
             return Float.POSITIVE_INFINITY
         }
         val alpha = 0.25f
-        distEma =
-            if (!distEmaValid || !distEma.isFinite()) distanceM else (distEma + alpha * (distanceM - distEma))
+        distEma = if (!distEmaValid || !distEma.isFinite()) distanceM else (distEma + alpha * (distanceM - distEma))
         distEmaValid = true
         return distEma
     }
@@ -245,7 +264,8 @@ class DetectionAnalyzer(
         relSpeedSigned: Float,
         objectSpeed: Float,
         ttc: Float,
-        label: String
+        label: String,
+        roiN: AppPreferences.RoiN
     ) {
         val i = Intent("MCAW_DEBUG_UPDATE").setPackage(ctx.packageName)
         i.putExtra("clear", false)
@@ -260,12 +280,22 @@ class DetectionAnalyzer(
         i.putExtra("object_speed", objectSpeed)
         i.putExtra("ttc", ttc)
         i.putExtra("label", label)
+
+        i.putExtra("roi_left_n", roiN.left)
+        i.putExtra("roi_top_n", roiN.top)
+        i.putExtra("roi_right_n", roiN.right)
+        i.putExtra("roi_bottom_n", roiN.bottom)
+
         ctx.sendBroadcast(i)
     }
 
-    private fun sendOverlayClear() {
+    private fun sendOverlayClear(roiN: AppPreferences.RoiN) {
         val i = Intent("MCAW_DEBUG_UPDATE").setPackage(ctx.packageName)
         i.putExtra("clear", true)
+        i.putExtra("roi_left_n", roiN.left)
+        i.putExtra("roi_top_n", roiN.top)
+        i.putExtra("roi_right_n", roiN.right)
+        i.putExtra("roi_bottom_n", roiN.bottom)
         ctx.sendBroadcast(i)
     }
 
@@ -309,7 +339,6 @@ class DetectionAnalyzer(
                 AppPreferences.userSpeedOrange,
                 AppPreferences.userSpeedRed
             )
-
             else -> AlertThresholds(3.0f, 1.2f, 15f, 6f, 3f, 5f)
         }
     }
@@ -354,7 +383,6 @@ class DetectionAnalyzer(
         }
 
         val dtSec = ((tsMs - lastDistanceTimestampMs).coerceAtLeast(1L)).toFloat() / 1000f
-        // Guard: if time step is too large, treat as re-sync (camera stalled / app backgrounded)
         if (dtSec > 1.0f) {
             lastDistanceM = currentDistanceM
             lastDistanceTimestampMs = tsMs
@@ -364,16 +392,12 @@ class DetectionAnalyzer(
         }
 
         val dd = lastDistanceM - currentDistanceM // + when approaching
-        // Guard: ignore tiny delta that is likely just bbox jitter (distance estimate jitter)
         val minDeltaM = 0.25f
         val raw = if (abs(dd) < minDeltaM) 0f else dd / dtSec
-
-        // Clamp to plausible range (monocular estimate can spike)
         val clamped = raw.coerceIn(-60f, 60f)
 
         val alpha = 0.30f
-        relSpeedEma =
-            if (!relSpeedEmaValid) clamped else (relSpeedEma + alpha * (clamped - relSpeedEma))
+        relSpeedEma = if (!relSpeedEmaValid) clamped else (relSpeedEma + alpha * (clamped - relSpeedEma))
         relSpeedEmaValid = true
 
         lastDistanceM = currentDistanceM
@@ -399,4 +423,17 @@ class DetectionAnalyzer(
         val speedOrange: Float,
         val speedRed: Float
     )
+
+    private data class RoiPx(val x: Int, val y: Int, val w: Int, val h: Int) {
+        fun isFullFrame(frameW: Int, frameH: Int): Boolean =
+            x == 0 && y == 0 && w == frameW && h == frameH
+    }
+
+    private fun roiToPx(l: Float, t: Float, r: Float, b: Float, frameW: Int, frameH: Int): RoiPx {
+        val left = (l * frameW).toInt().coerceIn(0, frameW - 1)
+        val top = (t * frameH).toInt().coerceIn(0, frameH - 1)
+        val right = (r * frameW).toInt().coerceIn(left + 1, frameW)
+        val bottom = (b * frameH).toInt().coerceIn(top + 1, frameH)
+        return RoiPx(left, top, right - left, bottom - top)
+    }
 }
