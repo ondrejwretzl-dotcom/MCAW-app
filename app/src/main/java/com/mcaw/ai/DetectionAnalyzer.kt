@@ -33,12 +33,18 @@ class DetectionAnalyzer(
         const val EXTRA_OBJECT_SPEED = "extra_object_speed" // estimated object speed (m/s)
         const val EXTRA_LEVEL = "extra_level"
         const val EXTRA_LABEL = "extra_label"
+
+        const val ACTION_DEBUG_UPDATE = "MCAW_DEBUG_UPDATE"
     }
 
     private val analyzerLogFileName: String = "mcaw_analyzer_${System.currentTimeMillis()}.txt"
 
     private val postProcessor = DetectionPostProcessor(
-        DetectionPostProcessor.Config(debug = AppPreferences.debugOverlay)
+        DetectionPostProcessor.Config(
+            debug = AppPreferences.debugOverlay,
+            roiFilterEnabled = true,      // ROI must be enforced for performance + relevance
+            roiMinContainment = 0.80f     // object must be at least 80% inside ROI
+        )
     )
 
     private val tracker = TemporalTracker(minConsecutiveForAlert = 3)
@@ -88,10 +94,16 @@ class DetectionAnalyzer(
             val frameW = bitmap.width.toFloat()
             val frameH = bitmap.height.toFloat()
 
+            // Always refresh ROI from prefs (user can edit live)
+            val roi = AppPreferences.getRoiNormalized()
+            postProcessor.setRoiOverride(
+                DetectionPostProcessor.RectNorm(roi.left, roi.top, roi.right, roi.bottom)
+            )
+
             flog(
                 "frame proxy=${image.width}x${image.height} rot=$rotation " +
                     "bmpRaw=${rawBitmap.width}x${rawBitmap.height} bmpRot=${bitmap.width}x${bitmap.height} " +
-                    "model=${AppPreferences.selectedModel}"
+                    "model=${AppPreferences.selectedModel} roi=[${roi.left},${roi.top},${roi.right},${roi.bottom}]"
             )
 
             if (AppPreferences.debugOverlay) {
@@ -176,7 +188,7 @@ class DetectionAnalyzer(
                     "DetectionAnalyzer",
                     "pipeline raw=${post.counts.raw} thr=${post.counts.threshold} nms=${post.counts.nms} filters=${post.counts.filters} tracks=${tracked.size} gate=${tracked.count { it.alertGatePassed }}"
                 )
-                post.rejected.take(5).forEach {
+                post.rejected.take(8).forEach {
                     Log.d(
                         "DetectionAnalyzer",
                         "rejected reason=${it.reason} label=${it.detection.label} score=${it.detection.score}"
@@ -247,7 +259,8 @@ class DetectionAnalyzer(
         ttc: Float,
         label: String
     ) {
-        val i = Intent("MCAW_DEBUG_UPDATE").setPackage(ctx.packageName)
+        val roi = AppPreferences.getRoiNormalized()
+        val i = Intent(ACTION_DEBUG_UPDATE).setPackage(ctx.packageName)
         i.putExtra("clear", false)
         i.putExtra("frame_w", frameW)
         i.putExtra("frame_h", frameH)
@@ -260,12 +273,27 @@ class DetectionAnalyzer(
         i.putExtra("object_speed", objectSpeed)
         i.putExtra("ttc", ttc)
         i.putExtra("label", label)
+
+        // ROI (normalized) so overlay can stay in sync even if user edits live
+        i.putExtra("roi_left_n", roi.left)
+        i.putExtra("roi_top_n", roi.top)
+        i.putExtra("roi_right_n", roi.right)
+        i.putExtra("roi_bottom_n", roi.bottom)
+
         ctx.sendBroadcast(i)
     }
 
     private fun sendOverlayClear() {
-        val i = Intent("MCAW_DEBUG_UPDATE").setPackage(ctx.packageName)
+        val roi = AppPreferences.getRoiNormalized()
+        val i = Intent(ACTION_DEBUG_UPDATE).setPackage(ctx.packageName)
         i.putExtra("clear", true)
+
+        // ROI even on clear
+        i.putExtra("roi_left_n", roi.left)
+        i.putExtra("roi_top_n", roi.top)
+        i.putExtra("roi_right_n", roi.right)
+        i.putExtra("roi_bottom_n", roi.bottom)
+
         ctx.sendBroadcast(i)
     }
 
