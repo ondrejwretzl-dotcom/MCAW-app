@@ -14,10 +14,9 @@ import com.mcaw.app.R
 import com.mcaw.config.AppPreferences
 import com.mcaw.location.SpeedProvider
 import com.mcaw.model.Box
-import com.mcaw.model.Detection
-import java.util.Locale
 import com.mcaw.util.PublicLogWriter
-
+import java.util.Locale
+import kotlin.math.abs
 
 class DetectionAnalyzer(
     private val ctx: Context,
@@ -30,8 +29,8 @@ class DetectionAnalyzer(
         const val ACTION_METRICS_UPDATE = "MCAW_METRICS_UPDATE"
         const val EXTRA_TTC = "extra_ttc"
         const val EXTRA_DISTANCE = "extra_distance"
-        const val EXTRA_SPEED = "extra_speed"
-        const val EXTRA_OBJECT_SPEED = "extra_object_speed"
+        const val EXTRA_SPEED = "extra_speed" // signed relative speed (approach +, receding -)
+        const val EXTRA_OBJECT_SPEED = "extra_object_speed" // estimated object speed (m/s)
         const val EXTRA_LEVEL = "extra_level"
         const val EXTRA_LABEL = "extra_label"
     }
@@ -44,8 +43,16 @@ class DetectionAnalyzer(
 
     private val tracker = TemporalTracker(minConsecutiveForAlert = 3)
 
-    private var lastDistance = Float.POSITIVE_INFINITY
-    private var lastDistanceTimestamp = -1L
+    // Distance/time history (for signed relative speed)
+    private var lastDistanceM: Float = Float.NaN
+    private var lastDistanceTimestampMs: Long = -1L
+
+    // EMA smoothing to reduce jitter (distance estimate is noisy)
+    private var relSpeedEma: Float = 0f
+    private var relSpeedEmaValid: Boolean = false
+    private var distEma: Float = Float.NaN
+    private var distEmaValid: Boolean = false
+
     private var lastAlertLevel = 0
 
     private var tts: TextToSpeech? = null
@@ -65,16 +72,17 @@ class DetectionAnalyzer(
 
     override fun analyze(image: ImageProxy) {
         try {
-            val ts = System.currentTimeMillis()
+            val tsMs = System.currentTimeMillis()
 
             val rawBitmap = ImageUtils.imageProxyToBitmap(image, ctx) ?: run {
                 sendOverlayClear()
+                sendMetricsClear()
                 return
             }
 
             val rotation = image.imageInfo.rotationDegrees
 
-            // ? Detekuj i kresli ve stejné orientaci (otoèený bitmap)
+            // Detekuj i kresli ve stejnÃ© orientaci (otoÄenÃ½ bitmap)
             val bitmap = ImageUtils.rotateBitmap(rawBitmap, rotation)
 
             val frameW = bitmap.width.toFloat()
@@ -93,7 +101,7 @@ class DetectionAnalyzer(
                 )
             }
 
-            val speed = speedProvider.getCurrent().speedMps
+            val riderSpeedMps = speedProvider.getCurrent().speedMps
 
             val rawDetections = when (AppPreferences.selectedModel) {
                 0 -> yolo?.detect(bitmap).orEmpty()
@@ -101,7 +109,7 @@ class DetectionAnalyzer(
                 else -> emptyList()
             }
 
-            // ? Postprocess ve stejném frame (otoèený bitmap)
+            // Postprocess ve stejnÃ©m frame (otoÄenÃ½ bitmap)
             val post = postProcessor.process(rawDetections, frameW, frameH)
             flog("counts raw=${post.counts.raw} thr=${post.counts.threshold} nms=${post.counts.nms} accepted=${post.counts.filters}")
 
@@ -117,32 +125,51 @@ class DetectionAnalyzer(
                 return
             }
 
-            // ? Clamp + canonical label
+            // Clamp + canonical label
             val best0 = bestTrack.detection
             val bestBox = clampBox(best0.box, frameW, frameH)
             val label = DetectionLabelMapper.toCanonical(best0.label) ?: (best0.label ?: "unknown")
 
-            val distance = DetectionPhysics.estimateDistanceMeters(
+            val distanceRaw = DetectionPhysics.estimateDistanceMeters(
                 bbox = bestBox,
                 frameHeightPx = bitmap.height,
                 focalPx = estimateFocalLengthPx(bitmap.height),
                 realHeightM = if (label == "motorcycle" || label == "bicycle") 1.3f else 1.5f
-            ) ?: Float.POSITIVE_INFINITY
+            )
 
-            val relSpeed = computeRelativeSpeed(distance, ts)
-            val ttc = if (speed > 0.01f && relSpeed > 0.01f) distance / relSpeed else Float.POSITIVE_INFINITY
-            val level = if (speed <= 0.01f) 0 else alertLevel(distance, relSpeed, ttc, thresholdsForMode(AppPreferences.detectionMode))
+            val distanceM = smoothDistance(distanceRaw ?: Float.NaN)
+            val relSpeedSigned = computeRelativeSpeedSigned(distanceM, tsMs)
 
-            if (speed <= 0.01f) {
+            // closing speed for TTC/alerts (only approaching counts)
+            val approachSpeedMps = relSpeedSigned.coerceAtLeast(0f)
+
+            val ttc = if (distanceM.isFinite() && approachSpeedMps > 0.05f) {
+                (distanceM / approachSpeedMps).coerceAtMost(120f)
+            } else {
+                Float.POSITIVE_INFINITY
+            }
+
+            // Object speed estimate (m/s). If relSpeed is "rider - object", then object = rider - rel.
+            val objectSpeedMps =
+                if (riderSpeedMps.isFinite()) riderSpeedMps - relSpeedSigned else Float.POSITIVE_INFINITY
+
+            val thresholds = thresholdsForMode(AppPreferences.detectionMode)
+            val level =
+                if (riderSpeedMps <= 0.01f) 0 else alertLevel(distanceM, approachSpeedMps, ttc, thresholds)
+
+            if (riderSpeedMps <= 0.01f) {
                 stopActiveAlerts()
             } else {
                 handleAlerts(level)
             }
 
-            sendOverlayUpdate(bestBox, frameW, frameH, distance, relSpeed, speed, ttc, label)
-            flog("best label=$label score=${best0.score} box=${bestBox.x1},${bestBox.y1},${bestBox.x2},${bestBox.y2} dist=$distance rel=$relSpeed rider=$speed ttc=$ttc")
+            sendOverlayUpdate(bestBox, frameW, frameH, distanceM, relSpeedSigned, objectSpeedMps, ttc, label)
+            flog(
+                "best label=$label score=${best0.score} box=${bestBox.x1},${bestBox.y1},${bestBox.x2},${bestBox.y2} " +
+                    "dist=$distanceM rel=$relSpeedSigned approach=$approachSpeedMps rider=$riderSpeedMps obj=$objectSpeedMps ttc=$ttc"
+            )
 
-            sendMetricsUpdate(distance, relSpeed, speed, ttc, level, label)
+            sendMetricsUpdate(distanceM, relSpeedSigned, objectSpeedMps, ttc, level, label)
 
             if (AppPreferences.debugOverlay) {
                 Log.d(
@@ -150,7 +177,10 @@ class DetectionAnalyzer(
                     "pipeline raw=${post.counts.raw} thr=${post.counts.threshold} nms=${post.counts.nms} filters=${post.counts.filters} tracks=${tracked.size} gate=${tracked.count { it.alertGatePassed }}"
                 )
                 post.rejected.take(5).forEach {
-                    Log.d("DetectionAnalyzer", "rejected reason=${it.reason} label=${it.detection.label} score=${it.detection.score}")
+                    Log.d(
+                        "DetectionAnalyzer",
+                        "rejected reason=${it.reason} label=${it.detection.label} score=${it.detection.score}"
+                    )
                 }
             }
         } catch (e: Exception) {
@@ -160,6 +190,18 @@ class DetectionAnalyzer(
         } finally {
             image.close()
         }
+    }
+
+    private fun smoothDistance(distanceM: Float): Float {
+        if (!distanceM.isFinite()) {
+            distEmaValid = false
+            return Float.POSITIVE_INFINITY
+        }
+        val alpha = 0.25f
+        distEma =
+            if (!distEmaValid || !distEma.isFinite()) distanceM else (distEma + alpha * (distanceM - distEma))
+        distEmaValid = true
+        return distEma
     }
 
     private fun clampBox(b: Box, w: Float, h: Float): Box {
@@ -200,7 +242,7 @@ class DetectionAnalyzer(
         frameW: Float,
         frameH: Float,
         dist: Float,
-        relSpeed: Float,
+        relSpeedSigned: Float,
         objectSpeed: Float,
         ttc: Float,
         label: String
@@ -214,7 +256,7 @@ class DetectionAnalyzer(
         i.putExtra("right", box.x2)
         i.putExtra("bottom", box.y2)
         i.putExtra("dist", dist)
-        i.putExtra("speed", relSpeed)
+        i.putExtra("speed", relSpeedSigned)
         i.putExtra("object_speed", objectSpeed)
         i.putExtra("ttc", ttc)
         i.putExtra("label", label)
@@ -229,7 +271,7 @@ class DetectionAnalyzer(
 
     private fun sendMetricsUpdate(
         dist: Float,
-        relSpeed: Float,
+        relSpeedSigned: Float,
         objectSpeed: Float,
         ttc: Float,
         level: Int,
@@ -237,7 +279,7 @@ class DetectionAnalyzer(
     ) {
         val i = Intent(ACTION_METRICS_UPDATE).setPackage(ctx.packageName)
         i.putExtra(EXTRA_DISTANCE, dist)
-        i.putExtra(EXTRA_SPEED, relSpeed)
+        i.putExtra(EXTRA_SPEED, relSpeedSigned)
         i.putExtra(EXTRA_OBJECT_SPEED, objectSpeed)
         i.putExtra(EXTRA_TTC, ttc)
         i.putExtra(EXTRA_LEVEL, level)
@@ -267,41 +309,77 @@ class DetectionAnalyzer(
                 AppPreferences.userSpeedOrange,
                 AppPreferences.userSpeedRed
             )
+
             else -> AlertThresholds(3.0f, 1.2f, 15f, 6f, 3f, 5f)
         }
     }
 
-    private fun alertLevel(distance: Float, relSpeed: Float, ttc: Float, t: AlertThresholds): Int {
+    private fun alertLevel(distance: Float, approachSpeedMps: Float, ttc: Float, t: AlertThresholds): Int {
         val red =
             (ttc.isFinite() && ttc <= t.ttcRed) ||
                 (distance.isFinite() && distance <= t.distRed) ||
-                (relSpeed.isFinite() && relSpeed >= t.speedRed)
+                (approachSpeedMps.isFinite() && approachSpeedMps >= t.speedRed)
         if (red) return 2
 
         val orange =
             (ttc.isFinite() && ttc <= t.ttcOrange) ||
                 (distance.isFinite() && distance <= t.distOrange) ||
-                (relSpeed.isFinite() && relSpeed >= t.speedOrange)
+                (approachSpeedMps.isFinite() && approachSpeedMps >= t.speedOrange)
 
         return if (orange) 1 else 0
     }
 
-    private fun computeRelativeSpeed(currentDistanceM: Float, ts: Long): Float {
+    /**
+     * Signed relative speed from distance derivative.
+     * + = approaching (distance decreasing)
+     * - = receding (distance increasing)
+     *
+     * Uses jitter guards + EMA to reduce noise from monocular distance estimate.
+     */
+    private fun computeRelativeSpeedSigned(currentDistanceM: Float, tsMs: Long): Float {
         if (!currentDistanceM.isFinite()) {
-            lastDistance = currentDistanceM
-            lastDistanceTimestamp = ts
+            lastDistanceM = Float.NaN
+            lastDistanceTimestampMs = tsMs
+            relSpeedEmaValid = false
+            relSpeedEma = 0f
             return 0f
         }
-        if (lastDistanceTimestamp <= 0L || !lastDistance.isFinite()) {
-            lastDistance = currentDistanceM
-            lastDistanceTimestamp = ts
+
+        if (lastDistanceTimestampMs <= 0L || !lastDistanceM.isFinite()) {
+            lastDistanceM = currentDistanceM
+            lastDistanceTimestampMs = tsMs
+            relSpeedEmaValid = false
+            relSpeedEma = 0f
             return 0f
         }
-        val dtSec = ((ts - lastDistanceTimestamp).coerceAtLeast(1L)).toFloat() / 1000f
-        val speedToward = ((lastDistance - currentDistanceM) / dtSec).coerceAtLeast(0f)
-        lastDistance = currentDistanceM
-        lastDistanceTimestamp = ts
-        return speedToward
+
+        val dtSec = ((tsMs - lastDistanceTimestampMs).coerceAtLeast(1L)).toFloat() / 1000f
+        // Guard: if time step is too large, treat as re-sync (camera stalled / app backgrounded)
+        if (dtSec > 1.0f) {
+            lastDistanceM = currentDistanceM
+            lastDistanceTimestampMs = tsMs
+            relSpeedEmaValid = false
+            relSpeedEma = 0f
+            return 0f
+        }
+
+        val dd = lastDistanceM - currentDistanceM // + when approaching
+        // Guard: ignore tiny delta that is likely just bbox jitter (distance estimate jitter)
+        val minDeltaM = 0.25f
+        val raw = if (abs(dd) < minDeltaM) 0f else dd / dtSec
+
+        // Clamp to plausible range (monocular estimate can spike)
+        val clamped = raw.coerceIn(-60f, 60f)
+
+        val alpha = 0.30f
+        relSpeedEma =
+            if (!relSpeedEmaValid) clamped else (relSpeedEma + alpha * (clamped - relSpeedEma))
+        relSpeedEmaValid = true
+
+        lastDistanceM = currentDistanceM
+        lastDistanceTimestampMs = tsMs
+
+        return relSpeedEma
     }
 
     private fun estimateFocalLengthPx(frameHeightPx: Int): Float {

@@ -44,9 +44,7 @@ class OverlayView @JvmOverloads constructor(
 
     // ---- DATA K ZOBRAZENÍ ------------------------------------------------------
 
-    /**
-     * Jediný box, který se má vykreslit (nastavuje PreviewActivity).
-     */
+    /** Jediný box, který se má vykreslit (nastavuje PreviewActivity). */
     var box: Box? = null
         set(value) {
             field = value
@@ -65,9 +63,7 @@ class OverlayView @JvmOverloads constructor(
             invalidate()
         }
 
-    /**
-     * Odhad vzdálenosti v metrech (může být -1f, pokud není známá).
-     */
+    /** Odhad vzdálenosti v metrech (může být -1f, pokud není známá). */
     var distance: Float = -1f
         set(value) {
             field = value
@@ -75,7 +71,9 @@ class OverlayView @JvmOverloads constructor(
         }
 
     /**
-     * Relativní rychlost přibližování (m/s). Pokud nepoužíváš, nech -1f.
+     * Relativní rychlost (m/s):
+     * + = přibližování (distance klesá)
+     * - = vzdalování (distance roste)
      */
     var speed: Float = -1f
         set(value) {
@@ -83,36 +81,28 @@ class OverlayView @JvmOverloads constructor(
             invalidate()
         }
 
-    /**
-     * Odhad rychlosti objektu (m/s). Pokud nepoužíváš, nech -1f.
-     */
+    /** Odhad rychlosti objektu (m/s). Pokud nepoužíváš, nech -1f. */
     var objectSpeed: Float = -1f
         set(value) {
             field = value
             invalidate()
         }
 
-    /**
-     * Time-To-Collision v sekundách. Pokud nepoužíváš, nech -1f.
-     */
+    /** Time-To-Collision v sekundách. Pokud nepoužíváš, nech -1f. */
     var ttc: Float = -1f
         set(value) {
             field = value
             invalidate()
         }
 
-    /**
-     * Label detekovaného objektu (např. auto, kolo, chodec).
-     */
+    /** Label detekovaného objektu (např. auto, kolo, chodec). */
     var label: String = ""
         set(value) {
             field = value
             invalidate()
         }
 
-    /**
-     * Když je true, zobrazí se telemetrie vedle boxu.
-     */
+    /** Když je true, zobrazí se telemetrie vedle boxu. */
     var showTelemetry: Boolean = true
         set(value) {
             field = value
@@ -141,21 +131,16 @@ class OverlayView @JvmOverloads constructor(
             drawLabelTag(canvas, mapped, label)
         }
 
-        // Sestavení popisků
         if (!showTelemetry) return
-        val lines = if (showTelemetry) {
-            buildList {
-                if (label.isNotBlank()) add("OBJ  $label")
-                add("BOX  [%.0f×%.0f]".format((b.x2 - b.x1), (b.y2 - b.y1)))
-                if (distance >= 0f && distance.isFinite()) add("DIST %.2f m".format(distance))
-                if (speed >= 0f && speed.isFinite()) add("REL  %.2f m/s".format(speed))
-                if (objectSpeed >= 0f && objectSpeed.isFinite()) {
-                    add("OBJ  %.2f m/s".format(objectSpeed))
-                }
-                if (ttc >= 0f && ttc.isFinite()) add("TTC  %.2f s".format(ttc))
-            }
-        } else {
-            emptyList()
+
+        val lines = buildList {
+            if (label.isNotBlank()) add("OBJ  $label")
+            add("BOX  [%.0f×%.0f]".format((b.x2 - b.x1), (b.y2 - b.y1)))
+            if (distance.isFinite() && distance >= 0f) add("DIST %.2f m".format(distance))
+            // allow negative (receding) speeds
+            if (speed.isFinite()) add("REL  %.2f m/s".format(speed))
+            if (objectSpeed.isFinite()) add("OBJ  %.2f m/s".format(objectSpeed))
+            if (ttc.isFinite() && ttc >= 0f) add("TTC  %.2f s".format(ttc))
         }
 
         if (lines.isEmpty()) return
