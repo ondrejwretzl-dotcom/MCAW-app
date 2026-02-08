@@ -2,6 +2,8 @@ package com.mcaw.ai
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Rect
+import android.graphics.Bitmap
 import android.media.AudioManager
 import android.media.MediaPlayer
 import android.os.VibrationEffect
@@ -14,6 +16,7 @@ import com.mcaw.app.R
 import com.mcaw.config.AppPreferences
 import com.mcaw.location.SpeedProvider
 import com.mcaw.model.Box
+import com.mcaw.model.Detection
 import com.mcaw.util.PublicLogWriter
 import java.util.Locale
 import kotlin.math.abs
@@ -33,21 +36,21 @@ class DetectionAnalyzer(
         const val EXTRA_OBJECT_SPEED = "extra_object_speed" // estimated object speed (m/s)
         const val EXTRA_LEVEL = "extra_level"
         const val EXTRA_LABEL = "extra_label"
-
-        const val ACTION_DEBUG_UPDATE = "MCAW_DEBUG_UPDATE"
     }
 
     private val analyzerLogFileName: String = "mcaw_analyzer_${System.currentTimeMillis()}.txt"
 
     private val postProcessor = DetectionPostProcessor(
-        DetectionPostProcessor.Config(
-            debug = AppPreferences.debugOverlay,
-            roiFilterEnabled = true,      // ROI must be enforced for performance + relevance
-            roiMinContainment = 0.80f     // object must be at least 80% inside ROI
-        )
+        DetectionPostProcessor.Config(debug = AppPreferences.debugOverlay)
     )
 
     private val tracker = TemporalTracker(minConsecutiveForAlert = 3)
+
+    // Target lock to reduce "jumping" between objects.
+    private var lockedTrackId: Long = -1L
+    private var lockedMetric: Float = 0f
+    private var lockedLastSeenMs: Long = 0L
+
 
     // Distance/time history (for signed relative speed)
     private var lastDistanceM: Float = Float.NaN
@@ -94,16 +97,10 @@ class DetectionAnalyzer(
             val frameW = bitmap.width.toFloat()
             val frameH = bitmap.height.toFloat()
 
-            // Always refresh ROI from prefs (user can edit live)
-            val roi = AppPreferences.getRoiNormalized()
-            postProcessor.setRoiOverride(
-                DetectionPostProcessor.RectNorm(roi.left, roi.top, roi.right, roi.bottom)
-            )
-
             flog(
                 "frame proxy=${image.width}x${image.height} rot=$rotation " +
                     "bmpRaw=${rawBitmap.width}x${rawBitmap.height} bmpRot=${bitmap.width}x${bitmap.height} " +
-                    "model=${AppPreferences.selectedModel} roi=[${roi.left},${roi.top},${roi.right},${roi.bottom}]"
+                    "model=${AppPreferences.selectedModel}"
             )
 
             if (AppPreferences.debugOverlay) {
@@ -113,11 +110,13 @@ class DetectionAnalyzer(
                 )
             }
 
+            val roiRectPx = currentRoiRectPx(bitmap)
+
             val riderSpeedMps = speedProvider.getCurrent().speedMps
 
             val rawDetections = when (AppPreferences.selectedModel) {
-                0 -> yolo?.detect(bitmap).orEmpty()
-                1 -> det?.detect(bitmap).orEmpty()
+                0 -> yolo?.detect(bitmap, roiRectPx).orEmpty()
+                1 -> det?.detect(bitmap, roiRectPx).orEmpty()
                 else -> emptyList()
             }
 
@@ -125,20 +124,50 @@ class DetectionAnalyzer(
             val post = postProcessor.process(rawDetections, frameW, frameH)
             flog("counts raw=${post.counts.raw} thr=${post.counts.threshold} nms=${post.counts.nms} accepted=${post.counts.filters}")
 
-            val tracked = tracker.update(post.accepted)
-            val bestTrack = tracked
-                .filter { it.alertGatePassed }
-                .maxByOrNull { it.detection.score }
+val tracked = tracker.update(post.accepted)
+val candidates = tracked.filter { it.alertGatePassed }
 
-            if (bestTrack == null) {
-                stopActiveAlerts()
-                sendOverlayClear()
-                sendMetricsClear()
-                return
-            }
+if (candidates.isEmpty()) {
+    lockedTrackId = -1L
+    lockedMetric = 0f
+    lockedLastSeenMs = 0L
+    stopActiveAlerts()
+    sendOverlayClear()
+    sendMetricsClear()
+    return
+}
+
+fun priorityMetric(d: Detection): Float {
+    // Proxy for closeness: larger bbox area => closer object.
+    // Multiply by score to avoid locking onto weak/noisy boxes.
+    return d.box.area * d.score
+}
+
+val bestByMetric = candidates.maxByOrNull { priorityMetric(it.detection) }!!
+val locked = if (lockedTrackId > 0) candidates.firstOrNull { it.id == lockedTrackId } else null
+
+val selected = if (locked != null) {
+    val lockedM = priorityMetric(locked.detection)
+    lockedMetric = lockedM
+    lockedLastSeenMs = tsMs
+
+    // Switch only when new target is meaningfully closer and also more stable.
+    val switchRatio = 1.35f
+    val bestM = priorityMetric(bestByMetric.detection)
+    val shouldSwitch =
+        (bestByMetric.id != locked.id) &&
+            (bestM > lockedM * switchRatio) &&
+            (bestByMetric.consecutiveDetections >= locked.consecutiveDetections + 1)
+
+    if (shouldSwitch) bestByMetric else locked
+} else {
+    bestByMetric
+}
+
+lockedTrackId = selected.id
 
             // Clamp + canonical label
-            val best0 = bestTrack.detection
+            val best0 = selected.detection
             val bestBox = clampBox(best0.box, frameW, frameH)
             val label = DetectionLabelMapper.toCanonical(best0.label) ?: (best0.label ?: "unknown")
 
@@ -188,7 +217,7 @@ class DetectionAnalyzer(
                     "DetectionAnalyzer",
                     "pipeline raw=${post.counts.raw} thr=${post.counts.threshold} nms=${post.counts.nms} filters=${post.counts.filters} tracks=${tracked.size} gate=${tracked.count { it.alertGatePassed }}"
                 )
-                post.rejected.take(8).forEach {
+                post.rejected.take(5).forEach {
                     Log.d(
                         "DetectionAnalyzer",
                         "rejected reason=${it.reason} label=${it.detection.label} score=${it.detection.score}"
@@ -259,8 +288,7 @@ class DetectionAnalyzer(
         ttc: Float,
         label: String
     ) {
-        val roi = AppPreferences.getRoiNormalized()
-        val i = Intent(ACTION_DEBUG_UPDATE).setPackage(ctx.packageName)
+        val i = Intent("MCAW_DEBUG_UPDATE").setPackage(ctx.packageName)
         i.putExtra("clear", false)
         i.putExtra("frame_w", frameW)
         i.putExtra("frame_h", frameH)
@@ -273,27 +301,12 @@ class DetectionAnalyzer(
         i.putExtra("object_speed", objectSpeed)
         i.putExtra("ttc", ttc)
         i.putExtra("label", label)
-
-        // ROI (normalized) so overlay can stay in sync even if user edits live
-        i.putExtra("roi_left_n", roi.left)
-        i.putExtra("roi_top_n", roi.top)
-        i.putExtra("roi_right_n", roi.right)
-        i.putExtra("roi_bottom_n", roi.bottom)
-
         ctx.sendBroadcast(i)
     }
 
     private fun sendOverlayClear() {
-        val roi = AppPreferences.getRoiNormalized()
-        val i = Intent(ACTION_DEBUG_UPDATE).setPackage(ctx.packageName)
+        val i = Intent("MCAW_DEBUG_UPDATE").setPackage(ctx.packageName)
         i.putExtra("clear", true)
-
-        // ROI even on clear
-        i.putExtra("roi_left_n", roi.left)
-        i.putExtra("roi_top_n", roi.top)
-        i.putExtra("roi_right_n", roi.right)
-        i.putExtra("roi_bottom_n", roi.bottom)
-
         ctx.sendBroadcast(i)
     }
 
