@@ -2,6 +2,8 @@ package com.mcaw.ai
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Rect
+import android.graphics.Bitmap
 import android.media.AudioManager
 import android.media.MediaPlayer
 import android.os.VibrationEffect
@@ -44,15 +46,18 @@ class DetectionAnalyzer(
 
     private val tracker = TemporalTracker(minConsecutiveForAlert = 3)
 
+    // Cache for ROI values used for both detection + overlay (normalized 0..1)
+    private var lastRoiN: AppPreferences.RoiN = AppPreferences.RoiN(0.15f, 0.15f, 0.85f, 0.85f)
 
-// Target lock to avoid switching between objects (stability for TTC/alerts)
-private var lockedTrackId: Long? = null
-private var lockedPriority: Float = 0f
-private var switchCandidateId: Long? = null
-private var switchCandidateCount: Int = 0
-    private var lastSelectedTrackId: Long = -1L
+    // Target lock to reduce "jumping" between objects.
+    private var lockedTrackId: Long = -1L
+    private var lockedMetric: Float = 0f
+    private var lockedLastSeenMs: Long = 0L
 
 
+
+    private var switchCandidateId: Long? = null
+    private var switchCandidateCount: Int = 0
     // Distance/time history (for signed relative speed)
     private var lastDistanceM: Float = Float.NaN
     private var lastDistanceTimestampMs: Long = -1L
@@ -82,6 +87,8 @@ private var switchCandidateCount: Int = 0
 
     override fun analyze(image: ImageProxy) {
         try {
+            // Ensure prefs are available before reading ROI / debug flags.
+            AppPreferences.ensureInit(ctx)
             val tsMs = System.currentTimeMillis()
 
             val rawBitmap = ImageUtils.imageProxyToBitmap(image, ctx) ?: run {
@@ -111,49 +118,108 @@ private var switchCandidateCount: Int = 0
                 )
             }
 
+            val roiRectPx = currentRoiRectPx(bitmap)
+
             val riderSpeedMps = speedProvider.getCurrent().speedMps
 
             val rawDetections = when (AppPreferences.selectedModel) {
-                0 -> yolo?.detect(bitmap).orEmpty()
-                1 -> det?.detect(bitmap).orEmpty()
+                0 -> yolo?.detect(bitmap, roiRectPx).orEmpty()
+                1 -> det?.detect(bitmap, roiRectPx).orEmpty()
                 else -> emptyList()
             }
 
             // Postprocess ve stejném frame (otočený bitmap)
             val post = postProcessor.process(rawDetections, frameW, frameH)
-            flog("counts raw=${post.counts.raw} thr=${post.counts.threshold} nms=${post.counts.nms}
+            flog("counts raw=${post.counts.raw} thr=${post.counts.threshold} nms=${post.counts.nms} accepted=${post.counts.filters}")
+
+
 val tracked = tracker.update(post.accepted)
 
-// Prefer objects in front (near center) and "closer" (bigger box). Lock onto one track to keep TTC stable.
+// Kandidáti pro výstrahy: musí projít gate (stabilita) a mít rozumné score.
 val candidates = tracked
     .asSequence()
-    .map { it.detection }
-    .filter { it.score >= 0.30f }
+    .filter { it.alertGatePassed }
+    .filter { it.detection.score >= 0.30f }
     .toList()
 
-val bestDet = selectLockedTarget(candidates, frameW, frameH)
-
-if (bestDet == null) {
-    lockedTrackId = null
+if (candidates.isEmpty()) {
+    lockedTrackId = -1L
+    lockedMetric = 0f
+    lockedLastSeenMs = 0L
     switchCandidateId = null
     switchCandidateCount = 0
+    resetMotionHistory()
     stopActiveAlerts()
-    resetDistanceSmoothing()
     sendOverlayClear()
     sendMetricsClear()
     return
 }
 
-// If target changed, reset distance/relative-speed smoothing to avoid TTC spikes
-if (lastSelectedTrackId != bestDet.trackId) {
-    lastSelectedTrackId = bestDet.trackId
-    resetDistanceSmoothing()
+fun priorityMetric(td: TemporalTracker.TrackedDetection): Float {
+    val d = td.detection
+    val area = d.box.area
+    val cxN = ((d.box.x1 + d.box.x2) * 0.5f) / frameW.toFloat()
+    val centerWeightX = (1f - (kotlin.math.abs(cxN - 0.5f) * 2f)).coerceIn(0f, 1f)
+    // Blízkost (area) * jistota (score) * prefer centrum (aby to drželo objekt před námi)
+    return area * d.score * (0.6f + 0.4f * centerWeightX)
 }
 
-// Clamp + canonical label
-val best0 = bestDet
-abel
-            val best0 = bestTrack.detection
+val best = candidates.maxByOrNull { priorityMetric(it) }!!
+val locked = if (lockedTrackId > 0) candidates.firstOrNull { it.id == lockedTrackId } else null
+
+val prevLockedId = lockedTrackId
+val selected: TemporalTracker.TrackedDetection =
+    if (locked != null) {
+        val lockedM = priorityMetric(locked)
+        val bestM = priorityMetric(best)
+
+        lockedMetric = lockedM
+        lockedLastSeenMs = tsMs
+
+        if (best.id == locked.id) {
+            switchCandidateId = null
+            switchCandidateCount = 0
+            locked
+        } else {
+            val switchRatio = 1.35f
+            val qualifies = bestM > lockedM * switchRatio && best.consecutiveDetections >= locked.consecutiveDetections
+            if (qualifies) {
+                if (switchCandidateId == best.id) {
+                    switchCandidateCount += 1
+                } else {
+                    switchCandidateId = best.id
+                    switchCandidateCount = 1
+                }
+
+                val confirmFrames = 3
+                if (switchCandidateCount >= confirmFrames) {
+                    switchCandidateId = null
+                    switchCandidateCount = 0
+                    best
+                } else {
+                    locked
+                }
+            } else {
+                switchCandidateId = null
+                switchCandidateCount = 0
+                locked
+            }
+        }
+    } else {
+        switchCandidateId = null
+        switchCandidateCount = 0
+        best
+    }
+
+lockedTrackId = selected.id
+
+// Pokud jsme přepnuli cíl, musíme resetnout historii pro relSpeed/TTC, jinak budou skoky.
+if (prevLockedId > 0 && selected.id != prevLockedId) {
+    resetMotionHistory()
+}
+
+            // Clamp + canonical label
+            val best0 = selected.detection
             val bestBox = clampBox(best0.box, frameW, frameH)
             val label = DetectionLabelMapper.toCanonical(best0.label) ?: (best0.label ?: "unknown")
 
@@ -276,6 +342,11 @@ abel
     ) {
         val i = Intent("MCAW_DEBUG_UPDATE").setPackage(ctx.packageName)
         i.putExtra("clear", false)
+        // Always include ROI so OverlayView can draw it even when detections are stable.
+        i.putExtra("roi_left_n", lastRoiN.left)
+        i.putExtra("roi_top_n", lastRoiN.top)
+        i.putExtra("roi_right_n", lastRoiN.right)
+        i.putExtra("roi_bottom_n", lastRoiN.bottom)
         i.putExtra("frame_w", frameW)
         i.putExtra("frame_h", frameH)
         i.putExtra("left", box.x1)
@@ -293,7 +364,32 @@ abel
     private fun sendOverlayClear() {
         val i = Intent("MCAW_DEBUG_UPDATE").setPackage(ctx.packageName)
         i.putExtra("clear", true)
+        // Keep ROI visible even when clearing detections.
+        i.putExtra("roi_left_n", lastRoiN.left)
+        i.putExtra("roi_top_n", lastRoiN.top)
+        i.putExtra("roi_right_n", lastRoiN.right)
+        i.putExtra("roi_bottom_n", lastRoiN.bottom)
         ctx.sendBroadcast(i)
+    }
+
+    /**
+     * Current ROI in pixel coords for the given (already rotated) frame.
+     * Returns null when ROI is not usable (should be rare due to prefs sanitation).
+     */
+    private fun currentRoiRectPx(bitmap: Bitmap): Rect? {
+        lastRoiN = AppPreferences.getRoiNormalized()
+
+        val w = bitmap.width
+        val h = bitmap.height
+        if (w <= 1 || h <= 1) return null
+
+        val l = (lastRoiN.left * w).toInt().coerceIn(0, w - 1)
+        val t = (lastRoiN.top * h).toInt().coerceIn(0, h - 1)
+        val r = (lastRoiN.right * w).toInt().coerceIn(l + 1, w)
+        val b = (lastRoiN.bottom * h).toInt().coerceIn(t + 1, h)
+
+        if (r - l < 2 || b - t < 2) return null
+        return Rect(l, t, r, b)
     }
 
     private fun sendMetricsUpdate(
@@ -406,8 +502,19 @@ abel
         lastDistanceM = currentDistanceM
         lastDistanceTimestampMs = tsMs
 
-        return if (abs(relSpeedEma) < 0.15f) 0f else relSpeedEma
+        // Deadband: po EMA odfiltruj kmitání kolem nuly (jinak TTC skáče mezi finite/Infinity)
+        return if (kotlin.math.abs(relSpeedEma) < 0.15f) 0f else relSpeedEma
     }
+
+
+private fun resetMotionHistory() {
+    lastDistanceM = Float.NaN
+    lastDistanceTimestampMs = -1L
+    relSpeedEma = 0f
+    relSpeedEmaValid = false
+    distEma = Float.NaN
+    distEmaValid = false
+}
 
     private fun estimateFocalLengthPx(frameHeightPx: Int): Float {
         val focalMm = AppPreferences.cameraFocalLengthMm
@@ -426,69 +533,4 @@ abel
         val speedOrange: Float,
         val speedRed: Float
     )
-
-private fun resetDistanceSmoothing() {
-    lastDistanceM = Float.NaN
-    lastDistanceTimestampMs = -1L
-    relSpeedEma = 0f
-    relSpeedEmaValid = false
-    distEma = Float.NaN
-    distEmaValid = false
-}
-
-private fun selectLockedTarget(detections: List<Detection>, frameW: Int, frameH: Int): Detection? {
-    if (detections.isEmpty()) return null
-
-    fun priority(det: Detection): Float {
-        val b = det.box
-        val area = b.area.coerceAtLeast(1f)
-        val cx = (b.x1 + b.x2) * 0.5f
-        val centerNorm = 1f - (kotlin.math.abs(cx - frameW * 0.5f) / (frameW * 0.5f)).coerceIn(0f, 1f)
-        val centerWeight = 0.6f + 0.4f * centerNorm // prefer object ahead
-        return area * det.score * centerWeight
-    }
-
-    val lockedId = lockedTrackId
-    val locked = if (lockedId != null && lockedId > 0) detections.firstOrNull { it.trackId == lockedId } else null
-    val bestNow = detections.maxByOrNull { priority(it) } ?: return locked
-
-    if (locked == null) {
-        lockedTrackId = bestNow.trackId
-        lockedPriority = priority(bestNow)
-        switchCandidateId = null
-        switchCandidateCount = 0
-        return bestNow
-    }
-
-    val lockedP = priority(locked)
-    val bestP = priority(bestNow)
-
-    // Switch only if new target is significantly better and persists a few frames (hysteresis)
-    val switchRatio = 1.35f
-    if (bestNow.trackId != locked.trackId && bestP > lockedP * switchRatio) {
-        if (switchCandidateId == bestNow.trackId) {
-            switchCandidateCount += 1
-        } else {
-            switchCandidateId = bestNow.trackId
-            switchCandidateCount = 1
-        }
-        val required = 3
-        if (switchCandidateCount >= required) {
-            lockedTrackId = bestNow.trackId
-            lockedPriority = bestP
-            switchCandidateId = null
-            switchCandidateCount = 0
-            return bestNow
-        }
-    } else {
-        // reset candidate if not consistently better
-        switchCandidateId = null
-        switchCandidateCount = 0
-    }
-
-    lockedTrackId = locked.trackId
-    lockedPriority = lockedP
-    return locked
-}
-
 }
