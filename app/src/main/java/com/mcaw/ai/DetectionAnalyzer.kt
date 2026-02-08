@@ -46,6 +46,9 @@ class DetectionAnalyzer(
 
     private val tracker = TemporalTracker(minConsecutiveForAlert = 3)
 
+    // Cache for ROI values used for both detection + overlay (normalized 0..1)
+    private var lastRoiN: AppPreferences.RoiN = AppPreferences.RoiN(0.15f, 0.15f, 0.85f, 0.85f)
+
     // Target lock to reduce "jumping" between objects.
     private var lockedTrackId: Long = -1L
     private var lockedMetric: Float = 0f
@@ -81,6 +84,8 @@ class DetectionAnalyzer(
 
     override fun analyze(image: ImageProxy) {
         try {
+            // Ensure prefs are available before reading ROI / debug flags.
+            AppPreferences.ensureInit(ctx)
             val tsMs = System.currentTimeMillis()
 
             val rawBitmap = ImageUtils.imageProxyToBitmap(image, ctx) ?: run {
@@ -290,6 +295,11 @@ lockedTrackId = selected.id
     ) {
         val i = Intent("MCAW_DEBUG_UPDATE").setPackage(ctx.packageName)
         i.putExtra("clear", false)
+        // Always include ROI so OverlayView can draw it even when detections are stable.
+        i.putExtra("roi_left_n", lastRoiN.left)
+        i.putExtra("roi_top_n", lastRoiN.top)
+        i.putExtra("roi_right_n", lastRoiN.right)
+        i.putExtra("roi_bottom_n", lastRoiN.bottom)
         i.putExtra("frame_w", frameW)
         i.putExtra("frame_h", frameH)
         i.putExtra("left", box.x1)
@@ -307,7 +317,32 @@ lockedTrackId = selected.id
     private fun sendOverlayClear() {
         val i = Intent("MCAW_DEBUG_UPDATE").setPackage(ctx.packageName)
         i.putExtra("clear", true)
+        // Keep ROI visible even when clearing detections.
+        i.putExtra("roi_left_n", lastRoiN.left)
+        i.putExtra("roi_top_n", lastRoiN.top)
+        i.putExtra("roi_right_n", lastRoiN.right)
+        i.putExtra("roi_bottom_n", lastRoiN.bottom)
         ctx.sendBroadcast(i)
+    }
+
+    /**
+     * Current ROI in pixel coords for the given (already rotated) frame.
+     * Returns null when ROI is not usable (should be rare due to prefs sanitation).
+     */
+    private fun currentRoiRectPx(bitmap: Bitmap): Rect? {
+        lastRoiN = AppPreferences.getRoiNormalized()
+
+        val w = bitmap.width
+        val h = bitmap.height
+        if (w <= 1 || h <= 1) return null
+
+        val l = (lastRoiN.left * w).toInt().coerceIn(0, w - 1)
+        val t = (lastRoiN.top * h).toInt().coerceIn(0, h - 1)
+        val r = (lastRoiN.right * w).toInt().coerceIn(l + 1, w)
+        val b = (lastRoiN.bottom * h).toInt().coerceIn(t + 1, h)
+
+        if (r - l < 2 || b - t < 2) return null
+        return Rect(l, t, r, b)
     }
 
     private fun sendMetricsUpdate(

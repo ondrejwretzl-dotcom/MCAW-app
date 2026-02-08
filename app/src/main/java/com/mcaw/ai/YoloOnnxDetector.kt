@@ -55,8 +55,8 @@ class YoloOnnxDetector(
                 val out = result[0] as OnnxTensor
                 out.use {
                     val arr = it.floatBuffer.toArray()
-                    val dets = parseYoloOutput(arr, it.info.shape, cropBitmap.width, cropBitmap.height)
-                    if (crop.offsetX == 0 && crop.offsetY == 0) return dets
+					val dets = parseYoloOutput(arr, it.info.shape, cropBitmap.width, cropBitmap.height)
+					if (crop.offsetX == 0f && crop.offsetY == 0f) return dets
                     return dets.map { d ->
                         d.copy(
                             box = Box(
