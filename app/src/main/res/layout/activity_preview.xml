@@ -4,11 +4,11 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <!-- Camera preview -->
     <androidx.camera.view.PreviewView
         android:id="@+id/previewView"
         android:layout_width="match_parent"
         android:layout_height="match_parent"/>
+
     <com.mcaw.ui.OverlayView
         android:id="@+id/overlay"
         android:layout_width="match_parent"
@@ -38,6 +38,19 @@
         android:layout_gravity="top|start"
         android:layout_marginStart="12dp"
         android:layout_marginTop="48dp" />
+
+    <!-- ROI edit toggle (click) + reset (long press) -->
+    <TextView
+        android:id="@+id/btnRoi"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="ROI: UPRAVIT"
+        android:textColor="#FFFFFF"
+        android:textSize="12sp"
+        android:padding="8dp"
+        android:background="#80AA0000"
+        android:layout_gravity="top|end"
+        android:layout_margin="12dp" />
 
     <TextView
         android:id="@+id/txtPreviewBuild"

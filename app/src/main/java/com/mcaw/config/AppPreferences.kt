@@ -2,6 +2,7 @@ package com.mcaw.config
 
 import android.content.Context
 import android.content.SharedPreferences
+import kotlin.math.abs
 
 object AppPreferences {
 
@@ -86,4 +87,91 @@ object AppPreferences {
     var userSpeedRed: Float
         get() = prefs.getFloat("user_speed_red", 5f)
         set(v) = prefs.edit().putFloat("user_speed_red", v).apply()
+
+    // ---- ROI (Region of Interest) for detection (normalized 0..1) ----
+    // Default: crop 15% on each side => [0.15,0.15]-[0.85,0.85]
+    private const val ROI_LEFT = "roi_left_n"
+    private const val ROI_TOP = "roi_top_n"
+    private const val ROI_RIGHT = "roi_right_n"
+    private const val ROI_BOTTOM = "roi_bottom_n"
+
+    private const val ROI_DEFAULT_LEFT = 0.15f
+    private const val ROI_DEFAULT_TOP = 0.15f
+    private const val ROI_DEFAULT_RIGHT = 0.85f
+    private const val ROI_DEFAULT_BOTTOM = 0.85f
+
+    private const val ROI_MIN_SIZE_N = 0.10f
+
+    var roiLeftN: Float
+        get() = prefs.getFloat(ROI_LEFT, ROI_DEFAULT_LEFT).coerceIn(0f, 1f)
+        set(v) = prefs.edit().putFloat(ROI_LEFT, v.coerceIn(0f, 1f)).apply()
+
+    var roiTopN: Float
+        get() = prefs.getFloat(ROI_TOP, ROI_DEFAULT_TOP).coerceIn(0f, 1f)
+        set(v) = prefs.edit().putFloat(ROI_TOP, v.coerceIn(0f, 1f)).apply()
+
+    var roiRightN: Float
+        get() = prefs.getFloat(ROI_RIGHT, ROI_DEFAULT_RIGHT).coerceIn(0f, 1f)
+        set(v) = prefs.edit().putFloat(ROI_RIGHT, v.coerceIn(0f, 1f)).apply()
+
+    var roiBottomN: Float
+        get() = prefs.getFloat(ROI_BOTTOM, ROI_DEFAULT_BOTTOM).coerceIn(0f, 1f)
+        set(v) = prefs.edit().putFloat(ROI_BOTTOM, v.coerceIn(0f, 1f)).apply()
+
+    data class RoiN(val left: Float, val top: Float, val right: Float, val bottom: Float)
+
+    fun getRoiNormalized(): RoiN {
+        // sanitize ordering and min size
+        var l = roiLeftN
+        var t = roiTopN
+        var r = roiRightN
+        var b = roiBottomN
+
+        if (r < l) {
+            val tmp = r; r = l; l = tmp
+        }
+        if (b < t) {
+            val tmp = b; b = t; t = tmp
+        }
+
+        if (r - l < ROI_MIN_SIZE_N) {
+            val mid = (l + r) * 0.5f
+            l = (mid - ROI_MIN_SIZE_N * 0.5f).coerceIn(0f, 1f)
+            r = (l + ROI_MIN_SIZE_N).coerceIn(0f, 1f)
+        }
+        if (b - t < ROI_MIN_SIZE_N) {
+            val mid = (t + b) * 0.5f
+            t = (mid - ROI_MIN_SIZE_N * 0.5f).coerceIn(0f, 1f)
+            b = (t + ROI_MIN_SIZE_N).coerceIn(0f, 1f)
+        }
+        // ensure bounds
+        l = l.coerceIn(0f, 1f); r = r.coerceIn(0f, 1f)
+        t = t.coerceIn(0f, 1f); b = b.coerceIn(0f, 1f)
+        return RoiN(l, t, r, b)
+    }
+
+    fun setRoiNormalized(left: Float, top: Float, right: Float, bottom: Float) {
+        // sanitize once before persisting
+        var l = left.coerceIn(0f, 1f)
+        var t = top.coerceIn(0f, 1f)
+        var r = right.coerceIn(0f, 1f)
+        var b = bottom.coerceIn(0f, 1f)
+
+        if (r < l) { val tmp = r; r = l; l = tmp }
+        if (b < t) { val tmp = b; b = t; t = tmp }
+
+        if (r - l < ROI_MIN_SIZE_N) r = (l + ROI_MIN_SIZE_N).coerceIn(0f, 1f)
+        if (b - t < ROI_MIN_SIZE_N) b = (t + ROI_MIN_SIZE_N).coerceIn(0f, 1f)
+
+        prefs.edit()
+            .putFloat(ROI_LEFT, l)
+            .putFloat(ROI_TOP, t)
+            .putFloat(ROI_RIGHT, r)
+            .putFloat(ROI_BOTTOM, b)
+            .apply()
+    }
+
+    fun resetRoiToDefault() {
+        setRoiNormalized(ROI_DEFAULT_LEFT, ROI_DEFAULT_TOP, ROI_DEFAULT_RIGHT, ROI_DEFAULT_BOTTOM)
+    }
 }
