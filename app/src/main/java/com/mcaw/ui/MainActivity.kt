@@ -37,7 +37,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var txtBuildInfo: TextView
     private lateinit var root: View
     private lateinit var panelMetrics: View
-    private lateinit var brakeLamp: View
+    private lateinit var brakeLamp: TextView
     private lateinit var txtBrakeLamp: TextView
     private var lastBrakeLampUiState: Boolean = false
 

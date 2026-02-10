@@ -85,6 +85,33 @@
             android:textColor="#FFFFFF"
             android:textSize="22sp"
             android:gravity="center" />
+
+        <!-- Semafor brzdových světel (zhasnuto/červené) -->
+        <LinearLayout
+            android:id="@+id/panelBrakeLamp"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:layout_marginTop="10dp">
+
+            <TextView
+                android:id="@+id/brakeLamp"
+                android:layout_width="16dp"
+                android:layout_height="16dp"
+                android:background="#3A3F4A" />
+
+            <TextView
+                android:id="@+id/txtBrakeLamp"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="BRZDA"
+                android:textColor="#FFFFFF"
+                android:textStyle="bold"
+                android:textSize="16sp"
+                android:layout_marginStart="8dp" />
+        </LinearLayout>
+
     </LinearLayout>
 
     <!-- Ovládací tlačítka Start/Stop -->
