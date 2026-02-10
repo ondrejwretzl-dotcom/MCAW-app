@@ -2,7 +2,6 @@ package com.mcaw.config
 
 import android.content.Context
 import android.content.SharedPreferences
-import kotlin.math.abs
 
 object AppPreferences {
 

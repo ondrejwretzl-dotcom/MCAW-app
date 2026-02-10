@@ -12,7 +12,6 @@ import com.mcaw.model.Box
 import com.mcaw.model.Detection
 import java.nio.FloatBuffer
 import kotlin.math.max
-import kotlin.math.min
 
 class YoloOnnxDetector(
     private val context: Context,
