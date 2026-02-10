@@ -6,6 +6,8 @@ import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.animation.ValueAnimator
+import android.view.View
 import android.widget.Button
 import android.widget.TextView
 import androidx.activity.ComponentActivity
@@ -32,6 +34,9 @@ class MainActivity : ComponentActivity() {
     private lateinit var txtDetectedObject: TextView
     private lateinit var txtActivityLog: TextView
     private lateinit var txtBuildInfo: TextView
+    private lateinit var root: View
+    private lateinit var panelMetrics: View
+    private var pulseAnimator: ValueAnimator? = null
     private var pendingAction: PendingAction? = null
     private lateinit var speedProvider: SpeedProvider
     private lateinit var speedMonitor: SpeedMonitor
@@ -94,6 +99,7 @@ class MainActivity : ComponentActivity() {
 
             // Celkový stav (overall level) promítneme do statusu, aby bylo jasné, že může být horší než TTC
             txtStatus.setTextColor(overallColor)
+            applyVisualAlert(level, ttcLevel, riderKmh)
 
             val relKmhLog = if (speed.isFinite()) speed * 3.6f else Float.POSITIVE_INFINITY
             val objKmhLog = if (objectSpeed.isFinite()) objectSpeed * 3.6f else Float.POSITIVE_INFINITY
@@ -129,6 +135,8 @@ class MainActivity : ComponentActivity() {
         txtDetectedObject = findViewById(R.id.txtDetectedObject)
         txtActivityLog = findViewById(R.id.txtActivityLog)
         txtBuildInfo = findViewById(R.id.txtBuildInfo)
+        root = findViewById(R.id.root)
+        panelMetrics = findViewById(R.id.panelMetrics)
         speedProvider = SpeedProvider(this)
         speedMonitor = SpeedMonitor(speedProvider)
         activityLogFileName = "mcaw_activity_${sessionStamp()}.txt"
@@ -247,6 +255,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onStop() {
         unregisterReceiver(metricsReceiver)
+        stopPulse()
         speedMonitor.stop()
         addLog("GPS monitor zastaven")
         logActivity("gps_monitor_stop")
@@ -308,6 +317,59 @@ class MainActivity : ComponentActivity() {
             ttc <= t.ttcOrange -> 1
             else -> 0
         }
+    }
+
+    private fun applyVisualAlert(overallLevel: Int, ttcLevel: Int, riderKmh: Float) {
+        // Status text: reflect whether alerts are gated by low speed
+        val riderStanding = riderKmh.isFinite() && riderKmh < 2.0f
+        txtStatus.text = when {
+            !serviceRunning -> "Služba: ZASTAVENA"
+            riderStanding -> "Služba: AKTIVNÍ · stojíš (alert vypnut)"
+            overallLevel == 2 -> "Služba: AKTIVNÍ · KRITICKÉ"
+            overallLevel == 1 -> "Služba: AKTIVNÍ · VAROVÁNÍ"
+            else -> "Služba: AKTIVNÍ · OK"
+        }
+
+        // Background emphasis (safe -> calm, warning -> orange pulse, critical -> red pulse)
+        val bgColor = when (overallLevel) {
+            2 -> android.graphics.Color.parseColor("#331B1B") // dark red
+            1 -> android.graphics.Color.parseColor("#332514") // dark orange
+            else -> android.graphics.Color.parseColor("#1E222A")
+        }
+        txtStatus.setBackgroundColor(bgColor)
+
+        // TTC text background follows TTC level (so user sees TTC threshold crossing clearly)
+        val ttcBg = when (ttcLevel) {
+            2 -> android.graphics.Color.parseColor("#331B1B")
+            1 -> android.graphics.Color.parseColor("#332514")
+            else -> android.graphics.Color.TRANSPARENT
+        }
+        txtTtc.setBackgroundColor(ttcBg)
+
+        // Pulse panel only when service is running + danger state (and not standing)
+        val shouldPulse = serviceRunning && !riderStanding && overallLevel > 0
+        if (shouldPulse) startPulse(overallLevel) else stopPulse()
+    }
+
+    private fun startPulse(level: Int) {
+        val targetMinAlpha = if (level >= 2) 0.72f else 0.82f
+        if (pulseAnimator != null) return
+        pulseAnimator = ValueAnimator.ofFloat(1f, targetMinAlpha).apply {
+            duration = if (level >= 2) 420L else 620L
+            repeatMode = ValueAnimator.REVERSE
+            repeatCount = ValueAnimator.INFINITE
+            addUpdateListener { anim ->
+                val a = anim.animatedValue as Float
+                panelMetrics.alpha = a
+            }
+            start()
+        }
+    }
+
+    private fun stopPulse() {
+        pulseAnimator?.cancel()
+        pulseAnimator = null
+        panelMetrics.alpha = 1f
     }
 
 private fun formatMetric(value: Float, unit: String): String {

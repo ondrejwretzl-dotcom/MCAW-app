@@ -5,7 +5,8 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.RectF
 import android.media.AudioManager
-import android.media.MediaPlayer
+import android.media.AudioAttributes
+import android.media.SoundPool
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.speech.tts.TextToSpeech
@@ -87,6 +88,28 @@ class DetectionAnalyzer(
 
     private var lastAlertLevel = 0
 
+    // Alerting (Variant A): state machine + debounce + repeat beeps
+    private enum class AlertState { SAFE, ORANGE, RED }
+    private var alertState: AlertState = AlertState.SAFE
+    private var stateCandidate: AlertState = AlertState.SAFE
+    private var stateCandidateSinceMs: Long = 0L
+    private var stateSinceMs: Long = 0L
+    private var lastBeepMs: Long = 0L
+    private var orangeBeepsDone: Int = 0
+    private var redBeepsDone: Int = 0
+    private val minRiderSpeedForAlertsMps: Float = (2f / 3.6f) // 2 km/h
+    private val closingSpeedDeadbandMps: Float = 0.25f
+    private val stateDebounceMs: Long = 320L
+    private val orangeMaxBeeps: Int = 1
+    private val orangeRepeatMs: Long = 1800L
+    private val redRepeatMs: Long = 900L
+    private val redMaxBeeps: Int = Int.MAX_VALUE
+
+    private var soundPool: SoundPool? = null
+    private var soundIdBeep: Int = 0
+    private var soundLoaded: Boolean = false
+
+
     private var tts: TextToSpeech? = null
 
     private fun flog(msg: String) {
@@ -95,6 +118,18 @@ class DetectionAnalyzer(
     }
 
     init {
+        // Low-latency beep
+        val attrs = AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .build()
+        soundPool = SoundPool.Builder().setMaxStreams(1).setAudioAttributes(attrs).build().also { sp ->
+            soundIdBeep = sp.load(ctx, R.raw.alert_beep, 1)
+            sp.setOnLoadCompleteListener { _, sampleId, status ->
+                if (sampleId == soundIdBeep && status == 0) soundLoaded = true
+            }
+        }
+
         if (AppPreferences.voice) {
             tts = TextToSpeech(ctx) { status ->
                 if (status == TextToSpeech.SUCCESS) tts?.language = Locale.getDefault()
@@ -239,14 +274,29 @@ class DetectionAnalyzer(
                 if (riderSpeedMps.isFinite()) (riderSpeedMps - relSpeedSigned) else Float.POSITIVE_INFINITY
 
             val thresholds = thresholdsForMode(AppPreferences.detectionMode)
-            val level =
-                if (riderSpeedMps <= 0.01f) 0 else alertLevel(distanceM, approachSpeedMps, ttc, thresholds)
 
-            if (riderSpeedMps <= 0.01f) {
+            // Alert gating:
+            // - no alerts when rider is basically standing (<= 2 km/h)
+            // - no alerts when object is not closing (REL signed <= deadband)
+            val riderMoving = riderSpeedMps.isFinite() && riderSpeedMps >= minRiderSpeedForAlertsMps
+            val isClosing = relSpeedSigned > closingSpeedDeadbandMps
+
+            val levelWanted =
+                if (!riderMoving || !isClosing) 0 else alertLevel(distanceM, approachSpeedMps, ttc, thresholds)
+
+            if (!riderMoving || !isClosing) {
                 stopActiveAlerts()
-            } else {
-                handleAlerts(level)
             }
+
+            updateAlerts(
+                levelWanted = levelWanted,
+                tsMs = tsMs,
+                ttc = ttc,
+                distanceM = distanceM,
+                riderSpeedMps = riderSpeedMps,
+                relSignedMps = relSpeedSigned
+            )
+
 
             sendOverlayUpdate(
                 box = bestBox,
@@ -266,7 +316,7 @@ class DetectionAnalyzer(
                     "distRaw=${distanceRaw ?: Float.NaN} dist=$distanceM " +
                     "relSigned=$relSpeedSigned relApp=$approachSpeedFromDist " +
                     "riderRaw=$riderSpeedRawMps rider=$riderSpeedMps obj=$objectSpeedMps " +
-                    "ttcH=${ttcFromHeights ?: Float.NaN} ttcD=$ttcFromDist ttc=$ttc"
+                    "ttcH=${ttcFromHeightsHeld ?: Float.NaN} ttcD=$ttcFromDist ttc=$ttc"
             )
 
             sendMetricsUpdate(
@@ -325,23 +375,114 @@ class DetectionAnalyzer(
     }
 
     private fun stopActiveAlerts() {
+        // reset state machine
         lastAlertLevel = 0
+        alertState = AlertState.SAFE
+        stateCandidate = AlertState.SAFE
+        stateCandidateSinceMs = 0L
+        stateSinceMs = 0L
+        lastBeepMs = 0L
+        orangeBeepsDone = 0
+        redBeepsDone = 0
+
         val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         am.abandonAudioFocus(null)
     }
 
-    private fun handleAlerts(level: Int) {
-        if (level <= 0 || level == lastAlertLevel) return
-        lastAlertLevel = level
-        if (level >= 2) {
-            if (AppPreferences.sound) MediaPlayer.create(ctx, R.raw.alert_beep)?.start()
-            if (AppPreferences.vibration) {
-                val vib = ctx.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-                if (vib.hasVibrator()) vib.vibrate(VibrationEffect.createOneShot(200, 150))
+    private fun updateAlerts(
+        levelWanted: Int,
+        tsMs: Long,
+        ttc: Float,
+        distanceM: Float,
+        riderSpeedMps: Float,
+        relSignedMps: Float
+    ) {
+        val wantedState = when (levelWanted) {
+            2 -> AlertState.RED
+            1 -> AlertState.ORANGE
+            else -> AlertState.SAFE
+        }
+
+        // Candidate/debounce to prevent alert output flicker due to metric jitter
+        if (wantedState != stateCandidate) {
+            stateCandidate = wantedState
+            stateCandidateSinceMs = tsMs
+        }
+
+        val debouncedState =
+            if (tsMs - stateCandidateSinceMs >= stateDebounceMs) stateCandidate else alertState
+
+        if (debouncedState != alertState) {
+            alertState = debouncedState
+            stateSinceMs = tsMs
+            lastBeepMs = 0L
+
+            when (alertState) {
+                AlertState.SAFE -> {
+                    orangeBeepsDone = 0
+                    redBeepsDone = 0
+                    lastAlertLevel = 0
+                }
+                AlertState.ORANGE -> {
+                    orangeBeepsDone = 0
+                    redBeepsDone = 0
+                    lastAlertLevel = 1
+                }
+                AlertState.RED -> {
+                    redBeepsDone = 0
+                    lastAlertLevel = 2
+                    // Voice: optional, only on entering RED (not repeating)
+                    if (AppPreferences.voice) {
+                        tts?.speak("Pozor", TextToSpeech.QUEUE_FLUSH, null, "tts_red")
+                    }
+                }
             }
-            if (AppPreferences.voice) {
-                tts?.speak("Pozor, objekt v pruhu", TextToSpeech.QUEUE_FLUSH, null, "tts_warn")
+        }
+
+        // Output rules:
+        // - SAFE: nothing
+        // - ORANGE: beep a limited number of times per episode (default 1)
+        // - RED: repeated beeps while active (default every ~0.9s)
+        when (alertState) {
+            AlertState.SAFE -> return
+            AlertState.ORANGE -> {
+                if (orangeBeepsDone >= orangeMaxBeeps) return
+                val due = (tsMs - lastBeepMs) >= orangeRepeatMs
+                if (lastBeepMs == 0L || due) {
+                    playBeep()
+                    vibrateOnce(isRed = false)
+                    orangeBeepsDone += 1
+                    lastBeepMs = tsMs
+                }
             }
+            AlertState.RED -> {
+                if (redBeepsDone >= redMaxBeeps) return
+                val due = (tsMs - lastBeepMs) >= redRepeatMs
+                if (lastBeepMs == 0L || due) {
+                    playBeep()
+                    vibrateOnce(isRed = true)
+                    redBeepsDone += 1
+                    lastBeepMs = tsMs
+                }
+            }
+        }
+    }
+
+    private fun playBeep() {
+        if (!AppPreferences.sound) return
+        val sp = soundPool ?: return
+        if (!soundLoaded || soundIdBeep == 0) return
+        sp.play(soundIdBeep, 1f, 1f, 1, 0, 1f)
+    }
+
+    private fun vibrateOnce(isRed: Boolean) {
+        if (!AppPreferences.vibration) return
+        val vib = ctx.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+        if (!vib.hasVibrator()) return
+        if (isRed) {
+            vib.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 120, 80, 120), -1))
+        } else {
+            vib.vibrate(VibrationEffect.createOneShot(90, 120))
         }
     }
 
