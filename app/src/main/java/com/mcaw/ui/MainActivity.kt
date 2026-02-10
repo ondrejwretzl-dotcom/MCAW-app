@@ -14,6 +14,7 @@ import androidx.core.content.ContextCompat
 import com.mcaw.ai.DetectionAnalyzer
 import com.mcaw.app.BuildConfig
 import com.mcaw.app.R
+import com.mcaw.config.AppPreferences
 import com.mcaw.location.SpeedMonitor
 import com.mcaw.location.SpeedProvider
 import com.mcaw.service.McawService
@@ -47,6 +48,8 @@ class MainActivity : ComponentActivity() {
             val speed = intent.getFloatExtra(DetectionAnalyzer.EXTRA_SPEED, Float.POSITIVE_INFINITY)
             val objectSpeed =
                 intent.getFloatExtra(DetectionAnalyzer.EXTRA_OBJECT_SPEED, Float.POSITIVE_INFINITY)
+            val riderSpeed =
+                intent.getFloatExtra(DetectionAnalyzer.EXTRA_RIDER_SPEED, Float.POSITIVE_INFINITY)
             val level = intent.getIntExtra(DetectionAnalyzer.EXTRA_LEVEL, 0)
             val label = intent.getStringExtra(DetectionAnalyzer.EXTRA_LABEL)
 
@@ -54,6 +57,10 @@ class MainActivity : ComponentActivity() {
             txtDistance.text =
                 if (distance.isFinite()) "Vzdálenost: %.2f m".format(distance) else
                     "Vzdálenost: --.- m"
+            val riderKmh = if (riderSpeed.isFinite()) riderSpeed * 3.6f else Float.POSITIVE_INFINITY
+            txtRiderSpeed.text =
+                if (riderKmh.isFinite()) "Rychlost jezdce: %.1f km/h".format(riderKmh) else
+                    "Rychlost jezdce: --.- km/h"
             val speedKmh = if (speed.isFinite()) speed * 3.6f else Float.POSITIVE_INFINITY
             val objKmh = if (objectSpeed.isFinite()) objectSpeed * 3.6f else Float.POSITIVE_INFINITY
 
@@ -70,12 +77,24 @@ class MainActivity : ComponentActivity() {
                 "Detekovaný objekt: --"
             }
 
-            val color = when (level) {
+            val overallColor = when (level) {
                 2 -> android.graphics.Color.parseColor("#FF3B30")
                 1 -> android.graphics.Color.parseColor("#FF9F0A")
                 else -> android.graphics.Color.parseColor("#00E5A8")
             }
-            txtTtc.setTextColor(color)
+
+            // TTC barva má odpovídat zobrazené hodnotě TTC (ne "overall" levelu)
+            val ttcLevel = ttcLevelForUi(ttc)
+            val ttcColor = when (ttcLevel) {
+                2 -> android.graphics.Color.parseColor("#FF3B30")
+                1 -> android.graphics.Color.parseColor("#FF9F0A")
+                else -> android.graphics.Color.parseColor("#00E5A8")
+            }
+            txtTtc.setTextColor(ttcColor)
+
+            // Celkový stav (overall level) promítneme do statusu, aby bylo jasné, že může být horší než TTC
+            txtStatus.setTextColor(overallColor)
+
             val relKmhLog = if (speed.isFinite()) speed * 3.6f else Float.POSITIVE_INFINITY
             val objKmhLog = if (objectSpeed.isFinite()) objectSpeed * 3.6f else Float.POSITIVE_INFINITY
             addLog(
@@ -264,7 +283,34 @@ class MainActivity : ComponentActivity() {
         logActivity("ui_log $message")
     }
 
-    private fun formatMetric(value: Float, unit: String): String {
+    
+    private data class AlertThresholds(
+        val ttcOrange: Float,
+        val ttcRed: Float
+    )
+
+    private fun thresholdsForModeUi(): AlertThresholds {
+        return when (AppPreferences.detectionMode) {
+            1 -> AlertThresholds(ttcOrange = 4.0f, ttcRed = 1.5f)
+            2 -> AlertThresholds(
+                ttcOrange = AppPreferences.userTtcOrange,
+                ttcRed = AppPreferences.userTtcRed
+            )
+            else -> AlertThresholds(ttcOrange = 3.0f, ttcRed = 1.2f)
+        }
+    }
+
+    private fun ttcLevelForUi(ttc: Float): Int {
+        val t = thresholdsForModeUi()
+        if (!ttc.isFinite()) return 0
+        return when {
+            ttc <= t.ttcRed -> 2
+            ttc <= t.ttcOrange -> 1
+            else -> 0
+        }
+    }
+
+private fun formatMetric(value: Float, unit: String): String {
         return if (value.isFinite()) "%.2f %s".format(value, unit) else "--.- $unit"
     }
 

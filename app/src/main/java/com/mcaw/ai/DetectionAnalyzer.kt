@@ -64,6 +64,16 @@ class DetectionAnalyzer(
     // EMA smoothing
     private var relSpeedEma: Float = 0f
     private var relSpeedEmaValid: Boolean = false
+
+    // TTC smoothing/hold (prevents blinking when switching TTC source)
+    private var ttcEma: Float = Float.POSITIVE_INFINITY
+    private var ttcEmaValid: Boolean = false
+    private var lastTtcUpdateTsMs: Long = -1L
+
+    private var lastTtcHeight: Float = Float.POSITIVE_INFINITY
+    private var lastTtcHeightTsMs: Long = -1L
+    private val ttcHeightHoldMs: Long = 800L
+
     private var distEma: Float = Float.NaN
     private var distEmaValid: Boolean = false
 
@@ -192,17 +202,34 @@ class DetectionAnalyzer(
 
             // TTC from bbox growth tends to be more stable than distance derivative
             val boxHPx = (bestBox.y2 - bestBox.y1).coerceAtLeast(0f)
-            val ttcFromHeights = computeTtcFromBoxHeights(boxHPx, tsMs)
+            val ttcFromHeightsNow = computeTtcFromBoxHeights(boxHPx, tsMs)
+
+            // Hold-last-valid bbox TTC briefly to avoid blinking when bbox growth momentarily fails
+            val ttcFromHeightsHeld = when {
+                ttcFromHeightsNow != null && ttcFromHeightsNow.isFinite() -> ttcFromHeightsNow
+                lastTtcHeight.isFinite() && lastTtcHeightTsMs > 0L && (tsMs - lastTtcHeightTsMs) <= ttcHeightHoldMs -> lastTtcHeight
+                else -> null
+            }
 
             val ttcFromDist = if (distanceM.isFinite() && approachSpeedFromDist > 0.30f) {
-                (distanceM / approachSpeedFromDist).coerceAtMost(120f)
+                (distanceM / approachSpeedFromDist).coerceIn(0.05f, 120f)
             } else {
                 Float.POSITIVE_INFINITY
             }
 
-            val ttc = ttcFromHeights ?: ttcFromDist
+            // Blend sources instead of hard switching (prevents sudden TTC jumps)
+            val ttcRaw = when {
+                ttcFromHeightsHeld != null && ttcFromHeightsHeld.isFinite() && ttcFromDist.isFinite() -> {
+                    // Prefer bbox TTC, but keep a bit of dist TTC as sanity
+                    (ttcFromHeightsHeld * 0.75f) + (ttcFromDist * 0.25f)
+                }
+                ttcFromHeightsHeld != null && ttcFromHeightsHeld.isFinite() -> ttcFromHeightsHeld
+                else -> ttcFromDist
+            }
 
-            // Approach speed used for alerting (prefer TTC-based if stable)
+            val ttc = smoothTtc(ttcRaw, tsMs)
+
+            // Approach speed used for alerting (derived from final smoothed TTC if available)
             val approachSpeedMps =
                 if (ttc.isFinite() && ttc > 0f && distanceM.isFinite()) (distanceM / ttc).coerceIn(0f, 80f)
                 else approachSpeedFromDist
@@ -226,7 +253,7 @@ class DetectionAnalyzer(
                 frameW = frameW,
                 frameH = frameH,
                 dist = distanceM,
-                approachSpeed = approachSpeedFromDist,
+                approachSpeed = approachSpeedMps,
                 objectSpeed = objectSpeedMps,
                 riderSpeed = riderSpeedMps,
                 ttc = ttc,
@@ -244,7 +271,7 @@ class DetectionAnalyzer(
 
             sendMetricsUpdate(
                 dist = distanceM,
-                approachSpeed = approachSpeedFromDist,
+                approachSpeed = approachSpeedMps,
                 objectSpeed = objectSpeedMps,
                 riderSpeed = riderSpeedMps,
                 ttc = ttc,
@@ -436,6 +463,12 @@ class DetectionAnalyzer(
         relSpeedEma = 0f
         lastBoxHeightPx = Float.NaN
         lastBoxHeightTimestampMs = -1L
+    
+        ttcEmaValid = false
+        ttcEma = Float.POSITIVE_INFINITY
+        lastTtcUpdateTsMs = -1L
+        lastTtcHeight = Float.POSITIVE_INFINITY
+        lastTtcHeightTsMs = -1L
     }
 
     /**
@@ -454,6 +487,49 @@ class DetectionAnalyzer(
         riderSpeedEma = if (!riderSpeedEmaValid) v else (riderSpeedEma + alpha * (v - riderSpeedEma))
         riderSpeedEmaValid = true
         return riderSpeedEma
+    }
+
+
+    /**
+     * Stabilizes TTC to prevent UI flicker / alert jitter.
+     * - clamps unrealistic jumps based on dt
+     * - asymmetric EMA (faster when TTC decreases)
+     */
+    private fun smoothTtc(ttcRaw: Float, tsMs: Long): Float {
+        val raw = if (ttcRaw.isFinite() && ttcRaw > 0f) ttcRaw.coerceIn(0.05f, 120f) else Float.POSITIVE_INFINITY
+
+        if (!raw.isFinite()) {
+            ttcEmaValid = false
+            ttcEma = Float.POSITIVE_INFINITY
+            lastTtcUpdateTsMs = tsMs
+            return Float.POSITIVE_INFINITY
+        }
+
+        if (!ttcEmaValid || !ttcEma.isFinite() || lastTtcUpdateTsMs <= 0L) {
+            ttcEma = raw
+            ttcEmaValid = true
+            lastTtcUpdateTsMs = tsMs
+            return ttcEma
+        }
+
+        val dtSec = ((tsMs - lastTtcUpdateTsMs).coerceAtLeast(1L)).toFloat() / 1000f
+        lastTtcUpdateTsMs = tsMs
+
+        // Limit TTC change rate (seconds per second). Allow faster drops than rises.
+        val maxDropRate = 6.0f   // TTC can drop by up to 6s per 1s
+        val maxRiseRate = 3.0f   // TTC can rise by up to 3s per 1s
+        val maxDrop = maxDropRate * dtSec
+        val maxRise = maxRiseRate * dtSec
+
+        val prev = ttcEma
+        val clamped = when {
+            raw < prev -> raw.coerceAtLeast(prev - maxDrop)
+            else -> raw.coerceAtMost(prev + maxRise)
+        }
+
+        val alpha = if (clamped < prev) 0.45f else 0.20f
+        ttcEma = prev + alpha * (clamped - prev)
+        return ttcEma
     }
 
     /**
@@ -492,6 +568,11 @@ class DetectionAnalyzer(
 
         lastBoxHeightPx = currHPx
         lastBoxHeightTimestampMs = tsMs
+
+        if (ttc != null && ttc.isFinite()) {
+            lastTtcHeight = ttc
+            lastTtcHeightTsMs = tsMs
+        }
 
         return ttc
     }
