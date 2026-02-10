@@ -73,18 +73,22 @@ class OverlayView @JvmOverloads constructor(
             invalidate()
         }
 
-    /**
-     * Relativní rychlost (m/s):
-     * + = přibližování (distance klesá)
-     * - = vzdalování (distance roste)
-     */
+    /** REL = approach speed (m/s), always >= 0. */
     var speed: Float = -1f
         set(value) {
             field = value
             invalidate()
         }
 
+    /** OBJ speed estimate (m/s). */
     var objectSpeed: Float = -1f
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    /** RID speed (m/s). */
+    var riderSpeed: Float = -1f
         set(value) {
             field = value
             invalidate()
@@ -156,7 +160,6 @@ class OverlayView @JvmOverloads constructor(
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
 
-        // ROI (always)
         val roiRect = mapRoiToView() ?: return
         canvas.drawRect(roiRect, roiDimPaint)
         canvas.drawRect(roiRect, roiPaint)
@@ -183,8 +186,9 @@ class OverlayView @JvmOverloads constructor(
             if (label.isNotBlank()) add("OBJ  $label")
             add("BOX  [%.0f×%.0f]".format((b.x2 - b.x1), (b.y2 - b.y1)))
             if (distance.isFinite() && distance >= 0f) add("DIST %.2f m".format(distance))
-            if (speed.isFinite()) add("REL  %.1f km/h".format(speed * 3.6f))
-            if (objectSpeed.isFinite()) add("OBJ  %.1f km/h".format(objectSpeed * 3.6f))
+            if (speed.isFinite() && speed >= 0f) add("REL  %.1f km/h".format(speed * 3.6f))
+            if (objectSpeed.isFinite() && objectSpeed >= 0f) add("OBJ  %.1f km/h".format(objectSpeed * 3.6f))
+            if (riderSpeed.isFinite() && riderSpeed >= 0f) add("RID  %.1f km/h".format(riderSpeed * 3.6f))
             if (ttc.isFinite() && ttc >= 0f) add("TTC  %.2f s".format(ttc))
         }
         if (lines.isEmpty()) return
@@ -330,8 +334,8 @@ class OverlayView @JvmOverloads constructor(
             DragHandle.MOVE -> {
                 val w = r - l
                 val h = b - t
-                var nl = (l + dxN).coerceIn(0f, 1f - w)
-                var nt = (t + dyN).coerceIn(0f, 1f - h)
+                val nl = (l + dxN).coerceIn(0f, 1f - w)
+                val nt = (t + dyN).coerceIn(0f, 1f - h)
                 l = nl
                 t = nt
                 r = l + w
@@ -400,9 +404,7 @@ class OverlayView @JvmOverloads constructor(
         )
     }
 
-    /**
-     * Convert view delta (dx,dy) to normalized frame delta (0..1) for current mapping.
-     */
+    /** Convert view delta (dx,dy) to normalized frame delta (0..1) for current mapping. */
     private fun viewToFrameDelta(dxView: Float, dyView: Float): Pair<Float, Float>? {
         val viewW = width.toFloat()
         val viewH = height.toFloat()

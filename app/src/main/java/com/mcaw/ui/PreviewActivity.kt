@@ -64,6 +64,7 @@ class PreviewActivity : ComponentActivity() {
                 overlay.distance = -1f
                 overlay.speed = -1f
                 overlay.objectSpeed = -1f
+                overlay.riderSpeed = -1f
                 overlay.ttc = -1f
                 overlay.label = ""
                 searching = true
@@ -82,8 +83,9 @@ class PreviewActivity : ComponentActivity() {
                 i.getFloatExtra("bottom", 0f)
             )
             overlay.distance = i.getFloatExtra("dist", -1f)
-            overlay.speed = i.getFloatExtra("speed", -1f)
-            overlay.objectSpeed = i.getFloatExtra("object_speed", -1f)
+            overlay.speed = i.getFloatExtra("speed", -1f) // REL (approach)
+            overlay.objectSpeed = i.getFloatExtra("object_speed", -1f) // OBJ
+            overlay.riderSpeed = i.getFloatExtra("rider_speed", -1f) // RID
             overlay.ttc = i.getFloatExtra("ttc", -1f)
             val mapped = LabelMapper.mapLabel(i.getStringExtra("label"))
             overlay.label = mapped
@@ -110,10 +112,8 @@ class PreviewActivity : ComponentActivity() {
 
         overlay.showTelemetry = AppPreferences.debugOverlay
 
-        // init ROI from prefs (default: 15% crop each side)
         applyRoiFromPrefs()
         overlay.onRoiChanged = { l, t, r, b, isFinal ->
-            // live update + persist on final
             if (isFinal) {
                 AppPreferences.setRoiNormalized(l, t, r, b)
                 logActivity("roi_set l=$l t=$t r=$r b=$b")
@@ -124,7 +124,6 @@ class PreviewActivity : ComponentActivity() {
             overlay.roiEditMode = !overlay.roiEditMode
             btnRoi.text = if (overlay.roiEditMode) "ROI: UPRAVIT ✓" else "ROI: UPRAVIT"
             if (!overlay.roiEditMode) {
-                // sync from prefs in case user wants to discard (not implemented as cancel)
                 applyRoiFromPrefs()
             }
         }
@@ -275,8 +274,6 @@ class PreviewActivity : ComponentActivity() {
     }
 
     private fun logActivity(msg: String) {
-        // původní implementace v souboru – ponecháváme, pokud neexistuje v projektu, můžeš ji doplnit jinde
-        // tady zůstává stub bez změny funkčnosti běhu (logování je best-effort)
         try {
             com.mcaw.util.PublicLogWriter.appendLogLine(this, activityLogFileName, msg)
         } catch (_: Exception) {
