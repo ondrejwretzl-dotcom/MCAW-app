@@ -5,6 +5,7 @@ import android.text.Editable
 import android.text.TextWatcher
 import android.view.View
 import android.widget.AdapterView
+import android.widget.ArrayAdapter
 import android.widget.EditText
 import android.widget.Spinner
 import androidx.activity.ComponentActivity
@@ -38,6 +39,9 @@ class SettingsActivity : ComponentActivity() {
         val swVoice = findViewById<SwitchMaterial>(R.id.swVoice)
         val swDebug = findViewById<SwitchMaterial>(R.id.swDebug)
         val swLaneFilter = findViewById<SwitchMaterial>(R.id.swLaneFilter)
+
+        val swBrakeCue = findViewById<SwitchMaterial>(R.id.swBrakeCue)
+        val spBrakeCueSensitivity = findViewById<Spinner>(R.id.spBrakeCueSensitivity)
 
         val modeSelection = normalizeSelection(AppPreferences.detectionMode, spMode)
         val modelSelection = normalizeSelection(AppPreferences.selectedModel, spModel)
@@ -88,6 +92,16 @@ class SettingsActivity : ComponentActivity() {
         swDebug.isChecked = AppPreferences.debugOverlay
         swLaneFilter.isChecked = AppPreferences.laneFilter
 
+        swBrakeCue.isChecked = AppPreferences.brakeCueEnabled
+
+        val brakeSensAdapter = ArrayAdapter(
+            this,
+            android.R.layout.simple_spinner_item,
+            listOf("Nízká", "Standard", "Vysoká")
+        ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+        spBrakeCueSensitivity.adapter = brakeSensAdapter
+        spBrakeCueSensitivity.setSelection(AppPreferences.brakeCueSensitivity.coerceIn(0, 2), false)
+
         swSound.setOnCheckedChangeListener { _, isChecked ->
             AppPreferences.sound = isChecked
         }
@@ -103,6 +117,21 @@ class SettingsActivity : ComponentActivity() {
         swLaneFilter.setOnCheckedChangeListener { _, isChecked ->
             AppPreferences.laneFilter = isChecked
         }
+
+        swBrakeCue.setOnCheckedChangeListener { _, isChecked ->
+            AppPreferences.brakeCueEnabled = isChecked
+            writeSessionLog("BrakeCue enabled=$isChecked")
+        }
+
+        spBrakeCueSensitivity.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                AppPreferences.brakeCueSensitivity = position.coerceIn(0, 2)
+                writeSessionLog("BrakeCue sensitivity=${AppPreferences.brakeCueSensitivity}")
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+        }
+
 
         fun applyUserThresholds() {
             AppPreferences.userTtcOrange = readFloat(etTtcOrange, AppPreferences.userTtcOrange)

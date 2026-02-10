@@ -5,8 +5,7 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.RectF
 import android.media.AudioManager
-import android.media.AudioAttributes
-import android.media.SoundPool
+import android.media.MediaPlayer
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.speech.tts.TextToSpeech
@@ -41,6 +40,7 @@ class DetectionAnalyzer(
         const val EXTRA_RIDER_SPEED = "extra_rider_speed" // RID speed (m/s)
         const val EXTRA_LEVEL = "extra_level"
         const val EXTRA_LABEL = "extra_label"
+        const val EXTRA_BRAKE_CUE = "extra_brake_cue"
     }
 
     private val analyzerLogFileName: String = "mcaw_analyzer_${System.currentTimeMillis()}.txt"
@@ -82,33 +82,21 @@ class DetectionAnalyzer(
     private var riderSpeedEma: Float = 0f
     private var riderSpeedEmaValid: Boolean = false
 
+    // Brake cue (heuristika rozsvícených brzdových světel) – držíme krátkou historii pro stabilitu
+    private var brakeRedRatioEma: Float = 0f
+    private var brakeIntensityEma: Float = 0f
+    private var brakePrevIntensityEma: Float = 0f
+    private var brakeCueActiveFrames: Int = 0
+    private var brakeCueLastActiveMs: Long = -1L
+    private var brakeCueActive: Boolean = false
+    private var brakeCueStrength: Float = 0f
+
+
     // BBox height history (alternative TTC from bbox growth)
     private var lastBoxHeightPx: Float = Float.NaN
     private var lastBoxHeightTimestampMs: Long = -1L
 
     private var lastAlertLevel = 0
-
-    // Alerting (Variant A): state machine + debounce + repeat beeps
-    private enum class AlertState { SAFE, ORANGE, RED }
-    private var alertState: AlertState = AlertState.SAFE
-    private var stateCandidate: AlertState = AlertState.SAFE
-    private var stateCandidateSinceMs: Long = 0L
-    private var stateSinceMs: Long = 0L
-    private var lastBeepMs: Long = 0L
-    private var orangeBeepsDone: Int = 0
-    private var redBeepsDone: Int = 0
-    private val minRiderSpeedForAlertsMps: Float = (2f / 3.6f) // 2 km/h
-    private val closingSpeedDeadbandMps: Float = 0.25f
-    private val stateDebounceMs: Long = 320L
-    private val orangeMaxBeeps: Int = 1
-    private val orangeRepeatMs: Long = 1800L
-    private val redRepeatMs: Long = 900L
-    private val redMaxBeeps: Int = Int.MAX_VALUE
-
-    private var soundPool: SoundPool? = null
-    private var soundIdBeep: Int = 0
-    private var soundLoaded: Boolean = false
-
 
     private var tts: TextToSpeech? = null
 
@@ -118,18 +106,6 @@ class DetectionAnalyzer(
     }
 
     init {
-        // Low-latency beep
-        val attrs = AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
-            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-            .build()
-        soundPool = SoundPool.Builder().setMaxStreams(1).setAudioAttributes(attrs).build().also { sp ->
-            soundIdBeep = sp.load(ctx, R.raw.alert_beep, 1)
-            sp.setOnLoadCompleteListener { _, sampleId, status ->
-                if (sampleId == soundIdBeep && status == 0) soundLoaded = true
-            }
-        }
-
         if (AppPreferences.voice) {
             tts = TextToSpeech(ctx) { status ->
                 if (status == TextToSpeech.SUCCESS) tts?.language = Locale.getDefault()
@@ -233,6 +209,21 @@ class DetectionAnalyzer(
 
             // REL speed (signed internal) from sliding-window + EMA
             val relSpeedSigned = computeRelativeSpeedSignedWindow(distanceM, tsMs)
+
+            // Brake cue (beta): jen pokud je zapnuté a jezdec jede
+            val brakeCue = if (AppPreferences.brakeCueEnabled) {
+                computeBrakeCue(
+                    tsMs = tsMs,
+                    frameBitmap = bitmap,
+                    box = bestBox,
+                    label = label,
+                    riderSpeedMps = riderSpeedMps,
+                    relSpeedSigned = relSpeedSigned
+                )
+            } else {
+                BrakeCueResult(false, 0f, 0f, 0f)
+            }
+
             val approachSpeedFromDist = relSpeedSigned.coerceAtLeast(0f)
 
             // TTC from bbox growth tends to be more stable than distance derivative
@@ -274,29 +265,14 @@ class DetectionAnalyzer(
                 if (riderSpeedMps.isFinite()) (riderSpeedMps - relSpeedSigned) else Float.POSITIVE_INFINITY
 
             val thresholds = thresholdsForMode(AppPreferences.detectionMode)
+            val level =
+                if (riderSpeedMps <= 0.01f) 0 else alertLevel(distanceM, approachSpeedMps, ttc, thresholds)
 
-            // Alert gating:
-            // - no alerts when rider is basically standing (<= 2 km/h)
-            // - no alerts when object is not closing (REL signed <= deadband)
-            val riderMoving = riderSpeedMps.isFinite() && riderSpeedMps >= minRiderSpeedForAlertsMps
-            val isClosing = relSpeedSigned > closingSpeedDeadbandMps
-
-            val levelWanted =
-                if (!riderMoving || !isClosing) 0 else alertLevel(distanceM, approachSpeedMps, ttc, thresholds)
-
-            if (!riderMoving || !isClosing) {
+            if (riderSpeedMps <= 0.01f) {
                 stopActiveAlerts()
+            } else {
+                handleAlerts(level)
             }
-
-            updateAlerts(
-                levelWanted = levelWanted,
-                tsMs = tsMs,
-                ttc = ttc,
-                distanceM = distanceM,
-                riderSpeedMps = riderSpeedMps,
-                relSignedMps = relSpeedSigned
-            )
-
 
             sendOverlayUpdate(
                 box = bestBox,
@@ -316,17 +292,16 @@ class DetectionAnalyzer(
                     "distRaw=${distanceRaw ?: Float.NaN} dist=$distanceM " +
                     "relSigned=$relSpeedSigned relApp=$approachSpeedFromDist " +
                     "riderRaw=$riderSpeedRawMps rider=$riderSpeedMps obj=$objectSpeedMps " +
-                    "ttcH=${ttcFromHeightsHeld ?: Float.NaN} ttcD=$ttcFromDist ttc=$ttc"
+                    "ttcH=${ttcFromHeights ?: Float.NaN} ttcD=$ttcFromDist ttc=$ttc"
             )
 
-            val levelEffective = lastAlertLevel
             sendMetricsUpdate(
                 dist = distanceM,
                 approachSpeed = approachSpeedMps,
                 objectSpeed = objectSpeedMps,
                 riderSpeed = riderSpeedMps,
                 ttc = ttc,
-                level = levelEffective,
+                level = level,
                 label = label
             )
 
@@ -376,114 +351,23 @@ class DetectionAnalyzer(
     }
 
     private fun stopActiveAlerts() {
-        // reset state machine
         lastAlertLevel = 0
-        alertState = AlertState.SAFE
-        stateCandidate = AlertState.SAFE
-        stateCandidateSinceMs = 0L
-        stateSinceMs = 0L
-        lastBeepMs = 0L
-        orangeBeepsDone = 0
-        redBeepsDone = 0
-
         val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         am.abandonAudioFocus(null)
     }
 
-    private fun updateAlerts(
-        levelWanted: Int,
-        tsMs: Long,
-        ttc: Float,
-        distanceM: Float,
-        riderSpeedMps: Float,
-        relSignedMps: Float
-    ) {
-        val wantedState = when (levelWanted) {
-            2 -> AlertState.RED
-            1 -> AlertState.ORANGE
-            else -> AlertState.SAFE
-        }
-
-        // Candidate/debounce to prevent alert output flicker due to metric jitter
-        if (wantedState != stateCandidate) {
-            stateCandidate = wantedState
-            stateCandidateSinceMs = tsMs
-        }
-
-        val debouncedState =
-            if (tsMs - stateCandidateSinceMs >= stateDebounceMs) stateCandidate else alertState
-
-        if (debouncedState != alertState) {
-            alertState = debouncedState
-            stateSinceMs = tsMs
-            lastBeepMs = 0L
-
-            when (alertState) {
-                AlertState.SAFE -> {
-                    orangeBeepsDone = 0
-                    redBeepsDone = 0
-                    lastAlertLevel = 0
-                }
-                AlertState.ORANGE -> {
-                    orangeBeepsDone = 0
-                    redBeepsDone = 0
-                    lastAlertLevel = 1
-                }
-                AlertState.RED -> {
-                    redBeepsDone = 0
-                    lastAlertLevel = 2
-                    // Voice: optional, only on entering RED (not repeating)
-                    if (AppPreferences.voice) {
-                        tts?.speak("Pozor", TextToSpeech.QUEUE_FLUSH, null, "tts_red")
-                    }
-                }
+    private fun handleAlerts(level: Int) {
+        if (level <= 0 || level == lastAlertLevel) return
+        lastAlertLevel = level
+        if (level >= 2) {
+            if (AppPreferences.sound) MediaPlayer.create(ctx, R.raw.alert_beep)?.start()
+            if (AppPreferences.vibration) {
+                val vib = ctx.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+                if (vib.hasVibrator()) vib.vibrate(VibrationEffect.createOneShot(200, 150))
             }
-        }
-
-        // Output rules:
-        // - SAFE: nothing
-        // - ORANGE: beep a limited number of times per episode (default 1)
-        // - RED: repeated beeps while active (default every ~0.9s)
-        when (alertState) {
-            AlertState.SAFE -> return
-            AlertState.ORANGE -> {
-                if (orangeBeepsDone >= orangeMaxBeeps) return
-                val due = (tsMs - lastBeepMs) >= orangeRepeatMs
-                if (lastBeepMs == 0L || due) {
-                    playBeep()
-                    vibrateOnce(isRed = false)
-                    orangeBeepsDone += 1
-                    lastBeepMs = tsMs
-                }
+            if (AppPreferences.voice) {
+                tts?.speak("Pozor, objekt v pruhu", TextToSpeech.QUEUE_FLUSH, null, "tts_warn")
             }
-            AlertState.RED -> {
-                if (redBeepsDone >= redMaxBeeps) return
-                val due = (tsMs - lastBeepMs) >= redRepeatMs
-                if (lastBeepMs == 0L || due) {
-                    playBeep()
-                    vibrateOnce(isRed = true)
-                    redBeepsDone += 1
-                    lastBeepMs = tsMs
-                }
-            }
-        }
-    }
-
-    private fun playBeep() {
-        if (!AppPreferences.sound) return
-        val sp = soundPool ?: return
-        if (!soundLoaded || soundIdBeep == 0) return
-        sp.play(soundIdBeep, 1f, 1f, 1, 0, 1f)
-    }
-
-    private fun vibrateOnce(isRed: Boolean) {
-        if (!AppPreferences.vibration) return
-        val vib = ctx.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-        if (!vib.hasVibrator()) return
-        if (isRed) {
-            vib.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 120, 80, 120), -1))
-        } else {
-            vib.vibrate(VibrationEffect.createOneShot(90, 120))
         }
     }
 
@@ -496,7 +380,8 @@ class DetectionAnalyzer(
         objectSpeed: Float,
         riderSpeed: Float,
         ttc: Float,
-        label: String
+        label: String,
+        brakeCue: Boolean
     ) {
         val roiN = AppPreferences.getRoiNormalized()
         val i = Intent("MCAW_DEBUG_UPDATE").setPackage(ctx.packageName)
@@ -513,6 +398,7 @@ class DetectionAnalyzer(
         i.putExtra("rider_speed", riderSpeed) // RID
         i.putExtra("ttc", ttc)
         i.putExtra("label", label)
+        i.putExtra("brake_cue", brakeCue)
 
         // keep ROI always in preview overlay
         i.putExtra("roi_left_n", roiN.left)
@@ -541,7 +427,8 @@ class DetectionAnalyzer(
         riderSpeed: Float,
         ttc: Float,
         level: Int,
-        label: String
+        label: String,
+        brakeCue: Boolean
     ) {
         val i = Intent(ACTION_METRICS_UPDATE).setPackage(ctx.packageName)
         i.putExtra(EXTRA_DISTANCE, dist)
@@ -551,6 +438,7 @@ class DetectionAnalyzer(
         i.putExtra(EXTRA_TTC, ttc)
         i.putExtra(EXTRA_LEVEL, level)
         i.putExtra(EXTRA_LABEL, label)
+        i.putExtra(EXTRA_BRAKE_CUE, brakeCue)
         ctx.sendBroadcast(i)
     }
 
@@ -562,7 +450,8 @@ class DetectionAnalyzer(
             riderSpeed = Float.POSITIVE_INFINITY,
             ttc = Float.POSITIVE_INFINITY,
             level = 0,
-            label = ""
+            label = "",
+            brakeCue = false
         )
     }
 
@@ -605,6 +494,13 @@ class DetectionAnalyzer(
         relSpeedEma = 0f
         lastBoxHeightPx = Float.NaN
         lastBoxHeightTimestampMs = -1L
+        brakeRedRatioEma = 0f
+        brakeIntensityEma = 0f
+        brakePrevIntensityEma = 0f
+        brakeCueActiveFrames = 0
+        brakeCueLastActiveMs = -1L
+        brakeCueActive = false
+        brakeCueStrength = 0f
     
         ttcEmaValid = false
         ttcEma = Float.POSITIVE_INFINITY
@@ -919,7 +815,163 @@ class DetectionAnalyzer(
         return 1000f
     }
 
-    private data class AlertThresholds(
+    
+    private data class BrakeCueResult(
+        val active: Boolean,
+        val strength: Float,
+        val redRatio: Float,
+        val intensityDelta: Float
+    )
+
+    private fun brakeCueParams(): Pair<Float, Float> {
+        return when (AppPreferences.brakeCueSensitivity) {
+            0 -> 0.75f to 0.10f // low sensitivity
+            2 -> 0.55f to 0.06f // high sensitivity
+            else -> 0.65f to 0.08f // standard
+        }
+    }
+
+    private fun computeBrakeCue(
+        tsMs: Long,
+        frameBitmap: Bitmap,
+        box: Box,
+        label: String,
+        riderSpeedMps: Float,
+        relSpeedSigned: Float
+    ): BrakeCueResult {
+        // Gate: stojíš => vypnout
+        val minRideMps = 2f / 3.6f
+        if (!riderSpeedMps.isFinite() || riderSpeedMps < minRideMps) {
+            brakeCueActiveFrames = 0
+            brakeCueActive = false
+            brakeCueStrength = 0f
+            return BrakeCueResult(false, 0f, 0f, 0f)
+        }
+        // Gate: objekt se nevzdaluje / musíme se přibližovat (jinak to pro alerting nemá smysl)
+        if (!relSpeedSigned.isFinite() || relSpeedSigned <= 0.25f) {
+            // necháme krátký hold, aby to neblikalo při šumu
+            val holdMs = 400L
+            val stillOn = brakeCueLastActiveMs > 0L && (tsMs - brakeCueLastActiveMs) <= holdMs
+            brakeCueActive = stillOn
+            brakeCueStrength = if (stillOn) brakeCueStrength else 0f
+            return BrakeCueResult(brakeCueActive, brakeCueStrength, brakeRedRatioEma, 0f)
+        }
+
+        val supported =
+            label == "car" || label == "truck" || label == "bus" || label == "motorcycle" || label == "bicycle"
+        if (!supported) {
+            brakeCueActiveFrames = 0
+            brakeCueActive = false
+            brakeCueStrength = 0f
+            return BrakeCueResult(false, 0f, 0f, 0f)
+        }
+
+        val sample = sampleBrakeLightSignal(frameBitmap, box)
+        val redRatio = sample.first
+        val intensity = sample.second
+
+        // EMA
+        val a = 0.35f
+        brakeRedRatioEma = brakeRedRatioEma + a * (redRatio - brakeRedRatioEma)
+        brakePrevIntensityEma = brakeIntensityEma
+        brakeIntensityEma = brakeIntensityEma + a * (intensity - brakeIntensityEma)
+
+        val delta = (brakeIntensityEma - brakePrevIntensityEma).coerceAtLeast(0f)
+
+        val (thr, deltaThr) = brakeCueParams()
+
+        // Strength: kombinuje "kolik červené" a "jak rychle to vyrostlo"
+        val ratioScore = ((brakeRedRatioEma - (thr - 0.15f)) / 0.25f).coerceIn(0f, 1f)
+        val deltaScore = ((delta - (deltaThr * 0.5f)) / (deltaThr)).coerceIn(0f, 1f)
+        val strength = (ratioScore * 0.65f + deltaScore * 0.35f).coerceIn(0f, 1f)
+
+        val isOn = brakeRedRatioEma >= thr && delta >= deltaThr && strength >= 0.6f
+
+        if (isOn) {
+            brakeCueActiveFrames += 1
+            brakeCueLastActiveMs = tsMs
+        } else {
+            brakeCueActiveFrames = 0.coerceAtLeast(brakeCueActiveFrames - 1)
+        }
+
+        // Stabilizace: chceme 2 po sobě jdoucí framy ON, pak držet ještě 400ms
+        brakeCueActive = if (brakeCueActiveFrames >= 2) {
+            true
+        } else {
+            val holdMs = 400L
+            brakeCueLastActiveMs > 0L && (tsMs - brakeCueLastActiveMs) <= holdMs
+        }
+        brakeCueStrength = if (brakeCueActive) strength else 0f
+
+        if (AppPreferences.debugOverlay) {
+            flog("brakeCue enabled=1 redRatio=%.3f redEma=%.3f dI=%.3f thr=%.2f dThr=%.2f strength=%.2f active=%s".format(
+                redRatio, brakeRedRatioEma, delta, thr, deltaThr, brakeCueStrength, brakeCueActive
+            ))
+        }
+
+        return BrakeCueResult(brakeCueActive, brakeCueStrength, brakeRedRatioEma, delta)
+    }
+
+    /**
+     * Heuristika:
+     * - pracuje ve spodní části bbox (cca 30 % výšky)
+     * - měří poměr "červených" pixelů + průměrnou intenzitu červené složky.
+     * Sampling stride drží výkon.
+     */
+    private fun sampleBrakeLightSignal(frame: Bitmap, box: Box): Pair<Float, Float> {
+        val w = frame.width
+        val h = frame.height
+        if (w <= 0 || h <= 0) return 0f to 0f
+
+        val x1 = box.x1.toInt().coerceIn(0, w - 1)
+        val y1 = box.y1.toInt().coerceIn(0, h - 1)
+        val x2 = box.x2.toInt().coerceIn(0, w - 1)
+        val y2 = box.y2.toInt().coerceIn(0, h - 1)
+        val left = min(x1, x2)
+        val right = max(x1, x2)
+        val top = min(y1, y2)
+        val bottom = max(y1, y2)
+
+        val bw = (right - left).coerceAtLeast(2)
+        val bh = (bottom - top).coerceAtLeast(2)
+
+        val roiTop = (bottom - (bh * 0.30f)).toInt().coerceIn(top, bottom - 1)
+        val roiBottom = bottom
+        val insetX = (bw * 0.12f).toInt().coerceAtLeast(0)
+        val roiLeft = (left + insetX).coerceIn(0, w - 1)
+        val roiRight = (right - insetX).coerceIn(roiLeft + 1, w)
+
+        val step = 3 // performance
+        var redCount = 0
+        var total = 0
+        var sumRed = 0L
+
+        var yy = roiTop
+        while (yy < roiBottom) {
+            var xx = roiLeft
+            while (xx < roiRight) {
+                val c = frame.getPixel(xx, yy)
+                val r = (c shr 16) and 0xFF
+                val g = (c shr 8) and 0xFF
+                val b = c and 0xFF
+
+                // červená heuristika
+                val isRed = r > 80 && r > (g * 13 / 10) && r > (b * 13 / 10)
+                if (isRed) redCount += 1
+                sumRed += r.toLong()
+                total += 1
+
+                xx += step
+            }
+            yy += step
+        }
+        if (total <= 0) return 0f to 0f
+        val redRatio = redCount.toFloat() / total.toFloat()
+        val redIntensity = (sumRed.toFloat() / (total.toFloat() * 255f)).coerceIn(0f, 1f)
+        return redRatio to redIntensity
+    }
+
+private data class AlertThresholds(
         val ttcOrange: Float,
         val ttcRed: Float,
         val distOrange: Float,

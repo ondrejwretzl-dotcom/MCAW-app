@@ -2,6 +2,7 @@ package com.mcaw.config
 
 import android.content.Context
 import android.content.SharedPreferences
+import kotlin.math.abs
 
 object AppPreferences {
 
@@ -57,6 +58,18 @@ object AppPreferences {
     var laneFilter: Boolean
         get() = prefs.getBoolean("laneFilter", false)
         set(v) = prefs.edit().putBoolean("laneFilter", v).apply()
+    // BRAKE CUE (detekce rozsvícených brzdových světel – heuristika, default OFF)
+    var brakeCueEnabled: Boolean
+        get() = prefs.getBoolean("brake_cue_enabled", false)
+        set(v) = prefs.edit().putBoolean("brake_cue_enabled", v).apply()
+
+    /**
+     * 0 = Nízká citlivost (méně false-positive), 1 = Standard, 2 = Vysoká (citlivější).
+     */
+    var brakeCueSensitivity: Int
+        get() = prefs.getInt("brake_cue_sens", 1)
+        set(v) = prefs.edit().putInt("brake_cue_sens", v.coerceIn(0, 2)).apply()
+
 
     var previewActive: Boolean
         get() = prefs.getBoolean("previewActive", false)

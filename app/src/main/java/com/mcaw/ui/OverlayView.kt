@@ -26,6 +26,12 @@ class OverlayView @JvmOverloads constructor(
         color = Color.GREEN
         style = Paint.Style.FILL
     }
+    private val brakePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#FF3B30")
+        style = Paint.Style.FILL
+    }
+
+
 
     private val roiPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.RED
@@ -93,6 +99,20 @@ class OverlayView @JvmOverloads constructor(
             field = value
             invalidate()
         }
+    /** Brake cue active (rozsvícená brzdová světla – heuristika). */
+    var brakeCueActive: Boolean = false
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    var brakeCueStrength: Float = 0f
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+
 
     var ttc: Float = -1f
         set(value) {
@@ -172,6 +192,7 @@ class OverlayView @JvmOverloads constructor(
             if (label.isNotBlank()) drawLabelTag(canvas, mappedBox, label)
 
             if (showTelemetry) drawTelemetry(canvas, mappedBox, b)
+            if (brakeCueActive) drawBrakeCue(canvas, mappedBox)
         } else {
             if (showTelemetry) drawStatus(canvas, "DEBUG OVERLAY: čekám na detekci")
         }
@@ -190,6 +211,7 @@ class OverlayView @JvmOverloads constructor(
             if (objectSpeed.isFinite() && objectSpeed >= 0f) add("OBJ  %.1f km/h".format(objectSpeed * 3.6f))
             if (riderSpeed.isFinite() && riderSpeed >= 0f) add("RID  %.1f km/h".format(riderSpeed * 3.6f))
             if (ttc.isFinite() && ttc >= 0f) add("TTC  %.2f s".format(ttc))
+            if (brakeCueActive) add("BRAKE ON")
         }
         if (lines.isEmpty()) return
 
@@ -268,7 +290,22 @@ class OverlayView @JvmOverloads constructor(
         canvas.drawText(message, left + padding, bottom - padding, textPaint)
     }
 
-    override fun onTouchEvent(event: MotionEvent): Boolean {
+    
+    private fun drawBrakeCue(canvas: Canvas, mapped: RectF) {
+        // malé červené "brzdové světlo" u boxu (debug)
+        val radius = 10f
+        val cx = mapped.right - radius - 6f
+        val cy = mapped.top + radius + 6f
+        canvas.drawCircle(cx, cy, radius, brakePaint)
+        val txt = "B"
+        val oldSize = textPaint.textSize
+        textPaint.textSize = 22f
+        val tw = textPaint.measureText(txt)
+        canvas.drawText(txt, cx - tw / 2f, cy + 8f, textPaint)
+        textPaint.textSize = oldSize
+    }
+
+override fun onTouchEvent(event: MotionEvent): Boolean {
         if (!roiEditMode) return false
 
         val roiRect = mapRoiToView() ?: return false

@@ -87,6 +87,7 @@ class PreviewActivity : ComponentActivity() {
             overlay.objectSpeed = i.getFloatExtra("object_speed", -1f) // OBJ
             overlay.riderSpeed = i.getFloatExtra("rider_speed", -1f) // RID
             overlay.ttc = i.getFloatExtra("ttc", -1f)
+            overlay.brakeCueActive = i.getBooleanExtra("brake_cue", false)
             val mapped = LabelMapper.mapLabel(i.getStringExtra("label"))
             overlay.label = mapped
             txtDetectionLabel.text = "Detekce: $mapped"
