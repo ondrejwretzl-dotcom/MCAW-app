@@ -90,12 +90,6 @@ class OverlayView @JvmOverloads constructor(
             invalidate()
         }
 
-    var riderSpeed: Float = -1f
-        set(value) {
-            field = value
-            invalidate()
-        }
-
     var ttc: Float = -1f
         set(value) {
             field = value
@@ -190,7 +184,6 @@ class OverlayView @JvmOverloads constructor(
             add("BOX  [%.0f×%.0f]".format((b.x2 - b.x1), (b.y2 - b.y1)))
             if (distance.isFinite() && distance >= 0f) add("DIST %.2f m".format(distance))
             if (speed.isFinite()) add("REL  %.1f km/h".format(speed * 3.6f))
-            if (riderSpeed.isFinite()) add("RID  %.1f km/h".format(riderSpeed * 3.6f))
             if (objectSpeed.isFinite()) add("OBJ  %.1f km/h".format(objectSpeed * 3.6f))
             if (ttc.isFinite() && ttc >= 0f) add("TTC  %.2f s".format(ttc))
         }

@@ -64,7 +64,6 @@ class PreviewActivity : ComponentActivity() {
                 overlay.distance = -1f
                 overlay.speed = -1f
                 overlay.objectSpeed = -1f
-                overlay.riderSpeed = -1f
                 overlay.ttc = -1f
                 overlay.label = ""
                 searching = true
@@ -85,7 +84,6 @@ class PreviewActivity : ComponentActivity() {
             overlay.distance = i.getFloatExtra("dist", -1f)
             overlay.speed = i.getFloatExtra("speed", -1f)
             overlay.objectSpeed = i.getFloatExtra("object_speed", -1f)
-            overlay.riderSpeed = i.getFloatExtra("rider_speed", -1f)
             overlay.ttc = i.getFloatExtra("ttc", -1f)
             val mapped = LabelMapper.mapLabel(i.getStringExtra("label"))
             overlay.label = mapped
