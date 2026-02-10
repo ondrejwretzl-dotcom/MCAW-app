@@ -319,13 +319,14 @@ class DetectionAnalyzer(
                     "ttcH=${ttcFromHeightsHeld ?: Float.NaN} ttcD=$ttcFromDist ttc=$ttc"
             )
 
+            val levelEffective = lastAlertLevel
             sendMetricsUpdate(
                 dist = distanceM,
                 approachSpeed = approachSpeedMps,
                 objectSpeed = objectSpeedMps,
                 riderSpeed = riderSpeedMps,
                 ttc = ttc,
-                level = level,
+                level = levelEffective,
                 label = label
             )
 

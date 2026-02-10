@@ -26,6 +26,7 @@ import com.mcaw.util.LabelMapper
 class MainActivity : ComponentActivity() {
 
     private lateinit var txtStatus: TextView
+    private var serviceRunning: Boolean = false
     private lateinit var txtTtc: TextView
     private lateinit var txtDistance: TextView
     private lateinit var txtSpeed: TextView
@@ -200,6 +201,7 @@ class MainActivity : ComponentActivity() {
     private fun startEngine() {
         val intent = Intent(this, McawService::class.java)
         ContextCompat.startForegroundService(this, intent)
+        serviceRunning = true
         txtStatus.text = "Služba: BĚŽÍ"
         addLog("Služba spuštěna")
         logActivity("service_start")
@@ -207,6 +209,7 @@ class MainActivity : ComponentActivity() {
 
     private fun stopEngine() {
         stopService(Intent(this, McawService::class.java))
+        serviceRunning = false
         txtStatus.text = "Služba: ZASTAVENA"
         addLog("Služba zastavena")
         logActivity("service_stop")
