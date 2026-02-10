@@ -283,7 +283,9 @@ class DetectionAnalyzer(
                 objectSpeed = objectSpeedMps,
                 riderSpeed = riderSpeedMps,
                 ttc = ttc,
-                label = label
+                label = label,
+                brakeCue = brakeCue.active,
+                alertLevel = lastAlertLevel
             )
 
             flog(
@@ -292,7 +294,7 @@ class DetectionAnalyzer(
                     "distRaw=${distanceRaw ?: Float.NaN} dist=$distanceM " +
                     "relSigned=$relSpeedSigned relApp=$approachSpeedFromDist " +
                     "riderRaw=$riderSpeedRawMps rider=$riderSpeedMps obj=$objectSpeedMps " +
-                    "ttcH=${ttcFromHeights ?: Float.NaN} ttcD=$ttcFromDist ttc=$ttc"
+                    "ttcH=${ttcFromHeightsHeld ?: Float.NaN} ttcD=$ttcFromDist ttc=$ttc"
             )
 
             sendMetricsUpdate(
@@ -302,7 +304,8 @@ class DetectionAnalyzer(
                 riderSpeed = riderSpeedMps,
                 ttc = ttc,
                 level = level,
-                label = label
+                label = label,
+                brakeCue = brakeCue.active
             )
 
             if (AppPreferences.debugOverlay) {
@@ -381,7 +384,8 @@ class DetectionAnalyzer(
         riderSpeed: Float,
         ttc: Float,
         label: String,
-        brakeCue: Boolean
+        brakeCue: Boolean,
+        alertLevel: Int
     ) {
         val roiN = AppPreferences.getRoiNormalized()
         val i = Intent("MCAW_DEBUG_UPDATE").setPackage(ctx.packageName)
@@ -399,6 +403,7 @@ class DetectionAnalyzer(
         i.putExtra("ttc", ttc)
         i.putExtra("label", label)
         i.putExtra("brake_cue", brakeCue)
+        i.putExtra("alert_level", alertLevel)
 
         // keep ROI always in preview overlay
         i.putExtra("roi_left_n", roiN.left)

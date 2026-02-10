@@ -67,6 +67,8 @@ class PreviewActivity : ComponentActivity() {
                 overlay.riderSpeed = -1f
                 overlay.ttc = -1f
                 overlay.label = ""
+                overlay.alertLevel = 0
+                overlay.brakeCueActive = false
                 searching = true
                 updateSearchingLabel()
                 logActivity("detection_clear")
@@ -87,6 +89,7 @@ class PreviewActivity : ComponentActivity() {
             overlay.objectSpeed = i.getFloatExtra("object_speed", -1f) // OBJ
             overlay.riderSpeed = i.getFloatExtra("rider_speed", -1f) // RID
             overlay.ttc = i.getFloatExtra("ttc", -1f)
+            overlay.alertLevel = i.getIntExtra("alert_level", 0)
             overlay.brakeCueActive = i.getBooleanExtra("brake_cue", false)
             val mapped = LabelMapper.mapLabel(i.getStringExtra("label"))
             overlay.label = mapped

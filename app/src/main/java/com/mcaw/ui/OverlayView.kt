@@ -100,7 +100,15 @@ class OverlayView @JvmOverloads constructor(
             invalidate()
         }
     /** Brake cue active (rozsvícená brzdová světla – heuristika). */
-    var brakeCueActive: Boolean = false
+    
+    /** 0=SAFE, 1=ORANGE, 2=RED (z DetectionAnalyzer). */
+    var alertLevel: Int = 0
+        set(value) {
+            field = value.coerceIn(0, 2)
+            invalidate()
+        }
+
+var brakeCueActive: Boolean = false
         set(value) {
             field = value
             invalidate()
@@ -177,8 +185,23 @@ class OverlayView @JvmOverloads constructor(
 
     private val minRoiSizeN = 0.10f
 
-    override fun onDraw(canvas: Canvas) {
+    
+    private fun colorForAlert(level: Int): Int {
+        return when (level.coerceIn(0, 2)) {
+            2 -> Color.RED
+            1 -> Color.rgb(255, 165, 0) // orange
+            else -> Color.GREEN
+        }
+    }
+
+override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
+
+        val c = colorForAlert(alertLevel)
+        boxPaint.color = c
+        dotPaint.color = c
+        // ROI remains red in edit mode, otherwise match alert level
+        if (!roiEditMode) roiPaint.color = c
 
         val roiRect = mapRoiToView() ?: return
         canvas.drawRect(roiRect, roiDimPaint)
