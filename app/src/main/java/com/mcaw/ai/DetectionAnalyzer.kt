@@ -2,6 +2,8 @@ package com.mcaw.ai
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.RectF
 import android.media.AudioManager
 import android.media.MediaPlayer
 import android.os.VibrationEffect
@@ -14,10 +16,14 @@ import com.mcaw.app.R
 import com.mcaw.config.AppPreferences
 import com.mcaw.location.SpeedProvider
 import com.mcaw.model.Box
+import com.mcaw.model.Detection
 import com.mcaw.util.PublicLogWriter
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.roundToInt
+import kotlin.math.roundToInt
 
 class DetectionAnalyzer(
     private val ctx: Context,
@@ -104,6 +110,12 @@ class DetectionAnalyzer(
             val frameW = bitmap.width.toFloat()
             val frameH = bitmap.height.toFloat()
 
+            // ROI in pixels (in the SAME coordinate system as rotated bitmap)
+            val roiRectPx = roiRectPx(frameW, frameH)
+            val roiBitmapAndOffset = cropForRoi(bitmap, roiRectPx)
+            val roiBitmap = roiBitmapAndOffset.first
+            val roiOffset = roiBitmapAndOffset.second
+
             flog(
                 "frame proxy=${image.width}x${image.height} rot=$rotation " +
                     "bmpRaw=${rawBitmap.width}x${rawBitmap.height} bmpRot=${bitmap.width}x${bitmap.height} " +
@@ -120,15 +132,33 @@ class DetectionAnalyzer(
             val riderSpeedRawMps = speedProvider.getCurrent().speedMps
             val riderSpeedMps = smoothRiderSpeed(riderSpeedRawMps)
 
-            val rawDetections = when (AppPreferences.selectedModel) {
-                0 -> yolo?.detect(bitmap).orEmpty()
-                1 -> det?.detect(bitmap).orEmpty()
+            // Run detector on ROI crop for performance + to avoid picking dashboard/edges.
+            // Then map detections back into full-frame coordinates.
+            val rawDetectionsRoi = when (AppPreferences.selectedModel) {
+                0 -> yolo?.detect(roiBitmap).orEmpty()
+                1 -> det?.detect(roiBitmap).orEmpty()
                 else -> emptyList()
             }
 
+            val rawDetections = mapDetectionsFromRoiToFrame(rawDetectionsRoi, roiOffset)
+
+            // Hard gate: keep only detections that are at least 80% inside ROI.
+            // (prevents "auto" on dashboard when ROI is set to the road area)
+            val gatedDetections = rawDetections.filter { d ->
+                val inside = insideRatio(d.box, roiRectPx)
+                inside >= 0.80f
+            }
+
             // Postprocess ve stejném frame (otočený bitmap)
-            val post = postProcessor.process(rawDetections, frameW, frameH)
+            val post = postProcessor.process(gatedDetections, frameW, frameH)
             flog("counts raw=${post.counts.raw} thr=${post.counts.threshold} nms=${post.counts.nms} accepted=${post.counts.filters}")
+
+            if (AppPreferences.debugOverlay) {
+                flog(
+                    "roi n=${AppPreferences.getRoiNormalized()} px=[${roiRectPx.left.toInt()},${roiRectPx.top.toInt()},${roiRectPx.right.toInt()},${roiRectPx.bottom.toInt()}] " +
+                        "crop=${roiBitmap.width}x${roiBitmap.height} offset=(${roiOffset.first},${roiOffset.second}) rawRoi=${rawDetectionsRoi.size} rawMapped=${rawDetections.size} gated=${gatedDetections.size}"
+                )
+            }
 
             val tracked = tracker.update(post.accepted)
             val bestTrack = selectLockedTarget(tracked, frameW, frameH)
@@ -559,6 +589,73 @@ class DetectionAnalyzer(
         lastDistanceTimestampMs = tsMs
 
         return relSpeedEma
+    }
+
+    /** ROI rect in pixel coordinates of the rotated bitmap/frame. */
+    private fun roiRectPx(frameW: Float, frameH: Float): RectF {
+        val roiN = AppPreferences.getRoiNormalized()
+        val l = (roiN.left * frameW).coerceIn(0f, frameW)
+        val t = (roiN.top * frameH).coerceIn(0f, frameH)
+        val r = (roiN.right * frameW).coerceIn(0f, frameW)
+        val b = (roiN.bottom * frameH).coerceIn(0f, frameH)
+        val left = min(l, r)
+        val top = min(t, b)
+        val right = max(l, r)
+        val bottom = max(t, b)
+        // ensure at least 2px to avoid Bitmap.createBitmap crash
+        val rr = if (right - left < 2f) (left + 2f).coerceAtMost(frameW) else right
+        val bb = if (bottom - top < 2f) (top + 2f).coerceAtMost(frameH) else bottom
+        return RectF(left, top, rr, bb)
+    }
+
+    /**
+     * Crops bitmap to ROI for detector input. Returns (roiBitmap, offsetPx(left,top)).
+     * If ROI is invalid, returns original bitmap and (0,0).
+     */
+    private fun cropForRoi(src: Bitmap, roiPx: RectF): Pair<Bitmap, Pair<Int, Int>> {
+        val left = roiPx.left.roundToInt().coerceIn(0, src.width - 1)
+        val top = roiPx.top.roundToInt().coerceIn(0, src.height - 1)
+        val right = roiPx.right.roundToInt().coerceIn(left + 1, src.width)
+        val bottom = roiPx.bottom.roundToInt().coerceIn(top + 1, src.height)
+        val w = (right - left).coerceAtLeast(2)
+        val h = (bottom - top).coerceAtLeast(2)
+        // fast path: no crop
+        if (left == 0 && top == 0 && w == src.width && h == src.height) {
+            return src to (0 to 0)
+        }
+        val cropped = try {
+            Bitmap.createBitmap(src, left, top, w, h)
+        } catch (_: IllegalArgumentException) {
+            src
+        }
+        return cropped to (left to top)
+    }
+
+    /** Map detection boxes from ROI-cropped bitmap coords back to full frame coords. */
+    private fun mapDetectionsFromRoiToFrame(dets: List<Detection>, offset: Pair<Int, Int>): List<Detection> {
+        val ox = offset.first.toFloat()
+        val oy = offset.second.toFloat()
+        if (ox == 0f && oy == 0f) return dets
+        return dets.map { d ->
+            val b = d.box
+            d.copy(box = Box(b.x1 + ox, b.y1 + oy, b.x2 + ox, b.y2 + oy))
+        }
+    }
+
+    /** Returns ratio of bbox area that lies inside ROI [0..1]. */
+    private fun insideRatio(box: Box, roi: RectF): Float {
+        val bx1 = min(box.x1, box.x2)
+        val by1 = min(box.y1, box.y2)
+        val bx2 = max(box.x1, box.x2)
+        val by2 = max(box.y1, box.y2)
+        val area = (bx2 - bx1).coerceAtLeast(0f) * (by2 - by1).coerceAtLeast(0f)
+        if (area <= 1e-3f) return 0f
+        val ix1 = max(bx1, roi.left)
+        val iy1 = max(by1, roi.top)
+        val ix2 = min(bx2, roi.right)
+        val iy2 = min(by2, roi.bottom)
+        val inter = (ix2 - ix1).coerceAtLeast(0f) * (iy2 - iy1).coerceAtLeast(0f)
+        return (inter / area).coerceIn(0f, 1f)
     }
 
     private fun estimateFocalLengthPx(frameHeightPx: Int): Float {
