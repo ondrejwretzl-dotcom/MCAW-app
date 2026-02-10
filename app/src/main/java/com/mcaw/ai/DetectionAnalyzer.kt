@@ -23,7 +23,6 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
-import kotlin.math.roundToInt
 
 class DetectionAnalyzer(
     private val ctx: Context,
@@ -57,23 +56,24 @@ class DetectionAnalyzer(
     private var switchCandidateCount: Int = 0
     private var lastSelectedTrackId: Long = -1L
 
-    // Distance/time history (for signed relative speed)
-    private var lastDistanceM: Float = Float.NaN
-    private var lastDistanceTimestampMs: Long = -1L
+        // Distance/time history (for relative speed and TTC stability)
+    private var distEmaM: Float = Float.NaN
+    private var distEmaValid: Boolean = false
 
-    // BBox height history (alternative TTC from bbox growth)
+    // Sliding window of (tsMs, distEmaM) for slope estimation
+    private val distWindow = ArrayDeque<Pair<Long, Float>>(16)
+
+    // Relative speed EMA (m/s), + when approaching
+    private var relSpeedEma: Float = 0f
+    private var relSpeedEmaValid: Boolean = false
+
+// BBox height history (alternative TTC from bbox growth)
     private var lastBoxHeightPx: Float = Float.NaN
     private var lastBoxHeightTimestampMs: Long = -1L
 
     // Rider speed smoothing (GPS speed is noisy, especially at low speeds)
     private var riderSpeedEma: Float = 0f
     private var riderSpeedEmaValid: Boolean = false
-
-    // EMA smoothing to reduce jitter (distance estimate is noisy)
-    private var relSpeedEma: Float = 0f
-    private var relSpeedEmaValid: Boolean = false
-    private var distEma: Float = Float.NaN
-    private var distEmaValid: Boolean = false
 
     private var lastAlertLevel = 0
 
@@ -168,7 +168,7 @@ class DetectionAnalyzer(
                 switchCandidateId = null
                 switchCandidateCount = 0
                 stopActiveAlerts()
-                resetMotionState()
+                resetMotionHistory()
                 sendOverlayClear()
                 sendMetricsClear()
                 return
@@ -177,7 +177,7 @@ class DetectionAnalyzer(
             // reset smoothing on target change
             if (lastSelectedTrackId != bestTrack.id) {
                 lastSelectedTrackId = bestTrack.id
-                resetMotionState()
+                resetMotionHistory()
             }
 
             // Clamp + canonical label
@@ -267,10 +267,10 @@ class DetectionAnalyzer(
             return Float.POSITIVE_INFINITY
         }
         val alpha = 0.25f
-        distEma =
-            if (!distEmaValid || !distEma.isFinite()) distanceM else (distEma + alpha * (distanceM - distEma))
+        distEmaM =
+            if (!distEmaValid || !distEmaM.isFinite()) distanceM else (distEmaM + alpha * (distanceM - distEmaM))
         distEmaValid = true
-        return distEma
+        return distEmaM
     }
 
     private fun clampBox(b: Box, w: Float, h: Float): Box {
@@ -313,6 +313,7 @@ class DetectionAnalyzer(
         dist: Float,
         relSpeedSigned: Float,
         objectSpeed: Float,
+        riderSpeed: Float,
         ttc: Float,
         label: String
     ) {
@@ -327,6 +328,7 @@ class DetectionAnalyzer(
         i.putExtra("dist", dist)
         i.putExtra("speed", relSpeedSigned)
         i.putExtra("object_speed", objectSpeed)
+        i.putExtra("rider_speed", riderSpeed)
         i.putExtra("ttc", ttc)
         i.putExtra("label", label)
         ctx.sendBroadcast(i)
@@ -398,16 +400,18 @@ class DetectionAnalyzer(
         return if (orange) 1 else 0
     }
 
-    private fun resetMotionState() {
-        lastDistanceM = Float.NaN
-        lastDistanceTimestampMs = -1L
+        private fun resetMotionHistory() {
+        distEmaM = Float.NaN
         distEmaValid = false
-        distEma = Float.NaN
-        relSpeedEmaValid = false
+        distWindow.clear()
         relSpeedEma = 0f
+        relSpeedEmaValid = false
         lastBoxHeightPx = Float.NaN
         lastBoxHeightTimestampMs = -1L
+        ttcHeightEma = Float.POSITIVE_INFINITY
+        ttcHeightEmaValid = false
     }
+
 
     /**
      * GPS speed is noisy at low speed and causes "object speed" to look wrong in stationary tests.
@@ -546,50 +550,52 @@ class DetectionAnalyzer(
      */
     private fun computeRelativeSpeedSigned(currentDistanceM: Float, tsMs: Long): Float {
         if (!currentDistanceM.isFinite()) {
-            lastDistanceM = Float.NaN
-            lastDistanceTimestampMs = tsMs
-            relSpeedEmaValid = false
-            relSpeedEma = 0f
+            resetMotionHistory()
             return 0f
         }
 
-        if (lastDistanceTimestampMs <= 0L || !lastDistanceM.isFinite()) {
-            lastDistanceM = currentDistanceM
-            lastDistanceTimestampMs = tsMs
-            relSpeedEmaValid = false
-            relSpeedEma = 0f
-            return 0f
+        // Smooth distance first (EMA) then estimate slope over a short window (less jitter than 1-step derivative)
+        val dist = smoothDistance(currentDistanceM)
+
+        // Keep ~0.3–0.8s window
+        distWindow.addLast(tsMs to dist)
+        while (distWindow.size > 1 && (tsMs - distWindow.first().first) > 900L) {
+            distWindow.removeFirst()
         }
 
-        val dtSec = ((tsMs - lastDistanceTimestampMs).coerceAtLeast(1L)).toFloat() / 1000f
-        // Guard: if time step is too large, treat as re-sync (camera stalled / app backgrounded)
-        if (dtSec > 1.0f) {
-            lastDistanceM = currentDistanceM
-            lastDistanceTimestampMs = tsMs
-            relSpeedEmaValid = false
-            relSpeedEma = 0f
-            return 0f
+        // If there was a stall (app background / big hitch), re-sync
+        if (distWindow.size >= 2) {
+            val dtMs = tsMs - distWindow.first().first
+            if (dtMs > 1100L) {
+                distWindow.clear()
+                distWindow.addLast(tsMs to dist)
+                relSpeedEmaValid = false
+                relSpeedEma = 0f
+                return 0f
+            }
         }
 
-        val dd = lastDistanceM - currentDistanceM // + when approaching
-        // Deadband against monocular jitter: too large threshold kills TTC completely.
-        // Make it small + slightly distance-dependent.
-        val deadbandM = max(0.03f, currentDistanceM * 0.008f) // ~3 cm or ~0.8% of distance
-        val raw = if (abs(dd) < deadbandM) 0f else dd / dtSec
+        if (distWindow.size < 2) return 0f
 
-        // Clamp to plausible range (monocular estimate can spike)
+        val (t0, d0) = distWindow.first()
+        val (t1, d1) = distWindow.last()
+        val dtSec = ((t1 - t0).coerceAtLeast(1L)).toFloat() / 1000f
+
+        val dd = d0 - d1 // + when approaching
+        // Deadband against monocular jitter, distance-dependent
+        val deadbandM = max(0.02f, d1 * 0.006f) // 2 cm or 0.6% of distance
+        val raw = if (kotlin.math.abs(dd) < deadbandM) 0f else dd / dtSec
+
+        // Clamp to plausible range
         val clamped = raw.coerceIn(-60f, 60f)
 
-        val alpha = 0.30f
-        relSpeedEma =
-            if (!relSpeedEmaValid) clamped else (relSpeedEma + alpha * (clamped - relSpeedEma))
+        val alpha = 0.35f
+        relSpeedEma = if (!relSpeedEmaValid) clamped else (relSpeedEma + alpha * (clamped - relSpeedEma))
         relSpeedEmaValid = true
-
-        lastDistanceM = currentDistanceM
-        lastDistanceTimestampMs = tsMs
 
         return relSpeedEma
     }
+
 
     /** ROI rect in pixel coordinates of the rotated bitmap/frame. */
     private fun roiRectPx(frameW: Float, frameH: Float): RectF {
