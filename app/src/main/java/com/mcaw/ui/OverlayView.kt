@@ -10,6 +10,7 @@ import com.mcaw.model.Box
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.sqrt
 
 class OverlayView @JvmOverloads constructor(
     context: Context,
@@ -26,12 +27,11 @@ class OverlayView @JvmOverloads constructor(
         color = Color.GREEN
         style = Paint.Style.FILL
     }
+
     private val brakePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.parseColor("#FF3B30")
         style = Paint.Style.FILL
     }
-
-
 
     private val roiPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.RED
@@ -39,7 +39,7 @@ class OverlayView @JvmOverloads constructor(
         strokeWidth = 4f
     }
 
-    private val roiDimPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    private val roiFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.argb(60, 255, 0, 0)
         style = Paint.Style.FILL
     }
@@ -99,8 +99,7 @@ class OverlayView @JvmOverloads constructor(
             field = value
             invalidate()
         }
-    /** Brake cue active (rozsvícená brzdová světla – heuristika). */
-    
+
     /** 0=SAFE, 1=ORANGE, 2=RED (z DetectionAnalyzer). */
     var alertLevel: Int = 0
         set(value) {
@@ -108,7 +107,8 @@ class OverlayView @JvmOverloads constructor(
             invalidate()
         }
 
-var brakeCueActive: Boolean = false
+    /** Brake cue active (rozsvícená brzdová světla – heuristika). */
+    var brakeCueActive: Boolean = false
         set(value) {
             field = value
             invalidate()
@@ -119,8 +119,6 @@ var brakeCueActive: Boolean = false
             field = value
             invalidate()
         }
-
-
 
     var ttc: Float = -1f
         set(value) {
@@ -140,25 +138,29 @@ var brakeCueActive: Boolean = false
             invalidate()
         }
 
-    // ROI normalized [0..1]
-    var roiLeftN: Float = 0.15f
+    // ---- ROI trapezoid (normalized 0..1) ----
+    // Symetrický kolem centerX=0.5
+    var roiTopY: Float = 0.32f
         set(value) {
             field = value.coerceIn(0f, 1f)
             invalidate()
         }
-    var roiTopN: Float = 0.15f
+
+    var roiBottomY: Float = 0.92f
         set(value) {
             field = value.coerceIn(0f, 1f)
             invalidate()
         }
-    var roiRightN: Float = 0.85f
+
+    var roiTopHalfW: Float = 0.18f
         set(value) {
-            field = value.coerceIn(0f, 1f)
+            field = value.coerceIn(0f, 0.5f)
             invalidate()
         }
-    var roiBottomN: Float = 0.85f
+
+    var roiBottomHalfW: Float = 0.46f
         set(value) {
-            field = value.coerceIn(0f, 1f)
+            field = value.coerceIn(0f, 0.5f)
             invalidate()
         }
 
@@ -172,9 +174,19 @@ var brakeCueActive: Boolean = false
      * Callback při změně ROI v edit módu.
      * isFinal=true na ACTION_UP/CANCEL -> vhodné pro uložení do prefs.
      */
-    var onRoiChanged: ((l: Float, t: Float, r: Float, b: Float, isFinal: Boolean) -> Unit)? = null
+    var onRoiChanged: ((topY: Float, bottomY: Float, topHalfW: Float, bottomHalfW: Float, isFinal: Boolean) -> Unit)? =
+        null
 
-    private enum class DragHandle { NONE, LEFT, TOP, RIGHT, BOTTOM, MOVE }
+    private enum class DragHandle {
+        NONE,
+        MOVE,
+        TOP_Y,
+        BOTTOM_Y,
+        TOP_LEFT,
+        TOP_RIGHT,
+        BOTTOM_LEFT,
+        BOTTOM_RIGHT
+    }
 
     private var activeHandle: DragHandle = DragHandle.NONE
     private var lastTouchX = 0f
@@ -183,9 +195,10 @@ var brakeCueActive: Boolean = false
     private val touchSlopPx: Float =
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 18f, resources.displayMetrics)
 
-    private val minRoiSizeN = 0.10f
+    private val minHeightN = 0.10f
+    private val minTopHalfWN = 0.06f
+    private val minBottomHalfWN = 0.12f
 
-    
     private fun colorForAlert(level: Int): Int {
         return when (level.coerceIn(0, 2)) {
             2 -> Color.RED
@@ -194,7 +207,7 @@ var brakeCueActive: Boolean = false
         }
     }
 
-override fun onDraw(canvas: Canvas) {
+    override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
 
         val c = colorForAlert(alertLevel)
@@ -203,9 +216,9 @@ override fun onDraw(canvas: Canvas) {
         // ROI remains red in edit mode, otherwise match alert level
         if (!roiEditMode) roiPaint.color = c
 
-        val roiRect = mapRoiToView() ?: return
-        canvas.drawRect(roiRect, roiDimPaint)
-        canvas.drawRect(roiRect, roiPaint)
+        val roiPath = mapRoiToViewPath() ?: return
+        canvas.drawPath(roiPath, roiFillPaint)
+        canvas.drawPath(roiPath, roiPaint)
 
         val b = box
         if (b != null) {
@@ -222,6 +235,7 @@ override fun onDraw(canvas: Canvas) {
 
         if (roiEditMode) {
             drawEditHint(canvas)
+            drawRoiHandles(canvas)
         }
     }
 
@@ -261,7 +275,7 @@ override fun onDraw(canvas: Canvas) {
     }
 
     private fun drawEditHint(canvas: Canvas) {
-        val msg = "EDIT ROI: táhni hrany / uvnitř přesun"
+        val msg = "EDIT ROI: táhni hrany / rohy / uvnitř přesun"
         val padding = 12f
         val fm = textPaint.fontMetrics
         val lineH = (fm.bottom - fm.top)
@@ -313,7 +327,6 @@ override fun onDraw(canvas: Canvas) {
         canvas.drawText(message, left + padding, bottom - padding, textPaint)
     }
 
-    
     private fun drawBrakeCue(canvas: Canvas, mapped: RectF) {
         // malé červené "brzdové světlo" u boxu (debug)
         val radius = 10f
@@ -328,30 +341,48 @@ override fun onDraw(canvas: Canvas) {
         textPaint.textSize = oldSize
     }
 
-override fun onTouchEvent(event: MotionEvent): Boolean {
+    private fun drawRoiHandles(canvas: Canvas) {
+        val pts = roiPointsView() ?: return
+        val radius = 10f
+        val handlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            style = Paint.Style.FILL
+        }
+        // corners
+        canvas.drawCircle(pts[0], pts[1], radius, handlePaint) // TL
+        canvas.drawCircle(pts[2], pts[3], radius, handlePaint) // TR
+        canvas.drawCircle(pts[4], pts[5], radius, handlePaint) // BR
+        canvas.drawCircle(pts[6], pts[7], radius, handlePaint) // BL
+    }
+
+    override fun onTouchEvent(event: MotionEvent): Boolean {
         if (!roiEditMode) return false
 
-        val roiRect = mapRoiToView() ?: return false
+        val pts = roiPointsView() ?: return false
+        val path = roiPathFromPts(pts)
+
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                activeHandle = pickHandle(event.x, event.y, roiRect)
+                activeHandle = pickHandle(event.x, event.y, pts, path)
                 lastTouchX = event.x
                 lastTouchY = event.y
                 return activeHandle != DragHandle.NONE
             }
+
             MotionEvent.ACTION_MOVE -> {
                 if (activeHandle == DragHandle.NONE) return false
                 val dx = event.x - lastTouchX
                 val dy = event.y - lastTouchY
                 lastTouchX = event.x
                 lastTouchY = event.y
-                applyDrag(dx, dy, roiRect)
-                onRoiChanged?.invoke(roiLeftN, roiTopN, roiRightN, roiBottomN, false)
+                applyDrag(dx, dy)
+                onRoiChanged?.invoke(roiTopY, roiBottomY, roiTopHalfW, roiBottomHalfW, false)
                 return true
             }
+
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 if (activeHandle != DragHandle.NONE) {
-                    onRoiChanged?.invoke(roiLeftN, roiTopN, roiRightN, roiBottomN, true)
+                    onRoiChanged?.invoke(roiTopY, roiBottomY, roiTopHalfW, roiBottomHalfW, true)
                 }
                 activeHandle = DragHandle.NONE
                 return true
@@ -360,54 +391,90 @@ override fun onTouchEvent(event: MotionEvent): Boolean {
         return false
     }
 
-    private fun pickHandle(x: Float, y: Float, roi: RectF): DragHandle {
-        val nearLeft = abs(x - roi.left) <= touchSlopPx && y >= roi.top - touchSlopPx && y <= roi.bottom + touchSlopPx
-        val nearRight = abs(x - roi.right) <= touchSlopPx && y >= roi.top - touchSlopPx && y <= roi.bottom + touchSlopPx
-        val nearTop = abs(y - roi.top) <= touchSlopPx && x >= roi.left - touchSlopPx && x <= roi.right + touchSlopPx
-        val nearBottom = abs(y - roi.bottom) <= touchSlopPx && x >= roi.left - touchSlopPx && x <= roi.right + touchSlopPx
+    private fun pickHandle(x: Float, y: Float, pts: FloatArray, roiPath: Path): DragHandle {
+        fun dist(ax: Float, ay: Float): Float = sqrt((x - ax) * (x - ax) + (y - ay) * (y - ay))
 
-        return when {
-            nearLeft -> DragHandle.LEFT
-            nearRight -> DragHandle.RIGHT
-            nearTop -> DragHandle.TOP
-            nearBottom -> DragHandle.BOTTOM
-            roi.contains(x, y) -> DragHandle.MOVE
-            else -> DragHandle.NONE
+        val tlx = pts[0]; val tly = pts[1]
+        val trx = pts[2]; val tryy = pts[3]
+        val brx = pts[4]; val bry = pts[5]
+        val blx = pts[6]; val bly = pts[7]
+
+        val cornerHit = touchSlopPx * 1.2f
+        if (dist(tlx, tly) <= cornerHit) return DragHandle.TOP_LEFT
+        if (dist(trx, tryy) <= cornerHit) return DragHandle.TOP_RIGHT
+        if (dist(brx, bry) <= cornerHit) return DragHandle.BOTTOM_RIGHT
+        if (dist(blx, bly) <= cornerHit) return DragHandle.BOTTOM_LEFT
+
+        // near top/bottom edge (y proximity)
+        val topEdgeY = (tly + tryy) * 0.5f
+        val bottomEdgeY = (bly + bry) * 0.5f
+        if (abs(y - topEdgeY) <= touchSlopPx && x >= min(tlx, trx) - touchSlopPx && x <= max(tlx, trx) + touchSlopPx) {
+            return DragHandle.TOP_Y
         }
+        if (abs(y - bottomEdgeY) <= touchSlopPx && x >= min(blx, brx) - touchSlopPx && x <= max(blx, brx) + touchSlopPx) {
+            return DragHandle.BOTTOM_Y
+        }
+
+        // inside => move
+        if (pointInPath(roiPath, x, y)) return DragHandle.MOVE
+
+        return DragHandle.NONE
     }
 
-    private fun applyDrag(dxView: Float, dyView: Float, roiView: RectF) {
+    private fun applyDrag(dxView: Float, dyView: Float) {
         val inv = viewToFrameDelta(dxView, dyView) ?: return
         val dxN = inv.first
         val dyN = inv.second
 
-        var l = roiLeftN
-        var t = roiTopN
-        var r = roiRightN
-        var b = roiBottomN
+        var topY = roiTopY
+        var bottomY = roiBottomY
+        var topHalfW = roiTopHalfW
+        var bottomHalfW = roiBottomHalfW
 
         when (activeHandle) {
-            DragHandle.LEFT -> l = (l + dxN).coerceIn(0f, r - minRoiSizeN)
-            DragHandle.RIGHT -> r = (r + dxN).coerceIn(l + minRoiSizeN, 1f)
-            DragHandle.TOP -> t = (t + dyN).coerceIn(0f, b - minRoiSizeN)
-            DragHandle.BOTTOM -> b = (b + dyN).coerceIn(t + minRoiSizeN, 1f)
             DragHandle.MOVE -> {
-                val w = r - l
-                val h = b - t
-                val nl = (l + dxN).coerceIn(0f, 1f - w)
-                val nt = (t + dyN).coerceIn(0f, 1f - h)
-                l = nl
-                t = nt
-                r = l + w
-                b = t + h
+                val h = bottomY - topY
+                val ty = (topY + dyN).coerceIn(0f, 1f - h)
+                val by = ty + h
+                topY = ty
+                bottomY = by
             }
+
+            DragHandle.TOP_Y -> {
+                topY = (topY + dyN).coerceIn(0f, bottomY - minHeightN)
+            }
+
+            DragHandle.BOTTOM_Y -> {
+                bottomY = (bottomY + dyN).coerceIn(topY + minHeightN, 1f)
+            }
+
+            DragHandle.TOP_LEFT -> {
+                // moving left corner right => shrinks, left => grows
+                topHalfW = (topHalfW - dxN).coerceIn(minTopHalfWN, 0.5f)
+            }
+
+            DragHandle.TOP_RIGHT -> {
+                topHalfW = (topHalfW + dxN).coerceIn(minTopHalfWN, 0.5f)
+            }
+
+            DragHandle.BOTTOM_LEFT -> {
+                bottomHalfW = (bottomHalfW - dxN).coerceIn(minBottomHalfWN, 0.5f)
+            }
+
+            DragHandle.BOTTOM_RIGHT -> {
+                bottomHalfW = (bottomHalfW + dxN).coerceIn(minBottomHalfWN, 0.5f)
+            }
+
             else -> return
         }
 
-        roiLeftN = l
-        roiTopN = t
-        roiRightN = r
-        roiBottomN = b
+        // enforce trapezoid constraint (bottom >= top)
+        if (bottomHalfW < topHalfW) bottomHalfW = topHalfW
+
+        roiTopY = topY
+        roiBottomY = bottomY
+        roiTopHalfW = topHalfW
+        roiBottomHalfW = bottomHalfW
     }
 
     private fun mapToView(box: Box): RectF? {
@@ -432,7 +499,7 @@ override fun onTouchEvent(event: MotionEvent): Boolean {
         )
     }
 
-    private fun mapRoiToView(): RectF? {
+    private fun roiPointsView(): FloatArray? {
         val viewW = width.toFloat()
         val viewH = height.toFloat()
         if (viewW <= 0f || viewH <= 0f) return null
@@ -446,22 +513,41 @@ override fun onTouchEvent(event: MotionEvent): Boolean {
         val dx = (viewW - scaledW) / 2f
         val dy = (viewH - scaledH) / 2f
 
-        val l = roiLeftN.coerceIn(0f, 1f)
-        val t = roiTopN.coerceIn(0f, 1f)
-        val r = roiRightN.coerceIn(0f, 1f)
-        val b = roiBottomN.coerceIn(0f, 1f)
+        val cx = 0.5f
+        val topY = roiTopY.coerceIn(0f, 1f)
+        val bottomY = roiBottomY.coerceIn(0f, 1f)
+        val topHalfW = roiTopHalfW.coerceIn(0f, 0.5f)
+        val bottomHalfW = roiBottomHalfW.coerceIn(0f, 0.5f)
 
-        val leftPx = l * fw
-        val topPx = t * fh
-        val rightPx = r * fw
-        val bottomPx = b * fh
+        val tlx = (cx - topHalfW) * fw
+        val trx = (cx + topHalfW) * fw
+        val brx = (cx + bottomHalfW) * fw
+        val blx = (cx - bottomHalfW) * fw
 
-        return RectF(
-            leftPx * scale + dx,
-            topPx * scale + dy,
-            rightPx * scale + dx,
-            bottomPx * scale + dy
+        val tpy = topY * fh
+        val bpy = bottomY * fh
+
+        return floatArrayOf(
+            tlx * scale + dx, tpy * scale + dy,
+            trx * scale + dx, tpy * scale + dy,
+            brx * scale + dx, bpy * scale + dy,
+            blx * scale + dx, bpy * scale + dy
         )
+    }
+
+    private fun roiPathFromPts(pts: FloatArray): Path {
+        return Path().apply {
+            moveTo(pts[0], pts[1])
+            lineTo(pts[2], pts[3])
+            lineTo(pts[4], pts[5])
+            lineTo(pts[6], pts[7])
+            close()
+        }
+    }
+
+    private fun mapRoiToViewPath(): Path? {
+        val pts = roiPointsView() ?: return null
+        return roiPathFromPts(pts)
     }
 
     /** Convert view delta (dx,dy) to normalized frame delta (0..1) for current mapping. */
@@ -479,5 +565,16 @@ override fun onTouchEvent(event: MotionEvent): Boolean {
         val dxFrame = dxView / scale
         val dyFrame = dyView / scale
         return Pair(dxFrame / fw, dyFrame / fh)
+    }
+
+    private fun pointInPath(path: Path, x: Float, y: Float): Boolean {
+        val r = RectF()
+        path.computeBounds(r, true)
+        val region = Region()
+        region.setPath(
+            path,
+            Region(r.left.toInt(), r.top.toInt(), r.right.toInt(), r.bottom.toInt())
+        )
+        return region.contains(x.toInt(), y.toInt())
     }
 }

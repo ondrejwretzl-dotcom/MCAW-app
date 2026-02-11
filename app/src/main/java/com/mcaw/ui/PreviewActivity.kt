@@ -52,11 +52,11 @@ class PreviewActivity : ComponentActivity() {
             if (i == null) return
 
             // ROI always (even on clear)
-            if (i.hasExtra("roi_left_n")) {
-                overlay.roiLeftN = i.getFloatExtra("roi_left_n", overlay.roiLeftN)
-                overlay.roiTopN = i.getFloatExtra("roi_top_n", overlay.roiTopN)
-                overlay.roiRightN = i.getFloatExtra("roi_right_n", overlay.roiRightN)
-                overlay.roiBottomN = i.getFloatExtra("roi_bottom_n", overlay.roiBottomN)
+            if (i.hasExtra("roi_trap_top_y_n")) {
+                overlay.roiTopY = i.getFloatExtra("roi_trap_top_y_n", overlay.roiTopY)
+                overlay.roiBottomY = i.getFloatExtra("roi_trap_bottom_y_n", overlay.roiBottomY)
+                overlay.roiTopHalfW = i.getFloatExtra("roi_trap_top_halfw_n", overlay.roiTopHalfW)
+                overlay.roiBottomHalfW = i.getFloatExtra("roi_trap_bottom_halfw_n", overlay.roiBottomHalfW)
             }
 
             if (i.getBooleanExtra("clear", false)) {
@@ -117,10 +117,10 @@ class PreviewActivity : ComponentActivity() {
         overlay.showTelemetry = AppPreferences.debugOverlay
 
         applyRoiFromPrefs()
-        overlay.onRoiChanged = { l, t, r, b, isFinal ->
+        overlay.onRoiChanged = { topY, bottomY, topHalfW, bottomHalfW, isFinal ->
             if (isFinal) {
-                AppPreferences.setRoiNormalized(l, t, r, b)
-                logActivity("roi_set l=$l t=$t r=$r b=$b")
+                AppPreferences.setRoiTrapezoidNormalized(topY, bottomY, topHalfW, bottomHalfW)
+                logActivity("roi_set topY=$topY bottomY=$bottomY topHalfW=$topHalfW bottomHalfW=$bottomHalfW")
             }
         }
 
@@ -162,11 +162,11 @@ class PreviewActivity : ComponentActivity() {
     }
 
     private fun applyRoiFromPrefs() {
-        val roi = AppPreferences.getRoiNormalized()
-        overlay.roiLeftN = roi.left
-        overlay.roiTopN = roi.top
-        overlay.roiRightN = roi.right
-        overlay.roiBottomN = roi.bottom
+        val roi = AppPreferences.getRoiTrapezoidNormalized()
+        overlay.roiTopY = roi.topY
+        overlay.roiBottomY = roi.bottomY
+        overlay.roiTopHalfW = roi.topHalfW
+        overlay.roiBottomHalfW = roi.bottomHalfW
     }
 
     override fun onRequestPermissionsResult(

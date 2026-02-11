@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.RectF
+import android.graphics.PointF
 import android.media.AudioManager
 import android.media.MediaPlayer
 import android.os.VibrationEffect
@@ -129,8 +130,8 @@ class DetectionAnalyzer(
             val frameW = bitmap.width.toFloat()
             val frameH = bitmap.height.toFloat()
 
-            val roiRectPx = roiRectPx(frameW, frameH)
-            val roiBitmapAndOffset = cropForRoi(bitmap, roiRectPx)
+            val roiTrap = roiTrapezoidPx(frameW, frameH)
+            val roiBitmapAndOffset = cropForRoi(bitmap, roiTrap.bounds)
             val roiBitmap = roiBitmapAndOffset.first
             val roiOffset = roiBitmapAndOffset.second
 
@@ -161,7 +162,7 @@ class DetectionAnalyzer(
 
             // Hard gate: keep only detections that are at least 80% inside ROI.
             val gatedDetections = rawDetections.filter { d ->
-                insideRatio(d.box, roiRectPx) >= 0.80f
+                containmentRatioInTrapezoid(d.box, roiTrap.pts) >= 0.80f
             }
 
             val post = postProcessor.process(gatedDetections, frameW, frameH)
@@ -169,7 +170,7 @@ class DetectionAnalyzer(
 
             if (AppPreferences.debugOverlay) {
                 flog(
-                    "roi n=${AppPreferences.getRoiNormalized()} px=[${roiRectPx.left.toInt()},${roiRectPx.top.toInt()},${roiRectPx.right.toInt()},${roiRectPx.bottom.toInt()}] " +
+                    "roi trap n=${AppPreferences.getRoiTrapezoidNormalized()} boundsPx=[${roiTrap.bounds.left.toInt()},${roiTrap.bounds.top.toInt()},${roiTrap.bounds.right.toInt()},${roiTrap.bounds.bottom.toInt()}] " +
                         "crop=${roiBitmap.width}x${roiBitmap.height} offset=(${roiOffset.first},${roiOffset.second}) rawRoi=${rawDetectionsRoi.size} rawMapped=${rawDetections.size} gated=${gatedDetections.size}"
                 )
             }
@@ -419,7 +420,7 @@ private fun handleAlerts(level: Int) {
         brakeCue: Boolean,
         alertLevel: Int
     ) {
-        val roiN = AppPreferences.getRoiNormalized()
+        val roiN = AppPreferences.getRoiTrapezoidNormalized()
         val i = Intent("MCAW_DEBUG_UPDATE").setPackage(ctx.packageName)
         i.putExtra("clear", false)
         i.putExtra("frame_w", frameW)
@@ -438,22 +439,22 @@ private fun handleAlerts(level: Int) {
         i.putExtra("alert_level", alertLevel)
 
         // keep ROI always in preview overlay
-        i.putExtra("roi_left_n", roiN.left)
-        i.putExtra("roi_top_n", roiN.top)
-        i.putExtra("roi_right_n", roiN.right)
-        i.putExtra("roi_bottom_n", roiN.bottom)
+        i.putExtra("roi_trap_top_y_n", roiN.topY)
+        i.putExtra("roi_trap_bottom_y_n", roiN.bottomY)
+        i.putExtra("roi_trap_top_halfw_n", roiN.topHalfW)
+        i.putExtra("roi_trap_bottom_halfw_n", roiN.bottomHalfW)
 
         ctx.sendBroadcast(i)
     }
 
     private fun sendOverlayClear() {
-        val roiN = AppPreferences.getRoiNormalized()
+        val roiN = AppPreferences.getRoiTrapezoidNormalized()
         val i = Intent("MCAW_DEBUG_UPDATE").setPackage(ctx.packageName)
         i.putExtra("clear", true)
-        i.putExtra("roi_left_n", roiN.left)
-        i.putExtra("roi_top_n", roiN.top)
-        i.putExtra("roi_right_n", roiN.right)
-        i.putExtra("roi_bottom_n", roiN.bottom)
+        i.putExtra("roi_trap_top_y_n", roiN.topY)
+        i.putExtra("roi_trap_bottom_y_n", roiN.bottomY)
+        i.putExtra("roi_trap_top_halfw_n", roiN.topHalfW)
+        i.putExtra("roi_trap_bottom_halfw_n", roiN.bottomHalfW)
         ctx.sendBroadcast(i)
     }
 
@@ -778,21 +779,169 @@ private fun handleAlerts(level: Int) {
         return relSpeedEma
     }
 
-    /** ROI rect in pixel coordinates of the rotated bitmap/frame. */
-    private fun roiRectPx(frameW: Float, frameH: Float): RectF {
-        val roiN = AppPreferences.getRoiNormalized()
-        val l = (roiN.left * frameW).coerceIn(0f, frameW)
-        val t = (roiN.top * frameH).coerceIn(0f, frameH)
-        val r = (roiN.right * frameW).coerceIn(0f, frameW)
-        val b = (roiN.bottom * frameH).coerceIn(0f, frameH)
-        val left = min(l, r)
-        val top = min(t, b)
-        val right = max(l, r)
-        val bottom = max(t, b)
-        val rr = if (right - left < 2f) (left + 2f).coerceAtMost(frameW) else right
-        val bb = if (bottom - top < 2f) (top + 2f).coerceAtMost(frameH) else bottom
-        return RectF(left, top, rr, bb)
+        private data class RoiTrapPx(val pts: FloatArray, val bounds: RectF)
+
+    /**
+     * ROI trapezoid points in pixel coordinates (clockwise) + its bounding rect (for crop).
+     * Points: TL, TR, BR, BL in rotated frame coords.
+     */
+    private fun roiTrapezoidPx(frameW: Float, frameH: Float): RoiTrapPx {
+        val roiN = AppPreferences.getRoiTrapezoidNormalized()
+        val cx = 0.5f
+
+        val tlxN = (cx - roiN.topHalfW).coerceIn(0f, 1f)
+        val trxN = (cx + roiN.topHalfW).coerceIn(0f, 1f)
+        val blxN = (cx - roiN.bottomHalfW).coerceIn(0f, 1f)
+        val brxN = (cx + roiN.bottomHalfW).coerceIn(0f, 1f)
+
+        val tyN = roiN.topY.coerceIn(0f, 1f)
+        val byN = roiN.bottomY.coerceIn(0f, 1f)
+
+        val pts = floatArrayOf(
+            tlxN * frameW, tyN * frameH,
+            trxN * frameW, tyN * frameH,
+            brxN * frameW, byN * frameH,
+            blxN * frameW, byN * frameH
+        )
+
+        var minX = pts[0]
+        var maxX = pts[0]
+        var minY = pts[1]
+        var maxY = pts[1]
+        for (i in 0 until 4) {
+            val x = pts[i * 2]
+            val y = pts[i * 2 + 1]
+            minX = min(minX, x)
+            maxX = max(maxX, x)
+            minY = min(minY, y)
+            maxY = max(maxY, y)
+        }
+
+        val bounds = RectF(
+            minX.coerceIn(0f, frameW),
+            minY.coerceIn(0f, frameH),
+            maxX.coerceIn(0f, frameW),
+            maxY.coerceIn(0f, frameH)
+        )
+
+        // avoid degenerate ROI
+        if (bounds.width() < 2f) bounds.right = (bounds.left + 2f).coerceAtMost(frameW)
+        if (bounds.height() < 2f) bounds.bottom = (bounds.top + 2f).coerceAtMost(frameH)
+
+        return RoiTrapPx(pts = pts, bounds = bounds)
     }
+
+    /**
+     * Returns ratio of bbox area that lies inside trapezoid ROI [0..1].
+     * intersectionArea(bbox, trapezoid) / area(bbox)
+     *
+     * Implemented as convex polygon clipping: start with bbox-rect polygon, clip by each trapezoid edge.
+     */
+    private fun containmentRatioInTrapezoid(box: Box, trapPts: FloatArray): Float {
+        val bx1 = min(box.x1, box.x2)
+        val by1 = min(box.y1, box.y2)
+        val bx2 = max(box.x1, box.x2)
+        val by2 = max(box.y1, box.y2)
+
+        val area = (bx2 - bx1).coerceAtLeast(0f) * (by2 - by1).coerceAtLeast(0f)
+        if (area <= 1e-3f) return 0f
+
+        // bbox polygon (clockwise)
+        var poly = arrayListOf(
+            PointF(bx1, by1),
+            PointF(bx2, by1),
+            PointF(bx2, by2),
+            PointF(bx1, by2)
+        )
+
+        // trapezoid edges (clockwise): TL->TR->BR->BL->TL
+        val tp = arrayOf(
+            PointF(trapPts[0], trapPts[1]),
+            PointF(trapPts[2], trapPts[3]),
+            PointF(trapPts[4], trapPts[5]),
+            PointF(trapPts[6], trapPts[7])
+        )
+
+        val sign = polygonSignedArea(tp).let { if (it >= 0f) 1f else -1f }
+
+        for (i in 0 until 4) {
+            val a = tp[i]
+            val b = tp[(i + 1) % 4]
+            poly = clipPolygonAgainstEdge(poly, a, b, sign)
+            if (poly.isEmpty()) return 0f
+        }
+
+        val interArea = polygonArea(poly)
+        return (interArea / area).coerceIn(0f, 1f)
+    }
+
+    private fun polygonSignedArea(p: Array<PointF>): Float {
+        var s = 0f
+        for (i in p.indices) {
+            val j = (i + 1) % p.size
+            s += p[i].x * p[j].y - p[j].x * p[i].y
+        }
+        return s * 0.5f
+    }
+
+    private fun polygonArea(p: List<PointF>): Float {
+        if (p.size < 3) return 0f
+        var s = 0f
+        for (i in p.indices) {
+            val j = (i + 1) % p.size
+            s += p[i].x * p[j].y - p[j].x * p[i].y
+        }
+        return kotlin.math.abs(s) * 0.5f
+    }
+
+    private fun clipPolygonAgainstEdge(
+        input: ArrayList<PointF>,
+        a: PointF,
+        b: PointF,
+        sign: Float
+    ): ArrayList<PointF> {
+        if (input.isEmpty()) return arrayListOf()
+        val out = arrayListOf<PointF>()
+
+        fun inside(p: PointF): Boolean {
+            val cross = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x)
+            return sign * cross >= 0f
+        }
+
+        fun intersection(p1: PointF, p2: PointF): PointF {
+            // Line p1->p2 with line a->b
+            val x1 = p1.x; val y1 = p1.y
+            val x2 = p2.x; val y2 = p2.y
+            val x3 = a.x; val y3 = a.y
+            val x4 = b.x; val y4 = b.y
+
+            val den = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
+            if (kotlin.math.abs(den) < 1e-6f) return p2
+
+            val px = ((x1 * y2 - y1 * x2) * (x3 - x4) - (x1 - x2) * (x3 * y4 - y3 * x4)) / den
+            val py = ((x1 * y2 - y1 * x2) * (y3 - y4) - (y1 - y2) * (x3 * y4 - y3 * x4)) / den
+            return PointF(px, py)
+        }
+
+        var prev = input.last()
+        var prevInside = inside(prev)
+
+        for (curr in input) {
+            val currInside = inside(curr)
+            if (currInside) {
+                if (!prevInside) {
+                    out.add(intersection(prev, curr))
+                }
+                out.add(curr)
+            } else if (prevInside) {
+                out.add(intersection(prev, curr))
+            }
+            prev = curr
+            prevInside = currInside
+        }
+        return out
+    }
+
 
     /**
      * Crops bitmap to ROI for detector input. Returns (roiBitmap, offsetPx(left,top)).
@@ -827,22 +976,7 @@ private fun handleAlerts(level: Int) {
         }
     }
 
-    /** Returns ratio of bbox area that lies inside ROI [0..1]. */
-    private fun insideRatio(box: Box, roi: RectF): Float {
-        val bx1 = min(box.x1, box.x2)
-        val by1 = min(box.y1, box.y2)
-        val bx2 = max(box.x1, box.x2)
-        val by2 = max(box.y1, box.y2)
-        val area = (bx2 - bx1).coerceAtLeast(0f) * (by2 - by1).coerceAtLeast(0f)
-        if (area <= 1e-3f) return 0f
-        val ix1 = max(bx1, roi.left)
-        val iy1 = max(by1, roi.top)
-        val ix2 = min(bx2, roi.right)
-        val iy2 = min(by2, roi.bottom)
-        val inter = (ix2 - ix1).coerceAtLeast(0f) * (iy2 - iy1).coerceAtLeast(0f)
-        return (inter / area).coerceIn(0f, 1f)
-    }
-
+    
     private fun estimateFocalLengthPx(frameHeightPx: Int): Float {
         val focalMm = AppPreferences.cameraFocalLengthMm
         val sensorHeightMm = AppPreferences.cameraSensorHeightMm
