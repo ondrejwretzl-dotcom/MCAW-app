@@ -48,8 +48,35 @@ object AppPreferences {
         set(v) = prefs.edit().putBoolean("vibration", v).apply()
 
     var voice: Boolean
-        get() = prefs.getBoolean("voice", true)
+        get() = prefs.getBoolean("voice", false)
         set(v) = prefs.edit().putBoolean("voice", v).apply()
+
+
+// ALERT ROUTING (per level) - does NOT remove global switches above; it only refines behavior.
+// Orange = WARNING (level 1), Red = CRITICAL (level 2)
+var soundOrange: Boolean
+    get() = prefs.getBoolean("sound_orange", true)
+    set(v) = prefs.edit().putBoolean("sound_orange", v).apply()
+
+var soundRed: Boolean
+    get() = prefs.getBoolean("sound_red", true)
+    set(v) = prefs.edit().putBoolean("sound_red", v).apply()
+
+var voiceOrange: Boolean
+    get() = prefs.getBoolean("voice_orange", true)
+    set(v) = prefs.edit().putBoolean("voice_orange", v).apply()
+
+var voiceRed: Boolean
+    get() = prefs.getBoolean("voice_red", true)
+    set(v) = prefs.edit().putBoolean("voice_red", v).apply()
+
+var ttsTextOrange: String
+    get() = prefs.getString("tts_orange_text", "Pozor, blížíš se k objektu") ?: "Pozor, blížíš se k objektu"
+    set(v) = prefs.edit().putString("tts_orange_text", v).apply()
+
+var ttsTextRed: String
+    get() = prefs.getString("tts_red_text", "Kritické, okamžitě brzdi") ?: "Kritické, okamžitě brzdi"
+    set(v) = prefs.edit().putString("tts_red_text", v).apply()
 
     var debugOverlay: Boolean
         get() = prefs.getBoolean("debugOverlay", false)
@@ -60,7 +87,7 @@ object AppPreferences {
         set(v) = prefs.edit().putBoolean("laneFilter", v).apply()
     // BRAKE CUE (detekce rozsvícených brzdových světel – heuristika, default OFF)
     var brakeCueEnabled: Boolean
-        get() = prefs.getBoolean("brake_cue_enabled", false)
+        get() = prefs.getBoolean("brake_cue_enabled", true)
         set(v) = prefs.edit().putBoolean("brake_cue_enabled", v).apply()
 
     /**
@@ -81,15 +108,15 @@ object AppPreferences {
         set(v) = prefs.edit().putFloat("user_ttc_orange", v).apply()
 
     var userTtcRed: Float
-        get() = prefs.getFloat("user_ttc_red", 1.2f)
+        get() = prefs.getFloat("user_ttc_red", 1.5f)
         set(v) = prefs.edit().putFloat("user_ttc_red", v).apply()
 
     var userDistOrange: Float
-        get() = prefs.getFloat("user_dist_orange", 15f)
+        get() = prefs.getFloat("user_dist_orange", 16f)
         set(v) = prefs.edit().putFloat("user_dist_orange", v).apply()
 
     var userDistRed: Float
-        get() = prefs.getFloat("user_dist_red", 6f)
+        get() = prefs.getFloat("user_dist_red", 9f)
         set(v) = prefs.edit().putFloat("user_dist_red", v).apply()
 
     var userSpeedOrange: Float

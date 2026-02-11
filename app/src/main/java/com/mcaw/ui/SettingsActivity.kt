@@ -37,6 +37,14 @@ class SettingsActivity : ComponentActivity() {
         val swSound = findViewById<SwitchMaterial>(R.id.swSound)
         val swVibration = findViewById<SwitchMaterial>(R.id.swVibration)
         val swVoice = findViewById<SwitchMaterial>(R.id.swVoice)
+
+val swSoundOrange = findViewById<SwitchMaterial>(R.id.swSoundOrange)
+val swSoundRed = findViewById<SwitchMaterial>(R.id.swSoundRed)
+val swVoiceOrange = findViewById<SwitchMaterial>(R.id.swVoiceOrange)
+val swVoiceRed = findViewById<SwitchMaterial>(R.id.swVoiceRed)
+val etTtsOrange = findViewById<EditText>(R.id.etTtsOrange)
+val etTtsRed = findViewById<EditText>(R.id.etTtsRed)
+
         val swDebug = findViewById<SwitchMaterial>(R.id.swDebug)
         val swLaneFilter = findViewById<SwitchMaterial>(R.id.swLaneFilter)
 
@@ -92,6 +100,12 @@ class SettingsActivity : ComponentActivity() {
         swDebug.isChecked = AppPreferences.debugOverlay
         swLaneFilter.isChecked = AppPreferences.laneFilter
 
+swSoundOrange.isChecked = AppPreferences.soundOrange
+swSoundRed.isChecked = AppPreferences.soundRed
+swVoiceOrange.isChecked = AppPreferences.voiceOrange
+swVoiceRed.isChecked = AppPreferences.voiceRed
+
+
         swBrakeCue.isChecked = AppPreferences.brakeCueEnabled
 
         val brakeSensAdapter = ArrayAdapter(
@@ -111,6 +125,20 @@ class SettingsActivity : ComponentActivity() {
         swVoice.setOnCheckedChangeListener { _, isChecked ->
             AppPreferences.voice = isChecked
         }
+
+swSoundOrange.setOnCheckedChangeListener { _, isChecked ->
+    AppPreferences.soundOrange = isChecked
+}
+swSoundRed.setOnCheckedChangeListener { _, isChecked ->
+    AppPreferences.soundRed = isChecked
+}
+swVoiceOrange.setOnCheckedChangeListener { _, isChecked ->
+    AppPreferences.voiceOrange = isChecked
+}
+swVoiceRed.setOnCheckedChangeListener { _, isChecked ->
+    AppPreferences.voiceRed = isChecked
+}
+
         swDebug.setOnCheckedChangeListener { _, isChecked ->
             AppPreferences.debugOverlay = isChecked
         }
@@ -149,6 +177,10 @@ class SettingsActivity : ComponentActivity() {
             etDistRed.setText(AppPreferences.userDistRed.toString())
             etSpeedOrange.setText(AppPreferences.userSpeedOrange.toString())
             etSpeedRed.setText(AppPreferences.userSpeedRed.toString())
+        
+etTtsOrange.setText(AppPreferences.ttsTextOrange)
+etTtsRed.setText(AppPreferences.ttsTextRed)
+
         }
 
         bindDefaults()
@@ -167,6 +199,18 @@ class SettingsActivity : ComponentActivity() {
         etDistRed.addTextChangedListener(watcher)
         etSpeedOrange.addTextChangedListener(watcher)
         etSpeedRed.addTextChangedListener(watcher)
+
+val ttsWatcher = object : TextWatcher {
+    override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+    override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+    override fun afterTextChanged(s: Editable?) {
+        AppPreferences.ttsTextOrange = etTtsOrange.text?.toString() ?: AppPreferences.ttsTextOrange
+        AppPreferences.ttsTextRed = etTtsRed.text?.toString() ?: AppPreferences.ttsTextRed
+    }
+}
+etTtsOrange.addTextChangedListener(ttsWatcher)
+etTtsRed.addTextChangedListener(ttsWatcher)
+
     }
 
     private fun readFloat(editText: EditText, fallback: Float): Float {

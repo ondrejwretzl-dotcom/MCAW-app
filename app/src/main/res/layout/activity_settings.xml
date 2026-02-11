@@ -156,6 +156,63 @@
             android:layout_height="wrap_content"
             android:text="Hlasové varování" />
 
+
+<!-- Rozdělení alertů (ORANGE / RED) -->
+<TextView
+    android:layout_marginTop="14dp"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:text="Rozdělení alertů (oranžová / červená)"
+    android:textStyle="bold" />
+
+<com.google.android.material.switchmaterial.SwitchMaterial
+    android:id="@+id/swSoundOrange"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:text="Zvuk pro oranžovou" />
+
+<com.google.android.material.switchmaterial.SwitchMaterial
+    android:id="@+id/swSoundRed"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:text="Zvuk pro červenou" />
+
+<com.google.android.material.switchmaterial.SwitchMaterial
+    android:id="@+id/swVoiceOrange"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:text="Hlas pro oranžovou" />
+
+<com.google.android.material.switchmaterial.SwitchMaterial
+    android:id="@+id/swVoiceRed"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:text="Hlas pro červenou" />
+
+<TextView
+    android:layout_marginTop="8dp"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:text="Text TTS (oranžová / červená)"
+    android:textColor="#475569"
+    android:textSize="13sp" />
+
+<EditText
+    android:id="@+id/etTtsOrange"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:inputType="text"
+    android:hint="TTS pro oranžovou" />
+
+<EditText
+    android:id="@+id/etTtsRed"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:inputType="text"
+    android:hint="TTS pro červenou" />
+
+
+
         <com.google.android.material.switchmaterial.SwitchMaterial
             android:id="@+id/swDebug"
             android:layout_width="wrap_content"

@@ -359,20 +359,52 @@ class DetectionAnalyzer(
         am.abandonAudioFocus(null)
     }
 
-    private fun handleAlerts(level: Int) {
-        if (level <= 0 || level == lastAlertLevel) return
-        lastAlertLevel = level
-        if (level >= 2) {
-            if (AppPreferences.sound) MediaPlayer.create(ctx, R.raw.alert_beep)?.start()
+    private fun playAlertSound(resId: Int) {
+    runCatching {
+        val mp = MediaPlayer.create(ctx, resId) ?: return
+        mp.setOnCompletionListener { player ->
+            runCatching { player.release() }
+        }
+        mp.start()
+    }
+}
+
+private fun handleAlerts(level: Int) {
+    if (level <= 0 || level == lastAlertLevel) return
+    lastAlertLevel = level
+
+    when (level) {
+        1 -> {
+            // ORANGE (warning)
+            if (AppPreferences.sound && AppPreferences.soundOrange) {
+                playAlertSound(R.raw.alert_beep)
+            }
+            if (AppPreferences.voice && AppPreferences.voiceOrange) {
+                val text = AppPreferences.ttsTextOrange.trim()
+                if (text.isNotEmpty()) {
+                    tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "tts_orange")
+                }
+            }
+        }
+        2 -> {
+            // RED (critical)
+            if (AppPreferences.sound && AppPreferences.soundRed) {
+                playAlertSound(R.raw.red_alert)
+            }
             if (AppPreferences.vibration) {
                 val vib = ctx.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
                 if (vib.hasVibrator()) vib.vibrate(VibrationEffect.createOneShot(200, 150))
             }
-            if (AppPreferences.voice) {
-                tts?.speak("Pozor, objekt v pruhu", TextToSpeech.QUEUE_FLUSH, null, "tts_warn")
+            if (AppPreferences.voice && AppPreferences.voiceRed) {
+                val text = AppPreferences.ttsTextRed.trim()
+                if (text.isNotEmpty()) {
+                    tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "tts_red")
+                }
             }
         }
     }
+}
+
 
     private fun sendOverlayUpdate(
         box: Box,
@@ -472,7 +504,7 @@ class DetectionAnalyzer(
                 AppPreferences.userSpeedRed
             )
 
-            else -> AlertThresholds(3.0f, 1.2f, 15f, 6f, 3f, 5f)
+            else -> AlertThresholds(3.0f, 1.5f, 16f, 9f, 3f, 5f)
         }
     }
 
@@ -940,7 +972,7 @@ class DetectionAnalyzer(
         val bw = (right - left).coerceAtLeast(2)
         val bh = (bottom - top).coerceAtLeast(2)
 
-        val roiTop = (bottom - (bh * 0.30f)).toInt().coerceIn(top, bottom - 1)
+        val roiTop = (bottom - (bh * 0.60f)).toInt().coerceIn(top, bottom - 1)
         val roiBottom = bottom
         val insetX = (bw * 0.12f).toInt().coerceAtLeast(0)
         val roiLeft = (left + insetX).coerceIn(0, w - 1)
