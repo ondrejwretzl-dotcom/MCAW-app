@@ -5,8 +5,8 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.RectF
 import android.graphics.PointF
-import android.media.Audio
-import android.os.SystemClockManager
+import android.os.SystemClock
+import android.media.AudioManager
 import android.media.MediaPlayer
 import android.os.VibrationEffect
 import android.os.Vibrator
