@@ -8,6 +8,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.text.method.ScrollingMovementMethod
 import android.view.View
 import com.google.android.material.button.MaterialButton
 import android.widget.TextView
@@ -77,9 +78,6 @@ class MainActivity : ComponentActivity() {
             val brakeCue =
                 intent.getBooleanExtra("brake_cue", false) || intent.getBooleanExtra("extra_brake_cue", false)
 
-            updateBrakeLamp(brakeCue)
-            updateWhy(level, alertReason)
-
             txtTtc.text = if (ttc.isFinite()) "TTC: %.2f s".format(ttc) else "TTC: --.- s"
             txtDistance.text =
                 if (distance.isFinite()) "Vzdálenost: %.2f m".format(distance) else
@@ -127,6 +125,9 @@ class MainActivity : ComponentActivity() {
             val riderKmhForUi = if (riderSpeed.isFinite()) riderSpeed * 3.6f else Float.POSITIVE_INFINITY
             applyVisualAlert(level, ttcLevel, riderKmhForUi)
 
+            updateBrakeLamp(brakeCue)
+            updateWhy(level, alertReason)
+
             val relKmhLog = if (speed.isFinite()) speed * 3.6f else Float.POSITIVE_INFINITY
             val objKmhLog = if (objectSpeed.isFinite()) objectSpeed * 3.6f else Float.POSITIVE_INFINITY
             addLog(
@@ -161,14 +162,14 @@ class MainActivity : ComponentActivity() {
         txtRiderSpeed = findViewById(R.id.txtRiderSpeed)
         txtDetectedObject = findViewById(R.id.txtDetectedObject)
         txtActivityLog = findViewById(R.id.txtActivityLog)
+        txtActivityLog.movementMethod = ScrollingMovementMethod()
         txtBuildInfo = findViewById(R.id.txtBuildInfo)
         root = findViewById(R.id.root)
         panelMetrics = findViewById(R.id.panelMetrics)
         brakeLamp = findViewById(R.id.brakeLamp)
         txtBrakeLamp = findViewById(R.id.txtBrakeLamp)
         txtWhy = findViewById(R.id.txtWhy)
-        // Enable scrolling in activity log panel
-        txtActivityLog.movementMethod = android.text.method.ScrollingMovementMethod()
+        updateWhy(0, "")
         updateBrakeLamp(false)
 
         speedProvider = SpeedProvider(this)
@@ -331,9 +332,9 @@ class MainActivity : ComponentActivity() {
     private fun addLog(message: String) {
         val timestamp = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault())
             .format(System.currentTimeMillis())
-        logLines.addLast("[$timestamp] $message")
+        logLines.addFirst("[$timestamp] $message")
         while (logLines.size > 80) {
-            logLines.removeFirst()
+            logLines.removeLast()
         }
         txtActivityLog.text = buildString {
             append("Aktivity:\n")
@@ -440,13 +441,20 @@ class MainActivity : ComponentActivity() {
     }
 
     
-private fun updateWhy(level: Int, alertReason: String) {
-    if (level > 0 && alertReason.isNotBlank()) {
-        txtWhy.text = "WHY: " + alertReason.replace("\n", " ").trim()
-    } else {
-        txtWhy.text = ""
+    private fun updateWhy(level: Int, alertReason: String) {
+        // WHY should be visible mainly for debugging/tuning. Keep short and non-intrusive.
+        val why = alertReason.trim().replace("\n", " ").take(80)
+        txtWhy.text = if (why.isNotBlank()) "WHY: $why" else ""
+        txtWhy.visibility = if (why.isNotBlank()) View.VISIBLE else View.GONE
+
+        // Optional: tint WHY by level for quick scan (subtle).
+        val c = when (level) {
+            2 -> android.graphics.Color.parseColor("#FF3B30")
+            1 -> android.graphics.Color.parseColor("#FF9F0A")
+            else -> android.graphics.Color.parseColor("#AAB4BE")
+        }
+        txtWhy.setTextColor(c)
     }
-}
 
 private fun formatMetric(value: Float, unit: String): String {
         return if (value.isFinite()) "%.2f %s".format(value, unit) else "--.- $unit"

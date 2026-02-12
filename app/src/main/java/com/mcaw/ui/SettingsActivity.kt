@@ -3,6 +3,8 @@ package com.mcaw.ui
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.os.Bundle
+import android.app.AlertDialog
+import android.content.DialogInterface
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.View
@@ -12,7 +14,6 @@ import android.widget.EditText
 import android.widget.Spinner
 import android.widget.TextView
 import androidx.activity.ComponentActivity
-import android.app.AlertDialog
 import com.google.android.material.slider.Slider
 import com.google.android.material.switchmaterial.SwitchMaterial
 import com.mcaw.app.R
@@ -333,7 +334,7 @@ class SettingsActivity : ComponentActivity() {
     }
 
     private fun confirmResetRecommended() {
-        MaterialAlertDialogBuilder(this)
+        AlertDialog.Builder(this)
             .setTitle("Reset na doporučené")
             .setMessage(
                 """Vrátí vybrané volby na doporučené hodnoty (nezmění zvuk/hlas, model ani režim).
@@ -345,14 +346,14 @@ class SettingsActivity : ComponentActivity() {
 • Ochrana proti cut‑in""".trimIndent()
             )
             .setNegativeButton("Zrušit", null)
-            .setPositiveButton("Resetovat") { _, _ ->
+            .setPositiveButton("Resetovat", DialogInterface.OnClickListener { _: DialogInterface, _: Int ->
                 resetRecommended()
                 writeSessionLog("Reset recommended")
-            }
+            })
             .show()
     }
 
-    private fun resetRecommended() {
+private fun resetRecommended() {
         // defaults tuned for "city" / typical use, safe for Samsung A56
         AppPreferences.laneFilter = true
         AppPreferences.laneEgoMaxOffset = 0.55f
@@ -365,12 +366,13 @@ class SettingsActivity : ComponentActivity() {
     }
 
     private fun showInfo(title: String, msg: String) {
-    android.app.AlertDialog.Builder(this)
-        .setTitle(title)
-        .setMessage(msg)
-        .setPositiveButton("OK", null)
-        .show()
-}
+        AlertDialog.Builder(this)
+            .setTitle(title)
+            .setMessage(msg)
+            .setPositiveButton("OK", null)
+            .show()
+    }
+
 
     private fun readFloat(editText: EditText, fallback: Float): Float {
         val value = editText.text?.toString()?.trim()
