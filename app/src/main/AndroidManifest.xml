@@ -41,7 +41,11 @@
         <activity
             android:name="com.mcaw.ui.SettingsActivity"
             android:exported="false" />
+        
+        <activity android:name=".ui.HelpActivity" />
+        <activity android:name=".ui.LegalActivity" />
 
+        
         <!-- Foreground ML Engine Service -->
         <service
             android:name="com.mcaw.service.McawService"
