@@ -582,7 +582,7 @@ if (AppPreferences.debugOverlay) {
         label: String,
         brakeCue: Boolean,
         alertLevel: Int,
-        alertReason: String,
+        alertReason: String = "",
         force: Boolean = false
     ) {
         if (!AppPreferences.debugOverlay) return
@@ -643,7 +643,7 @@ if (AppPreferences.debugOverlay) {
         level: Int,
         label: String,
         brakeCue: Boolean,
-        alertReason: String,
+        alertReason: String = "",
         force: Boolean = false
     ) {
         val now = SystemClock.elapsedRealtime()
@@ -676,6 +676,7 @@ if (AppPreferences.debugOverlay) {
             level = 0,
             label = "",
             brakeCue = false,
+            alertReason = "clear",
             force = true
         )
     }
