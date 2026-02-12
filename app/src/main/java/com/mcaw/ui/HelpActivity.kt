@@ -11,45 +11,59 @@ class HelpActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_help)
 
-        findViewById<TextView>(R.id.txtHelpTitle).text = "Návod"
+        findViewById<TextView>(R.id.txtHelpTitle).text = "Jak MCAW funguje a jak jej správně nastavit"
         findViewById<TextView>(R.id.txtHelpContent).text = buildHelpText()
     }
 
     private fun buildHelpText(): String {
-        return """MCAW je pomocník pro včasné varování. Aby byl užitek co největší a zároveň to zbytečně nerušilo, doporučuju postup:
+        return """MCAW sleduje objekty před tebou, jejich vzdálenost a rychlost přibližování.
+Hlavní ukazatel je TTC (Time To Collision) – čas do možné srážky.
+Čím menší TTC, tím vyšší riziko.
 
-1) Základní nastavení (doporučené)
-• Filtrovat objekty v ROI: ZAP
-  Ignoruje cíle mimo směr jízdy (boky, protisměr, parkovaná auta). Ve městě výrazně sníží falešné poplachy.
-• Šířka pruhu (tolerance do stran): Střední
-  Úzký = přesnější, méně rušení. Široký = lépe chytá cut‑in, ale může brát i bokové cíle.
-• Omezit falešné alarmy v noci/rozmazání: ZAP
-  Když je obraz moc tmavý nebo rozmazaný, aplikace zpřísní varování.
+1) Co aplikace sleduje
+• Objekty před tebou (auta, motorky, bus, chodec)
+• Odhad vzdálenosti
+• Rychlost přibližování
+• TTC (čas do možné srážky)
 
-2) Kalibrace vzdálenosti
-• Kalibrace vzdálenosti: OK
-  Pokud aplikace systematicky „přehání“ blízkost (hlásí kratší vzdálenost), dej „Více“.
-  Pokud naopak hlásí příliš dlouhé vzdálenosti, dej „Méně“.
-Tip: Kalibruj na rovné silnici za sucha a stabilního držáku.
+2) „Filtrovat objekty v ROI“
+Když je zapnuto:
+• ignoruje cíle mimo tvůj směr jízdy
+• méně falešných alarmů (hlavně ve městě)
 
-3) Ochrana proti cut‑in
-• Ochrana proti cut‑in: ZAP
-  Pomáhá zachytit auta rychle najíždějící do tvé dráhy i když jsou ještě bokem.
+Když je vypnuto:
+• reaguje na širší oblast
+• může častěji varovat
 
-4) Varování (Zvuk / Vibrace / Hlas)
-• Globální přepínače zapínají výstupy jako celek.
-• Rozdělení pro oranžovou a červenou ti dovolí mít např.:
-  – Oranžová: jen zvuk (krátké upozornění)
-  – Červená: zvuk + vibrace + hlas (kritické)
-• Text TTS si můžeš přizpůsobit (např. „Pozor!“ / „Brzdi!“).
+Doporučení:
+• Město → zapnuto
+• Dálnice → zapnuto
+• Testování → podle potřeby
 
-5) Režim (Město / Sport / Uživatel)
-• Město: konzervativní, míří na minimum rušení.
-• Sport: počítá s vyšší rychlostí a většími odstupy.
-• Uživatel: nastav si vlastní prahy (TTC / vzdálenost / rychlost přiblížení).
+3) Šířka pruhu (tolerance do stran)
+Určuje, jak daleko od středu ROI může být objekt a pořád se bere jako „před tebou“.
+• Úzký: méně rušení, ale může přehlédnout cut‑in
+• Široký: lépe zachytí cut‑in, ale může víc varovat
 
-Pokud si nejsi jistý:
-Použij „Reset na doporučené“ a pak dolaď jen 1–2 věci (nejčastěji Šířku pruhu a Kalibraci vzdálenosti).
-""".trimIndent()
+4) Ochrana proti náhlému najetí (cut‑in)
+Pomáhá zachytit situaci, kdy auto rychle najede do tvé dráhy.
+Doporučeno: zapnuto.
+
+5) Kalibrace vzdálenosti
+Když aplikace:
+• hlásí systematicky menší vzdálenost → zvyš kalibraci („Více“)
+• hlásí systematicky větší vzdálenost → sniž kalibraci („Méně“)
+
+Záleží na telefonu, uchycení a výšce kamery.
+
+6) Kvalita obrazu (tma / vibrace / rozmazání)
+Když je zapnuto, aplikace je méně agresivní v horších podmínkách a méně ruší.
+Doporučeno: zapnuto.
+
+7) Jak správně nastavit telefon
+• Telefon musí být pevně uchycený a stabilní
+• Kamera musí mít čistý výhled
+• Telefon nesmí mířit příliš nahoru
+• ROI nastav podle svého jízdního pruhu""".trimIndent()
     }
 }

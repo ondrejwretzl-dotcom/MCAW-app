@@ -14,7 +14,7 @@
             android:id="@+id/txtHelpTitle"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Návod"
+            android:text="Jak MCAW funguje a jak jej správně nastavit"
             android:textColor="#FFFFFF"
             android:textSize="22sp"
             android:textStyle="bold"

@@ -14,7 +14,7 @@
             android:id="@+id/txtLegalTitle"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Zodpovědnost a limity"
+            android:text="Upozornění a podmínky"
             android:textColor="#FFFFFF"
             android:textSize="22sp"
             android:textStyle="bold"

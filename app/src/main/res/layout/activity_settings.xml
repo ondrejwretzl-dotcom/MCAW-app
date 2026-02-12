@@ -71,7 +71,13 @@
                         android:id="@+id/btnOpenLegal"
                         android:layout_width="match_parent"
                         android:layout_height="44dp"
-                        android:text="Zodpovědnost"
+                        android:text="Upozornění a podmínky"
+                        android:maxLines="1"
+                        android:ellipsize="end"
+                        app:autoSizeTextType="uniform"
+                        app:autoSizeMinTextSize="10sp"
+                        app:autoSizeMaxTextSize="16sp"
+                        app:autoSizeStepGranularity="1sp"
                         android:textAllCaps="false"
                         app:cornerRadius="14dp" />
                 </LinearLayout>

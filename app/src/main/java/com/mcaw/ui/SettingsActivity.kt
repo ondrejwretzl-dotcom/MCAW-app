@@ -52,7 +52,7 @@ class SettingsActivity : ComponentActivity() {
         }
         findViewById<View>(R.id.btnOpenLegal)?.setOnClickListener {
             writeSessionLog("Open legal")
-            openActivitySafely(Intent(this, LegalActivity::class.java), title = "Zodpovědnost")
+            openActivitySafely(Intent(this, LegalActivity::class.java), title = "Upozornění a podmínky")
         }
         findViewById<View>(R.id.btnResetRecommended)?.setOnClickListener { confirmResetRecommended() }
 
