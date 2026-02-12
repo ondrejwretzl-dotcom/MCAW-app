@@ -1,193 +1,222 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:background="#101114"
-    android:padding="16dp">
+    android:background="#0F1115">
 
-    <!-- Stav služby -->
-    <TextView
-        android:id="@+id/txtStatus"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Služba: ZASTAVENA"
-        android:textColor="#FFFFFF"
-        android:textStyle="bold"
-        android:textSize="18sp"
-        android:gravity="center"
-        android:padding="8dp"
-        android:background="#1E222A"
-        android:layout_marginBottom="12dp" />
-
-    <!-- Panel s metrikami -->
     <LinearLayout
-        android:id="@+id/panelMetrics"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:background="#171A1F"
-        android:padding="12dp"
-        android:layout_marginBottom="16dp">
+        android:padding="16dp">
 
         <TextView
-            android:id="@+id/txtTtc"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="TTC: --.- s"
-            android:textColor="#00E5A8"
+            android:text="MCAW"
+            android:textColor="#FFFFFF"
+            android:textSize="22sp"
             android:textStyle="bold"
-            android:textSize="28sp"
-            android:gravity="center" />
+            android:layout_marginBottom="10dp" />
 
-        <TextView
-            android:id="@+id/txtDistance"
+        <!-- Stav služby -->
+        <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Vzdálenost: --.- m"
-            android:textColor="#FFFFFF"
-            android:textSize="22sp"
-            android:gravity="center" />
-
-        <TextView
-            android:id="@+id/txtRiderSpeed"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Rychlost jezdce: 0.0 km/h"
-            android:textColor="#FFFFFF"
-            android:textSize="22sp"
-            android:gravity="center" />
-
-        <TextView
-            android:id="@+id/txtSpeed"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Rychlost přiblížení: --.- m/s"
-            android:textColor="#FFFFFF"
-            android:textSize="22sp"
-            android:gravity="center" />
-
-        <TextView
-            android:id="@+id/txtObjectSpeed"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Rychlost objektu: --.- m/s"
-            android:textColor="#FFFFFF"
-            android:textSize="22sp"
-            android:gravity="center" />
-
-        <TextView
-            android:id="@+id/txtDetectedObject"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Detekovaný objekt: --"
-            android:textColor="#FFFFFF"
-            android:textSize="22sp"
-            android:gravity="center" />
-
-        <!-- Semafor brzdových světel (zhasnuto/červené) -->
-        <LinearLayout
-            android:id="@+id/panelBrakeLamp"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center"
-            android:layout_marginTop="10dp">
+            android:layout_marginBottom="12dp"
+            app:cardCornerRadius="18dp"
+            app:cardUseCompatPadding="true"
+            app:cardElevation="2dp">
 
             <TextView
-                android:id="@+id/brakeLamp"
-                android:layout_width="16dp"
-                android:layout_height="16dp"
-                android:background="#3A3F4A" />
-
-            <TextView
-                android:id="@+id/txtBrakeLamp"
-                android:layout_width="wrap_content"
+                android:id="@+id/txtStatus"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="BRZDA"
+                android:text="Služba: ZASTAVENA"
                 android:textColor="#FFFFFF"
                 android:textStyle="bold"
                 android:textSize="16sp"
-                android:layout_marginStart="8dp" />
+                android:gravity="center"
+                android:padding="14dp"
+                android:background="#1E222A" />
+
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Panel s metrikami -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/panelMetrics"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="14dp"
+            app:cardCornerRadius="18dp"
+            app:cardUseCompatPadding="true"
+            app:cardElevation="2dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="14dp"
+                android:background="#171A1F">
+
+                <TextView
+                    android:id="@+id/txtTtc"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="TTC: --.- s"
+                    android:textColor="#00E5A8"
+                    android:textStyle="bold"
+                    android:textSize="28sp"
+                    android:gravity="center"
+                    android:layout_marginBottom="6dp" />
+
+                <TextView
+                    android:id="@+id/txtDistance"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Vzdálenost: --.- m"
+                    android:textColor="#FFFFFF"
+                    android:textSize="18sp"
+                    android:gravity="center" />
+
+                <TextView
+                    android:id="@+id/txtRiderSpeed"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Rychlost jezdce: 0.0 km/h"
+                    android:textColor="#FFFFFF"
+                    android:textSize="18sp"
+                    android:gravity="center" />
+
+                <TextView
+                    android:id="@+id/txtSpeed"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Rychlost přiblížení: --.- m/s"
+                    android:textColor="#FFFFFF"
+                    android:textSize="18sp"
+                    android:gravity="center" />
+
+                <TextView
+                    android:id="@+id/txtObjectSpeed"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Rychlost objektu: --.- m/s"
+                    android:textColor="#FFFFFF"
+                    android:textSize="18sp"
+                    android:gravity="center" />
+
+                <TextView
+                    android:id="@+id/txtDetectedObject"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Detekovaný objekt: --"
+                    android:textColor="#FFFFFF"
+                    android:textSize="18sp"
+                    android:gravity="center" />
+
+                <!-- Semafor brzdových světel -->
+                <LinearLayout
+                    android:id="@+id/panelBrakeLamp"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center"
+                    android:layout_marginTop="10dp">
+
+                    <TextView
+                        android:id="@+id/brakeLamp"
+                        android:layout_width="16dp"
+                        android:layout_height="16dp"
+                        android:background="#3A3F4A" />
+
+                    <TextView
+                        android:id="@+id/txtBrakeLamp"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="BRZDA"
+                        android:textColor="#FFFFFF"
+                        android:textStyle="bold"
+                        android:textSize="14sp"
+                        android:layout_marginStart="8dp" />
+                </LinearLayout>
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Ovládání -->
+        <LinearLayout
+            android:id="@+id/panelControls"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:weightSum="2"
+            android:layout_marginBottom="10dp">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnStart"
+                android:layout_width="0dp"
+                android:layout_height="46dp"
+                android:layout_weight="1"
+                android:text="Start"
+                android:textAllCaps="false"
+                app:cornerRadius="14dp"
+                android:layout_marginEnd="6dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnStop"
+                android:layout_width="0dp"
+                android:layout_height="46dp"
+                android:layout_weight="1"
+                android:text="Stop"
+                android:textAllCaps="false"
+                app:cornerRadius="14dp"
+                android:layout_marginStart="6dp" />
         </LinearLayout>
 
-    </LinearLayout>
-
-    <!-- Ovládací tlačítka Start/Stop -->
-    <LinearLayout
-        android:id="@+id/panelControls"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:weightSum="2"
-        android:layout_marginBottom="10dp">
-
-        <Button
-            android:id="@+id/btnStart"
-            android:layout_width="0dp"
-            android:layout_height="48dp"
-            android:layout_weight="1"
-            android:text="START"
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnSettings"
+            android:layout_width="match_parent"
+            android:layout_height="46dp"
+            android:text="Nastavení"
             android:textAllCaps="false"
-            android:textColor="#FFFFFF"
-            android:backgroundTint="#2ECC71"
-            android:layout_marginEnd="6dp" />
+            app:cornerRadius="14dp"
+            app:icon="@android:drawable/ic_menu_preferences"
+            app:iconPadding="8dp"
+            android:layout_marginBottom="10dp" />
 
-        <Button
-            android:id="@+id/btnStop"
-            android:layout_width="0dp"
-            android:layout_height="48dp"
-            android:layout_weight="1"
-            android:text="STOP"
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnCamera"
+            android:layout_width="match_parent"
+            android:layout_height="46dp"
+            android:text="Kamera"
             android:textAllCaps="false"
-            android:textColor="#FFFFFF"
-            android:backgroundTint="#E74C3C"
-            android:layout_marginStart="6dp" />
+            app:cornerRadius="14dp"
+            app:icon="@android:drawable/ic_menu_camera"
+            app:iconPadding="8dp"
+            android:layout_marginBottom="12dp" />
+
+        <TextView
+            android:id="@+id/txtActivityLog"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Aktivity:\n- Aplikace spuštěna"
+            android:textColor="#C9D1D9"
+            android:textSize="14sp"
+            android:background="#14181E"
+            android:padding="10dp"
+            android:layout_marginBottom="12dp" />
+
+        <TextView
+            android:id="@+id/txtBuildInfo"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Build: -"
+            android:textColor="#6B7280"
+            android:textSize="12sp"
+            android:gravity="end" />
+
     </LinearLayout>
-
-    <!-- Nastavení -->
-    <Button
-        android:id="@+id/btnSettings"
-        android:layout_width="match_parent"
-        android:layout_height="48dp"
-        android:text="Nastavení"
-        android:textAllCaps="false"
-        android:textColor="#FFFFFF"
-        android:backgroundTint="#3B82F6"
-        android:layout_marginBottom="12dp" />
-
-    <!-- Kamera (PreviewActivity) -->
-    <Button
-        android:id="@+id/btnCamera"
-        android:layout_width="match_parent"
-        android:layout_height="48dp"
-        android:text="Kamera"
-        android:textAllCaps="false"
-        android:textColor="#FFFFFF"
-        android:backgroundTint="#8E44AD"
-        android:layout_marginBottom="12dp" />
-
-    <!-- Aktivita aplikace -->
-    <TextView
-        android:id="@+id/txtActivityLog"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Aktivity:\n- Aplikace spuštěna"
-        android:textColor="#C9D1D9"
-        android:textSize="14sp"
-        android:background="#14181E"
-        android:padding="10dp"
-        android:layout_marginBottom="12dp" />
-
-    <!-- Build info -->
-    <TextView
-        android:id="@+id/txtBuildInfo"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Build: -"
-        android:textColor="#6B7280"
-        android:textSize="12sp"
-        android:gravity="end" />
-
-</LinearLayout>
+</ScrollView>

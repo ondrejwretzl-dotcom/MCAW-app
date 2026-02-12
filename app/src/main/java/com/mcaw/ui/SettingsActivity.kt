@@ -1,5 +1,6 @@
 package com.mcaw.ui
 
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.os.Bundle
 import android.text.Editable
@@ -20,6 +21,23 @@ import com.mcaw.util.PublicLogWriter
 
 class SettingsActivity : ComponentActivity() {
 
+    private fun openActivitySafely(intent: Intent, title: String) {
+        try {
+            startActivity(intent)
+        } catch (e: ActivityNotFoundException) {
+            showInfo(
+                title = title,
+                msg = "Tato obrazovka není v aplikaci dostupná (není zaregistrovaná v manifestu nebo chybí v build variantě).\n\n" +
+                    "Pokud tohle vidíš po update, zkontroluj prosím AndroidManifest.xml a že jsou Activity přidané."
+            )
+        } catch (t: Throwable) {
+            showInfo(
+                title = title,
+                msg = "Nepodařilo se otevřít obrazovku: ${t.javaClass.simpleName}: ${t.message}".trim()
+            )
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AppPreferences.ensureInit(this)
@@ -29,11 +47,11 @@ class SettingsActivity : ComponentActivity() {
         // Top actions
         findViewById<View>(R.id.btnOpenHelp)?.setOnClickListener {
             writeSessionLog("Open help")
-            startActivity(Intent(this, HelpActivity::class.java))
+            openActivitySafely(Intent(this, HelpActivity::class.java), title = "Návod")
         }
         findViewById<View>(R.id.btnOpenLegal)?.setOnClickListener {
             writeSessionLog("Open legal")
-            startActivity(Intent(this, LegalActivity::class.java))
+            openActivitySafely(Intent(this, LegalActivity::class.java), title = "Zodpovědnost")
         }
         findViewById<View>(R.id.btnResetRecommended)?.setOnClickListener { confirmResetRecommended() }
 

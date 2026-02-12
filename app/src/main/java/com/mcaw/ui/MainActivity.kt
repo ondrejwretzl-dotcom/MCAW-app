@@ -9,7 +9,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.view.View
-import android.widget.Button
+import com.google.android.material.button.MaterialButton
 import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.core.app.ActivityCompat
@@ -174,16 +174,16 @@ class MainActivity : ComponentActivity() {
         writeSessionLog("App start")
         logActivity("app_start build=${BuildConfig.VERSION_NAME}(${BuildConfig.VERSION_CODE})")
 
-        findViewById<Button>(R.id.btnStart).setOnClickListener {
+        findViewById<MaterialButton>(R.id.btnStart).setOnClickListener {
             ensurePermissions(PendingAction.START_ENGINE)
         }
-        findViewById<Button>(R.id.btnStop).setOnClickListener { stopEngine() }
-        findViewById<Button>(R.id.btnSettings).setOnClickListener {
+        findViewById<MaterialButton>(R.id.btnStop).setOnClickListener { stopEngine() }
+        findViewById<MaterialButton>(R.id.btnSettings).setOnClickListener {
             writeSessionLog("Open settings")
             logActivity("open_settings")
             startActivity(Intent(this, SettingsActivity::class.java))
         }
-        findViewById<Button>(R.id.btnCamera).setOnClickListener {
+        findViewById<MaterialButton>(R.id.btnCamera).setOnClickListener {
             ensurePermissions(PendingAction.OPEN_CAMERA)
         }
     }
