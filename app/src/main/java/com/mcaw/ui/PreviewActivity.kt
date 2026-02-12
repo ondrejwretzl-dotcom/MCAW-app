@@ -17,6 +17,7 @@ import androidx.activity.ComponentActivity
 import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.app.ActivityCompat
@@ -30,26 +31,41 @@ import com.mcaw.config.AppPreferences
 import com.mcaw.location.SpeedMonitor
 import com.mcaw.location.SpeedProvider
 import com.mcaw.util.LabelMapper
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 class PreviewActivity : ComponentActivity() {
 
     private lateinit var previewView: PreviewView
     private lateinit var overlay: OverlayView
-    private lateinit var analyzer: DetectionAnalyzer
+    private var analyzer: DetectionAnalyzer? = null
     private lateinit var speedProvider: SpeedProvider
     private lateinit var speedMonitor: SpeedMonitor
     private lateinit var txtDetectionLabel: TextView
     private lateinit var btnRoi: TextView
+    private lateinit var txtPreviewStatus: TextView
 
     private val searchHandler = Handler(Looper.getMainLooper())
     private var searching = true
     private var searchDots = 0
     private var activityLogFileName: String = ""
 
+    private var cameraProvider: ProcessCameraProvider? = null
+    private var previewUseCase: Preview? = null
+    private var analysisUseCase: ImageAnalysis? = null
+    private val analysisExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    private var isCameraBound: Boolean = false
+    private var speedPausedByEdit: Boolean = false
+
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(ctx: Context?, i: Intent?) {
             if (i == null) return
+
+            // During ROI edit: ignore detection/ROI updates to prevent "fight" with UI editing.
+            // (Analyzer may still have in-flight broadcast, or service might still be running elsewhere.)
+            if (overlay.roiEditMode) {
+                return
+            }
 
             // ROI always (even on clear)
             if (i.hasExtra("roi_trap_top_y_n")) {
@@ -101,6 +117,8 @@ class PreviewActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AppPreferences.ensureInit(this)
+        AppPreferences.previewActive = true
+
         setContentView(R.layout.activity_preview)
 
         previewView = findViewById(R.id.previewView)
@@ -109,6 +127,7 @@ class PreviewActivity : ComponentActivity() {
         val txtPreviewBuild = findViewById<TextView>(R.id.txtPreviewBuild)
         txtDetectionLabel = findViewById(R.id.txtDetectionLabel)
         btnRoi = findViewById(R.id.btnRoi)
+        txtPreviewStatus = findViewById(R.id.txtPreviewStatus)
 
         speedProvider = SpeedProvider(this)
         speedMonitor = SpeedMonitor(speedProvider)
@@ -125,14 +144,18 @@ class PreviewActivity : ComponentActivity() {
         }
 
         btnRoi.setOnClickListener {
-            overlay.roiEditMode = !overlay.roiEditMode
-            btnRoi.text = if (overlay.roiEditMode) "ROI: UPRAVIT ✓" else "ROI: UPRAVIT"
-            if (!overlay.roiEditMode) {
-                applyRoiFromPrefs()
-            }
+            val newState = !overlay.roiEditMode
+            setRoiEditMode(newState)
         }
 
         btnRoi.setOnLongClickListener {
+            if (overlay.roiEditMode) {
+                // v edit módu reset -> rovnou přepíš i overlay
+                AppPreferences.resetRoiToDefault()
+                applyRoiFromPrefs()
+                logActivity("roi_reset_default")
+                return@setOnLongClickListener true
+            }
             AppPreferences.resetRoiToDefault()
             applyRoiFromPrefs()
             logActivity("roi_reset_default")
@@ -158,6 +181,59 @@ class PreviewActivity : ComponentActivity() {
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CAMERA), 2001)
         } else {
             initAndStart()
+        }
+    }
+
+    private fun setRoiEditMode(enabled: Boolean) {
+        if (overlay.roiEditMode == enabled) return
+        overlay.roiEditMode = enabled
+        btnRoi.text = if (enabled) "ROI: UPRAVIT ✓" else "ROI: UPRAVIT"
+
+        if (enabled) {
+            // Senior UX: ROI edit nesmí soupeřit s detekcí -> zastavit analýzu + broadcasty.
+            pauseDetectionForRoiEdit()
+        } else {
+            // Uložené hodnoty už jsou v prefs (onRoiChanged isFinal).
+            // Pro jistotu znovu načti (sanitizace + jednotný zdroj pravdy).
+            applyRoiFromPrefs()
+            resumeDetectionAfterRoiEdit()
+        }
+    }
+
+    private fun pauseDetectionForRoiEdit() {
+        logActivity("roi_edit_start")
+
+        // Zastav analyzátor (ponech preview obraz).
+        bindPreviewOnly()
+
+        // Vizuálně vyčisti detekci a přepni status.
+        overlay.box = null
+        overlay.alertLevel = 0
+        overlay.brakeCueActive = false
+        txtDetectionLabel.text = "Detekce: pozastaveno (edit ROI)"
+        txtPreviewStatus.text = "EDIT ROI · detekce pozastavena"
+
+        // Speed monitor v edit módu nepotřebujeme (šetří CPU/GPS).
+        speedPausedByEdit = true
+        speedMonitor.stop()
+
+        searching = false
+        stopSearching()
+    }
+
+    private fun resumeDetectionAfterRoiEdit() {
+        logActivity("roi_edit_stop")
+
+        // Obnov analýzu.
+        bindPreviewAndAnalysis()
+
+        // Status UI zpět.
+        searching = true
+        updateSearchingLabel()
+
+        if (speedPausedByEdit) {
+            speedPausedByEdit = false
+            speedMonitor.start()
         }
     }
 
@@ -203,27 +279,66 @@ class PreviewActivity : ComponentActivity() {
         val providerFuture = ProcessCameraProvider.getInstance(this)
         providerFuture.addListener({
             val provider = providerFuture.get()
-            provider.unbindAll()
+            cameraProvider = provider
+            isCameraBound = true
 
-            val preview = androidx.camera.core.Preview.Builder().build().also {
-                it.setSurfaceProvider(previewView.surfaceProvider)
+            // Default state: preview + analysis (unless user is editing ROI)
+            if (overlay.roiEditMode) {
+                bindPreviewOnly()
+            } else {
+                bindPreviewAndAnalysis()
             }
+        }, ContextCompat.getMainExecutor(this))
+    }
 
-            val analysis = ImageAnalysis.Builder()
+    private fun bindPreviewOnly() {
+        val provider = cameraProvider ?: return
+        if (!isCameraBound) return
+
+        provider.unbindAll()
+
+        previewUseCase = Preview.Builder().build().also {
+            it.setSurfaceProvider(previewView.surfaceProvider)
+        }
+
+        val camera = provider.bindToLifecycle(
+            this,
+            CameraSelector.DEFAULT_BACK_CAMERA,
+            previewUseCase
+        )
+        updateCameraCalibration(camera)
+        analysisUseCase = null
+    }
+
+    private fun bindPreviewAndAnalysis() {
+        val provider = cameraProvider ?: return
+        if (!isCameraBound) return
+
+        provider.unbindAll()
+
+        previewUseCase = Preview.Builder().build().also {
+            it.setSurfaceProvider(previewView.surfaceProvider)
+        }
+
+        val a = analyzer
+        analysisUseCase = if (a != null) {
+            ImageAnalysis.Builder()
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .build()
-                .apply {
-                    setAnalyzer(Executors.newSingleThreadExecutor(), analyzer)
-                }
+                .apply { setAnalyzer(analysisExecutor, a) }
+        } else {
+            null
+        }
 
-            val camera = provider.bindToLifecycle(
-                this,
-                CameraSelector.DEFAULT_BACK_CAMERA,
-                preview,
-                analysis
-            )
-            updateCameraCalibration(camera)
-        }, ContextCompat.getMainExecutor(this))
+        val useCases = arrayListOf<androidx.camera.core.UseCase>(previewUseCase!!)
+        analysisUseCase?.let { useCases.add(it) }
+
+        val camera = provider.bindToLifecycle(
+            this,
+            CameraSelector.DEFAULT_BACK_CAMERA,
+            *useCases.toTypedArray()
+        )
+        updateCameraCalibration(camera)
     }
 
     private fun updateCameraCalibration(camera: androidx.camera.core.Camera) {
@@ -244,15 +359,19 @@ class PreviewActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        unregisterReceiver(receiver)
+        runCatching { unregisterReceiver(receiver) }
         speedMonitor.stop()
         stopSearching()
+        AppPreferences.previewActive = false
+        runCatching { analysisExecutor.shutdown() }
         super.onDestroy()
     }
 
     override fun onStart() {
         super.onStart()
-        speedMonitor.start()
+        if (!overlay.roiEditMode) {
+            speedMonitor.start()
+        }
     }
 
     override fun onStop() {
@@ -261,15 +380,16 @@ class PreviewActivity : ComponentActivity() {
     }
 
     private fun updateSearchingLabel() {
-        val status = findViewById<TextView>(R.id.txtPreviewStatus)
+        if (overlay.roiEditMode) return
+
         if (!searching) {
-            status.text = "Živý náhled aktivní"
+            txtPreviewStatus.text = "Živý náhled aktivní"
             stopSearching()
             return
         }
         searchDots = (searchDots + 1) % 4
         val dots = ".".repeat(searchDots)
-        status.text = "Hledám objekt$dots"
+        txtPreviewStatus.text = "Hledám objekt$dots"
         searchHandler.postDelayed({ updateSearchingLabel() }, 500L)
     }
 

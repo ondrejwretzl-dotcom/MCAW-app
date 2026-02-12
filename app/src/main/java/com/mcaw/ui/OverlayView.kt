@@ -193,7 +193,7 @@ class OverlayView @JvmOverloads constructor(
     private var lastTouchY = 0f
 
     private val touchSlopPx: Float =
-        TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 18f, resources.displayMetrics)
+        TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 26f, resources.displayMetrics)
 
     private val minHeightN = 0.10f
     private val minTopHalfWN = 0.06f
@@ -213,8 +213,17 @@ class OverlayView @JvmOverloads constructor(
         val c = colorForAlert(alertLevel)
         boxPaint.color = c
         dotPaint.color = c
-        // ROI remains red in edit mode, otherwise match alert level
-        if (!roiEditMode) roiPaint.color = c
+
+        // ROI: v edit módu zvýrazni (žlutá + silnější), mimo edit se drž alert barvy.
+        if (roiEditMode) {
+            roiPaint.color = Color.YELLOW
+            roiPaint.strokeWidth = 6f
+            roiFillPaint.color = Color.argb(70, 255, 255, 0)
+        } else {
+            roiPaint.color = c
+            roiPaint.strokeWidth = 4f
+            roiFillPaint.color = Color.argb(60, 255, 0, 0)
+        }
 
         val roiPath = mapRoiToViewPath() ?: return
         canvas.drawPath(roiPath, roiFillPaint)
@@ -329,7 +338,7 @@ class OverlayView @JvmOverloads constructor(
 
     private fun drawBrakeCue(canvas: Canvas, mapped: RectF) {
         // malé červené "brzdové světlo" u boxu (debug)
-        val radius = 10f
+        val radius = 14f
         val cx = mapped.right - radius - 6f
         val cy = mapped.top + radius + 6f
         canvas.drawCircle(cx, cy, radius, brakePaint)
@@ -343,7 +352,7 @@ class OverlayView @JvmOverloads constructor(
 
     private fun drawRoiHandles(canvas: Canvas) {
         val pts = roiPointsView() ?: return
-        val radius = 10f
+        val radius = 14f
         val handlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.WHITE
             style = Paint.Style.FILL
