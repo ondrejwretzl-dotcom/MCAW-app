@@ -107,6 +107,13 @@ class OverlayView @JvmOverloads constructor(
             invalidate()
         }
 
+var alertReason: String = ""
+    set(value) {
+        field = value
+        invalidate()
+    }
+
+
     /** Brake cue active (rozsvícená brzdová světla – heuristika). */
     var brakeCueActive: Boolean = false
         set(value) {
@@ -257,6 +264,7 @@ class OverlayView @JvmOverloads constructor(
             if (objectSpeed.isFinite() && objectSpeed >= 0f) add("OBJ  %.1f km/h".format(objectSpeed * 3.6f))
             if (riderSpeed.isFinite() && riderSpeed >= 0f) add("RID  %.1f km/h".format(riderSpeed * 3.6f))
             if (ttc.isFinite() && ttc >= 0f) add("TTC  %.2f s".format(ttc))
+            if (alertLevel > 0 && alertReason.isNotBlank()) add("WHY  " + alertReason)
             if (brakeCueActive) add("BRAKE ON")
         }
         if (lines.isEmpty()) return

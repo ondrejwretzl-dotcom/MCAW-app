@@ -42,6 +42,7 @@ class DetectionAnalyzer(
         const val EXTRA_LEVEL = "extra_level"
         const val EXTRA_LABEL = "extra_label"
         const val EXTRA_BRAKE_CUE = "extra_brake_cue"
+        const val EXTRA_ALERT_REASON = "extra_alert_reason"
     }
 
     private val analyzerLogFileName: String = "mcaw_analyzer_${System.currentTimeMillis()}.txt"
@@ -84,12 +85,6 @@ class DetectionAnalyzer(
 
     // Distance history for sliding-window relative speed
     private data class DistSample(val tsMs: Long, val distM: Float)
-    private val distHistory: ArrayDeque<DistSample> = ArrayDeque()
-
-    // EMA smoothing
-    private var relSpeedEma: Float = 0f
-    private var relSpeedEmaValid: Boolean = false
-
     // TTC smoothing/hold (prevents blinking when switching TTC source)
     private var ttcEma: Float = Float.POSITIVE_INFINITY
     private var ttcEmaValid: Boolean = false
@@ -124,6 +119,28 @@ class DetectionAnalyzer(
     private var lastTtcLevel: Int = 0
 
     private var tts: TextToSpeech? = null
+
+    // --- Alert audio (fix: keep strong ref, handle focus, stop on level change) ---
+    private var alertPlayer: MediaPlayer? = null
+    private var audioFocusRequest: Any? = null // AudioFocusRequest on API 26+, kept as Any for source compat
+    private var audioFocusGranted: Boolean = false
+
+    // --- Per-track motion state (fix: prevent REL/TTC resets when tracker switches IDs) ---
+    private data class MotionState(
+        val distHistory: ArrayDeque<DistSample> = ArrayDeque(),
+        var relSpeedEma: Float = 0f,
+        var relSpeedEmaValid: Boolean = false,
+        var lastRelSigned: Float = 0f,
+        var lastRelTsMs: Long = 0L
+    )
+
+    private val motionByTrack: HashMap<Long, MotionState> = HashMap()
+    private var activeMotionTrackId: Long = -1L
+
+    // TTC hold: keep last finite TTC briefly when raw becomes invalid (prevents blinking)
+    private var lastTtcFiniteTsMs: Long = -1L
+    private val ttcInvalidHoldMs: Long = 500L
+
 
     private fun flog(msg: String, force: Boolean = false) {
         if (!AppPreferences.debugOverlay) return
@@ -215,7 +232,7 @@ val riderSpeedRawMps = speedProvider.getCurrent().speedMps
             // Reset history on target change (prevents TTC/REL jumps when switching trackId)
             if (lastSelectedTrackId != bestTrack.id) {
                 lastSelectedTrackId = bestTrack.id
-                resetMotionState()
+                resetMotionState(bestTrack.id)
             }
 
             val best0 = bestTrack.detection
@@ -232,7 +249,7 @@ val riderSpeedRawMps = speedProvider.getCurrent().speedMps
             val distanceM = smoothDistance(distanceRaw ?: Float.NaN)
 
             // REL speed (signed internal) from sliding-window + EMA
-            val relSpeedSigned = computeRelativeSpeedSignedWindow(distanceM, tsMs)
+            val relSpeedSigned = computeRelativeSpeedSignedWindow(bestTrack.id, distanceM, tsMs)
 
             // Brake cue (beta): jen pokud je zapnuté a jezdec jede
             val brakeCue = if (AppPreferences.brakeCueEnabled) {
@@ -291,16 +308,36 @@ val riderSpeedRawMps = speedProvider.getCurrent().speedMps
 
             val thresholds = thresholdsForMode(AppPreferences.detectionMode)
             val riderSpeedKnown = riderSpeedMps.isFinite()
-            val riderStanding = riderSpeedKnown && riderSpeedMps <= (2.0f / 3.6f) // < 2 km/h
+val riderStanding = riderSpeedKnown && riderSpeedMps <= (2.0f / 3.6f) // < 2 km/h
 
-            val level = if (riderStanding) 0 else alertLevel(distanceM, approachSpeedMps, ttc, thresholds)
+val decision = if (riderStanding) {
+    AlertDecision(
+        level = 0,
+        reason = "RID_STAND rider=%.1fkm/h".format(riderSpeedMps * 3.6f)
+    )
+} else {
+    computeAlertDecision(
+        distanceM = distanceM,
+        approachSpeedMps = approachSpeedMps,
+        ttc = ttc,
+        thresholds = thresholds
+    )
+}
 
-            if (riderStanding) {
-                stopActiveAlerts()
-            } else {
-                // When speed is UNKNOWN, we still allow alerts (degraded mode) based on TTC/distance/approach speed.
-                handleAlerts(level)
-            }
+val level = decision.level
+val alertReason = decision.reason
+
+if (riderStanding) {
+    stopActiveAlerts()
+} else {
+    // When speed is UNKNOWN, we still allow alerts (degraded mode) based on TTC/distance/approach speed.
+    handleAlerts(level)
+}
+
+// Log why alert level was decided (debugOverlay only; sampled)
+if (AppPreferences.debugOverlay && (level != lastAlertLevel || frameIndex % logEveryNFrames == 0L)) {
+    flog("alert decide level=$level reason=$alertReason", force = (level != lastAlertLevel))
+}
 
             sendOverlayUpdate(
                 box = bestBox,
@@ -313,7 +350,8 @@ val riderSpeedRawMps = speedProvider.getCurrent().speedMps
                 ttc = ttc,
                 label = label,
                 brakeCue = brakeCue.active,
-                alertLevel = lastAlertLevel
+                alertLevel = lastAlertLevel,
+                alertReason = alertReason
             )
 
             flog(
@@ -333,7 +371,8 @@ val riderSpeedRawMps = speedProvider.getCurrent().speedMps
                 ttc = ttc,
                 level = level,
                 label = label,
-                brakeCue = brakeCue.active
+                brakeCue = brakeCue.active,
+                alertReason = alertReason
             )
 
             
@@ -410,20 +449,91 @@ if (AppPreferences.debugOverlay) {
     private fun stopActiveAlerts() {
         lastAlertLevel = 0
         val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        am.abandonAudioFocus(null)
+        runCatching { alertPlayer?.stop() }
+        runCatching { alertPlayer?.release() }
+        alertPlayer = null
+        abandonAlertAudioFocus(am)
     }
 
     private fun playAlertSound(resId: Int) {
-    runCatching {
-        val mp = MediaPlayer.create(ctx, resId) ?: return
-        mp.setOnCompletionListener { player ->
-            runCatching { player.release() }
-        }
-        mp.start()
-    }
-}
+        runCatching {
+            val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            requestAlertAudioFocus(am)
 
-private fun handleAlerts(level: Int) {
+            // Stop previous
+            alertPlayer?.setOnCompletionListener(null)
+            runCatching { alertPlayer?.stop() }
+            runCatching { alertPlayer?.release() }
+            alertPlayer = null
+
+            val mp = MediaPlayer.create(ctx, resId) ?: return
+            alertPlayer = mp
+
+            // Make sure it's loud enough and uses alarm-ish stream (best effort).
+            runCatching { mp.setAudioStreamType(AudioManager.STREAM_ALARM) }
+
+            mp.setOnCompletionListener { player ->
+                runCatching { player.release() }
+                if (alertPlayer === player) alertPlayer = null
+                abandonAlertAudioFocus(am)
+            }
+            mp.setOnErrorListener { player, _, _ ->
+                runCatching { player.release() }
+                if (alertPlayer === player) alertPlayer = null
+                abandonAlertAudioFocus(am)
+                true
+            }
+
+            mp.start()
+        }.onFailure {
+            // On any failure, make sure we don't keep a broken player or focus.
+            val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            runCatching { alertPlayer?.release() }
+            alertPlayer = null
+            abandonAlertAudioFocus(am)
+        }
+    }
+
+    private fun requestAlertAudioFocus(am: AudioManager) {
+        if (audioFocusGranted) return
+
+        // API 26+ supports AudioFocusRequest, older uses legacy requestAudioFocus.
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            val listener = AudioManager.OnAudioFocusChangeListener { /* ignore */ }
+            val req = android.media.AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+                .setOnAudioFocusChangeListener(listener)
+                .setWillPauseWhenDucked(false)
+                .build()
+            audioFocusRequest = req
+            audioFocusGranted = (am.requestAudioFocus(req) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
+        } else {
+            @Suppress("DEPRECATION")
+            audioFocusGranted = (am.requestAudioFocus(
+                null,
+                AudioManager.STREAM_ALARM,
+                AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
+            ) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
+        }
+    }
+
+    private fun abandonAlertAudioFocus(am: AudioManager) {
+        if (!audioFocusGranted) return
+        audioFocusGranted = false
+
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            val req = audioFocusRequest as? android.media.AudioFocusRequest
+            if (req != null) {
+                am.abandonAudioFocusRequest(req)
+            } else {
+                am.abandonAudioFocus(null)
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            am.abandonAudioFocus(null)
+        }
+    }
+
+    private fun handleAlerts(level: Int) {
     if (level <= 0 || level == lastAlertLevel) return
     lastAlertLevel = level
 
@@ -472,6 +582,7 @@ private fun handleAlerts(level: Int) {
         label: String,
         brakeCue: Boolean,
         alertLevel: Int,
+        alertReason: String,
         force: Boolean = false
     ) {
         if (!AppPreferences.debugOverlay) return
@@ -499,6 +610,7 @@ private fun handleAlerts(level: Int) {
         i.putExtra("label", label)
         i.putExtra("brake_cue", brakeCue)
         i.putExtra("alert_level", alertLevel)
+        i.putExtra("alert_reason", alertReason)
 
         // keep ROI always in preview overlay
         i.putExtra("roi_trap_top_y_n", roiN.topY)
@@ -531,6 +643,7 @@ private fun handleAlerts(level: Int) {
         level: Int,
         label: String,
         brakeCue: Boolean,
+        alertReason: String,
         force: Boolean = false
     ) {
         val now = SystemClock.elapsedRealtime()
@@ -548,6 +661,7 @@ private fun handleAlerts(level: Int) {
         i.putExtra(EXTRA_LEVEL, level)
         i.putExtra(EXTRA_LABEL, label)
         i.putExtra(EXTRA_BRAKE_CUE, brakeCue)
+        i.putExtra(EXTRA_ALERT_REASON, alertReason)
         ctx.sendBroadcast(i)
     }
 
@@ -583,6 +697,65 @@ private fun handleAlerts(level: Int) {
     }
 
 
+
+
+
+private data class AlertDecision(
+    val level: Int,
+    val reason: String
+)
+
+/**
+ * Explain alert decision for debugging / tuning.
+ * Keeps behavior consistent with [alertLevel] (same thresholds + hysteresis).
+ */
+private fun computeAlertDecision(
+    distanceM: Float,
+    approachSpeedMps: Float,
+    ttc: Float,
+    thresholds: AlertThresholds
+): AlertDecision {
+    val ttcLevel = ttcLevelWithHysteresis(ttc, thresholds)
+
+    val distRed = distanceM.isFinite() && distanceM <= thresholds.distRed
+    val distOrange = distanceM.isFinite() && distanceM <= thresholds.distOrange
+
+    val spdRed = approachSpeedMps.isFinite() && approachSpeedMps >= thresholds.speedRed
+    val spdOrange = approachSpeedMps.isFinite() && approachSpeedMps >= thresholds.speedOrange
+
+    val level = when {
+        distRed || spdRed || ttcLevel == 2 -> 2
+        distOrange || spdOrange || ttcLevel == 1 -> 1
+        else -> 0
+    }
+
+    // Reason (priority: TTC > DIST > REL), include current values + thresholds for quick tuning.
+    val reasonCore = when (level) {
+        2 -> when {
+            ttcLevel == 2 -> "TTC<=RED (ttc=%.2fs thr=%.2fs)".format(ttc, thresholds.ttcRed)
+            distRed -> "DIST<=RED (d=%.2fm thr=%.2fm)".format(distanceM, thresholds.distRed)
+            spdRed -> "REL>=RED (rel=%.2fm/s thr=%.2fm/s)".format(approachSpeedMps, thresholds.speedRed)
+            else -> "RED (unknown trigger)"
+        }
+        1 -> when {
+            ttcLevel == 1 -> "TTC<=ORANGE (ttc=%.2fs thr=%.2fs)".format(ttc, thresholds.ttcOrange)
+            distOrange -> "DIST<=ORANGE (d=%.2fm thr=%.2fm)".format(distanceM, thresholds.distOrange)
+            spdOrange -> "REL>=ORANGE (rel=%.2fm/s thr=%.2fm/s)".format(approachSpeedMps, thresholds.speedOrange)
+            else -> "ORANGE (unknown trigger)"
+        }
+        else -> "SAFE"
+    }
+
+    val summary = buildString {
+        append(reasonCore)
+        append(" | ")
+        append("ttc="); append(if (ttc.isFinite()) "%.2f".format(ttc) else "INF")
+        append(" d="); append(if (distanceM.isFinite()) "%.2f".format(distanceM) else "INF")
+        append(" rel="); append(if (approachSpeedMps.isFinite()) "%.2f".format(approachSpeedMps) else "INF")
+    }
+
+    return AlertDecision(level = level, reason = summary)
+}
 
 private fun ttcLevelWithHysteresis(ttc: Float, t: AlertThresholds): Int {
     if (!ttc.isFinite()) {
@@ -635,14 +808,26 @@ val orangeDs =
 return if (orangeDs || ttcLevel == 1) 1 else 0
     }
 
-    private fun resetMotionState() {
-        distHistory.clear()
+    private fun resetMotionState(newTrackId: Long? = null) {
+        // Per-track motion history (REL from distance)
+        if (newTrackId != null) {
+            motionByTrack[newTrackId]?.distHistory?.clear()
+            motionByTrack[newTrackId]?.relSpeedEmaValid = false
+            motionByTrack[newTrackId]?.relSpeedEma = 0f
+            motionByTrack[newTrackId]?.lastRelSigned = 0f
+            motionByTrack[newTrackId]?.lastRelTsMs = 0L
+            activeMotionTrackId = newTrackId
+        } else {
+            motionByTrack.clear()
+            activeMotionTrackId = -1L
+        }
+
         distEmaValid = false
         distEma = Float.NaN
-        relSpeedEmaValid = false
-        relSpeedEma = 0f
+
         lastBoxHeightPx = Float.NaN
         lastBoxHeightTimestampMs = -1L
+
         brakeRedRatioEma = 0f
         brakeIntensityEma = 0f
         brakePrevIntensityEma = 0f
@@ -650,10 +835,11 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
         brakeCueLastActiveMs = -1L
         brakeCueActive = false
         brakeCueStrength = 0f
-    
+
         ttcEmaValid = false
         ttcEma = Float.POSITIVE_INFINITY
         lastTtcUpdateTsMs = -1L
+        lastTtcFiniteTsMs = -1L
         lastTtcHeight = Float.POSITIVE_INFINITY
         lastTtcHeightTsMs = -1L
     }
@@ -685,12 +871,19 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
     private fun smoothTtc(ttcRaw: Float, tsMs: Long): Float {
         val raw = if (ttcRaw.isFinite() && ttcRaw > 0f) ttcRaw.coerceIn(0.05f, 120f) else Float.POSITIVE_INFINITY
 
+        // If TTC becomes invalid, hold the last finite value briefly to avoid UI blinking.
         if (!raw.isFinite()) {
+            if (ttcEmaValid && ttcEma.isFinite() && lastTtcFiniteTsMs > 0L && (tsMs - lastTtcFiniteTsMs) <= ttcInvalidHoldMs) {
+                return ttcEma
+            }
             ttcEmaValid = false
             ttcEma = Float.POSITIVE_INFINITY
             lastTtcUpdateTsMs = tsMs
             return Float.POSITIVE_INFINITY
         }
+
+        // Remember last finite TTC timestamp
+        lastTtcFiniteTsMs = tsMs
 
         if (!ttcEmaValid || !ttcEma.isFinite() || lastTtcUpdateTsMs <= 0L) {
             ttcEma = raw
@@ -837,57 +1030,93 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
      *
      * Uses sliding-window (0.3..0.9s) + EMA => stabilnější než 1-step derivace.
      */
-    private fun computeRelativeSpeedSignedWindow(currentDistanceM: Float, tsMs: Long): Float {
+    private fun computeRelativeSpeedSignedWindow(
+        trackId: Long,
+        currentDistanceM: Float,
+        tsMs: Long
+    ): Float {
+        val state = motionByTrack.getOrPut(trackId) { MotionState() }
+
+        // Cleanup map to avoid unbounded growth (tracker IDs can drift).
+        if (motionByTrack.size > 12) {
+            val keepIds = setOf(lockedTrackId, switchCandidateId).filterNotNull().toSet()
+            val it = motionByTrack.entries.iterator()
+            while (it.hasNext() && motionByTrack.size > 8) {
+                val e = it.next()
+                if (!keepIds.contains(e.key)) it.remove()
+            }
+        }
+
         if (!currentDistanceM.isFinite() || currentDistanceM <= 0f) {
-            distHistory.clear()
-            relSpeedEmaValid = false
-            relSpeedEma = 0f
+            state.distHistory.clear()
+            state.relSpeedEmaValid = false
+            state.relSpeedEma = 0f
+            state.lastRelSigned = 0f
+            state.lastRelTsMs = tsMs
             return 0f
         }
 
-        distHistory.addLast(DistSample(tsMs, currentDistanceM))
+        state.distHistory.addLast(DistSample(tsMs, currentDistanceM))
 
         // Keep ~1.2s of history max
         val keepMs = 1200L
-        while (distHistory.isNotEmpty() && tsMs - distHistory.first().tsMs > keepMs) {
-            distHistory.removeFirst()
+        while (state.distHistory.isNotEmpty() && tsMs - state.distHistory.first().tsMs > keepMs) {
+            state.distHistory.removeFirst()
         }
 
         // Need at least 2 samples
-        if (distHistory.size < 2) return 0f
+        if (state.distHistory.size < 2) {
+            return if ((tsMs - state.lastRelTsMs) <= 350L) state.lastRelSigned else 0f
+        }
 
         val minAgeMs = 300L
         val maxAgeMs = 900L
         val targetAgeMs = 600L
 
-        // Pick the sample with age in [min,max] closest to targetAgeMs
-        var best: DistSample? = null
-        var bestErr = Long.MAX_VALUE
-        for (s in distHistory) {
+        val newest = state.distHistory.last()
+        val desiredTs = tsMs - targetAgeMs
+
+        // Find sample closest to desiredTs within [minAgeMs, maxAgeMs]
+        var chosen: DistSample? = null
+        var bestAbs = Long.MAX_VALUE
+        for (s in state.distHistory) {
             val age = tsMs - s.tsMs
             if (age < minAgeMs || age > maxAgeMs) continue
-            val err = kotlin.math.abs(age - targetAgeMs)
-            if (err < bestErr) {
-                bestErr = err
-                best = s
+            val absd = kotlin.math.abs(s.tsMs - desiredTs)
+            if (absd < bestAbs) {
+                bestAbs = absd
+                chosen = s
             }
         }
 
-        val ref = best ?: return 0f
-        val dtSec = (tsMs - ref.tsMs).toFloat() / 1000f
-        if (dtSec <= 0.05f || dtSec > 1.2f) return 0f
+        val older = chosen ?: run {
+            // Fallback: use the oldest within maxAgeMs
+            state.distHistory.firstOrNull { (tsMs - it.tsMs) <= maxAgeMs } ?: state.distHistory.first()
+        }
 
-        val dd = ref.distM - currentDistanceM // + when approaching
-        val deadbandM = max(0.05f, currentDistanceM * 0.010f) // 5 cm or 1% distance
-        val raw = if (abs(dd) < deadbandM) 0f else (dd / dtSec)
+        val dtMs = (newest.tsMs - older.tsMs).coerceAtLeast(1L)
+        // Guard: if dt is too small, derivative explodes. Hold last value briefly.
+        if (dtMs < 180L) {
+            return if ((tsMs - state.lastRelTsMs) <= 350L) state.lastRelSigned else 0f
+        }
 
-        val clamped = raw.coerceIn(-60f, 60f)
+        val dtSec = dtMs.toFloat() / 1000f
+        val relSignedRaw = (older.distM - newest.distM) / dtSec
 
-        val alpha = 0.35f
-        relSpeedEma = if (!relSpeedEmaValid) clamped else (relSpeedEma + alpha * (clamped - relSpeedEma))
-        relSpeedEmaValid = true
+        // Clamp unrealistic spikes (m/s). This protects TTC/alerts from 1-frame glitches.
+        val relSignedClamped = relSignedRaw.coerceIn(-25f, 25f)
 
-        return relSpeedEma
+        // EMA smoothing
+        val alpha = 0.30f
+        state.relSpeedEma =
+            if (!state.relSpeedEmaValid) relSignedClamped else (state.relSpeedEma + alpha * (relSignedClamped - state.relSpeedEma))
+        state.relSpeedEmaValid = true
+
+        // Store last signed rel for short hold
+        state.lastRelSigned = state.relSpeedEma
+        state.lastRelTsMs = tsMs
+
+        return state.relSpeedEma
     }
 
         private data class RoiTrapPx(val pts: FloatArray, val bounds: RectF)

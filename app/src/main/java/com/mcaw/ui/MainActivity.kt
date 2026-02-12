@@ -71,6 +71,7 @@ class MainActivity : ComponentActivity() {
             val riderSpeed =
                 intent.getFloatExtra(DetectionAnalyzer.EXTRA_RIDER_SPEED, Float.POSITIVE_INFINITY)
             val level = intent.getIntExtra(DetectionAnalyzer.EXTRA_LEVEL, 0)
+            val alertReason = intent.getStringExtra(DetectionAnalyzer.EXTRA_ALERT_REASON) ?: ""
             val label = intent.getStringExtra(DetectionAnalyzer.EXTRA_LABEL)
             val brakeCue =
                 intent.getBooleanExtra("brake_cue", false) || intent.getBooleanExtra("extra_brake_cue", false)
@@ -128,12 +129,13 @@ class MainActivity : ComponentActivity() {
                 "Metriky: TTC ${formatMetric(ttc, "s")} · " +
                     "Vzdálenost ${formatMetric(distance, "m")} · " +
                     "Rel ${formatMetric(relKmhLog, "km/h")} · " +
-                    "Objekt ${mappedLabel.ifBlank { "--" }}"
+                    "Objekt ${mappedLabel.ifBlank { "--" }}" +
+                    (if (AppPreferences.debugOverlay && alertReason.isNotBlank()) " · WHY $alertReason" else "")
             )
             logActivity(
                 "metrics ttc=${formatMetric(ttc, "s")} dist=${formatMetric(distance, "m")} " +
                     "rel=${formatMetric(relKmhLog, "km/h")} obj=${formatMetric(objKmhLog, "km/h")} " +
-                    "level=$level brakeCue=$brakeCue"
+                    "level=$level brakeCue=$brakeCue reason=${alertReason.replace("\n"," ").take(120)}"
             )
         }
     }
