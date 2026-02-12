@@ -10,7 +10,31 @@
         android:orientation="vertical"
         android:padding="16dp">
 
-        <TextView
+        
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="10dp">
+
+            <ImageView
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:src="@drawable/mcaw_logo"
+                android:contentDescription="MCAW logo"
+                android:scaleType="fitCenter" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Návod"
+                android:textColor="#FFFFFF"
+                android:textSize="22sp"
+                android:textStyle="bold"
+                android:layout_marginStart="12dp" />
+        </LinearLayout>
+<TextView
             android:id="@+id/txtHelpTitle"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

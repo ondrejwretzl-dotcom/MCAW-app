@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- MCAW branding -->
+    <color name="mcaw_purple">#7B3FF2</color>
+    <color name="mcaw_purple_dark">#1A0F2B</color>
+    <color name="ic_launcher_background">#0F0A16</color>
+</resources>
