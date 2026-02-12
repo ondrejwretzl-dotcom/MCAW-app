@@ -47,6 +47,7 @@ val etTtsRed = findViewById<EditText>(R.id.etTtsRed)
 
         val swDebug = findViewById<SwitchMaterial>(R.id.swDebug)
         val swLaneFilter = findViewById<SwitchMaterial>(R.id.swLaneFilter)
+        val swRoiStrictContainment = findViewById<SwitchMaterial>(R.id.swRoiStrictContainment)
 
         val swBrakeCue = findViewById<SwitchMaterial>(R.id.swBrakeCue)
         val spBrakeCueSensitivity = findViewById<Spinner>(R.id.spBrakeCueSensitivity)
@@ -99,6 +100,7 @@ val etTtsRed = findViewById<EditText>(R.id.etTtsRed)
         swVoice.isChecked = AppPreferences.voice
         swDebug.isChecked = AppPreferences.debugOverlay
         swLaneFilter.isChecked = AppPreferences.laneFilter
+        swRoiStrictContainment.isChecked = AppPreferences.roiStrictContainment
 
 swSoundOrange.isChecked = AppPreferences.soundOrange
 swSoundRed.isChecked = AppPreferences.soundRed
@@ -145,6 +147,11 @@ swVoiceRed.setOnCheckedChangeListener { _, isChecked ->
         swLaneFilter.setOnCheckedChangeListener { _, isChecked ->
             AppPreferences.laneFilter = isChecked
         }
+
+
+swRoiStrictContainment.setOnCheckedChangeListener { _, isChecked ->
+    AppPreferences.roiStrictContainment = isChecked
+}
 
         swBrakeCue.setOnCheckedChangeListener { _, isChecked ->
             AppPreferences.brakeCueEnabled = isChecked

@@ -85,6 +85,18 @@ var ttsTextRed: String
     var laneFilter: Boolean
         get() = prefs.getBoolean("laneFilter", false)
         set(v) = prefs.edit().putBoolean("laneFilter", v).apply()
+
+
+/**
+ * Přísné držení v ROI:
+ * - true  => containment >= 0.80 (méně falešných mimo ROI, ale víc dropů)
+ * - false => containment >= 0.65 (rychlejší náběh, lepší pro perspektivu)
+ */
+var roiStrictContainment: Boolean
+    get() = prefs.getBoolean("roiStrictContainment", false)
+    set(v) = prefs.edit().putBoolean("roiStrictContainment", v).apply()
+
+fun roiContainmentThreshold(): Float = if (roiStrictContainment) 0.80f else 0.65f
     // BRAKE CUE (detekce rozsvícených brzdových světel – heuristika, default OFF)
     var brakeCueEnabled: Boolean
         get() = prefs.getBoolean("brake_cue_enabled", true)
