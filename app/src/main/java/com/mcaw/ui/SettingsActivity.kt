@@ -318,18 +318,13 @@ class SettingsActivity : ComponentActivity() {
         MaterialAlertDialogBuilder(this)
             .setTitle("Reset na doporučené")
             .setMessage(
-                "Vrátí vybrané volby na doporučené hodnoty (nezmění zvuk/hlas, model ani režim).
+                """Vrátí vybrané volby na doporučené hodnoty (nezmění zvuk/hlas, model ani režim).
 
-" +
-                    "• Filtrovat objekty v ROI
-" +
-                    "• Šířka pruhu (tolerance)
-" +
-                    "• Kalibrace vzdálenosti
-" +
-                    "• Omezit falešné alarmy v noci/rozmazání
-" +
-                    "• Ochrana proti cut‑in"
+• Filtrovat objekty v ROI
+• Šířka pruhu (tolerance)
+• Kalibrace vzdálenosti
+• Omezit falešné alarmy v noci/rozmazání
+• Ochrana proti cut‑in""".trimIndent()
             )
             .setNegativeButton("Zrušit", null)
             .setPositiveButton("Resetovat") { _, _ ->
