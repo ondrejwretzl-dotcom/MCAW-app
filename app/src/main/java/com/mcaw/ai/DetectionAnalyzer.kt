@@ -46,6 +46,17 @@ class DetectionAnalyzer(
 
     private val analyzerLogFileName: String = "mcaw_analyzer_${System.currentTimeMillis()}.txt"
 
+    // Performance: stage timing (debugOverlay only)
+    private data class PerfAgg(
+        var frames: Long = 0,
+        var preprocMs: Long = 0,
+        var inferMs: Long = 0,
+        var postMs: Long = 0,
+        var totalMs: Long = 0
+    )
+
+    private val perf = PerfAgg()
+
 
     // Performance tuning (PACK1_THROTTLE_LOG_TRACK2)
     private var frameIndex: Long = 0L
@@ -117,7 +128,8 @@ class DetectionAnalyzer(
     private fun flog(msg: String, force: Boolean = false) {
         if (!AppPreferences.debugOverlay) return
         if (!force && (frameIndex % logEveryNFrames != 0L)) return
-        PublicLogWriter.appendLogLine(ctx, analyzerLogFileName, msg)
+        val ts = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", java.util.Locale.US).format(System.currentTimeMillis())
+        PublicLogWriter.appendLogLine(ctx, analyzerLogFileName, "ts=$ts f=$frameIndex $msg")
     }
 
     init {
@@ -132,6 +144,8 @@ class DetectionAnalyzer(
         try {
             frameIndex += 1
             val tsMs = System.currentTimeMillis()
+
+            val t0Ns = SystemClock.elapsedRealtimeNanos()
 
             val rotation = image.imageInfo.rotationDegrees
             val (frameWRotI, frameHRotI) = ImagePreprocessor.rotatedFrameSize(image.width, image.height, rotation)
@@ -171,6 +185,7 @@ val riderSpeedRawMps = speedProvider.getCurrent().speedMps
                 containmentRatioInTrapezoid(d.box, roiTrap.pts) >= AppPreferences.roiContainmentThreshold()
             }
 
+            val tPostNs = SystemClock.elapsedRealtimeNanos()
             val post = postProcessor.process(gatedDetections, frameW, frameH)
             flog("counts raw=${post.counts.raw} thr=${post.counts.threshold} nms=${post.counts.nms} accepted=${post.counts.filters}")
 
@@ -319,7 +334,33 @@ val riderSpeedRawMps = speedProvider.getCurrent().speedMps
                 brakeCue = brakeCue.active
             )
 
+            
+            // PERF aggregation (debugOverlay only)
             if (AppPreferences.debugOverlay) {
+                val tEndNs = SystemClock.elapsedRealtimeNanos()
+                val preMs = ((tPreNs - t0Ns) / 1_000_000L).coerceAtLeast(0L)
+                val inferMs = ((tInferNs - tPreNs) / 1_000_000L).coerceAtLeast(0L)
+                val postMs = ((tEndNs - tPostNs) / 1_000_000L).coerceAtLeast(0L)
+                val totalMs = ((tEndNs - t0Ns) / 1_000_000L).coerceAtLeast(0L)
+
+                perf.frames += 1
+                perf.preprocMs += preMs
+                perf.inferMs += inferMs
+                perf.postMs += postMs
+                perf.totalMs += totalMs
+
+                if (perf.frames % logEveryNFrames == 0L) {
+                    val rt = Runtime.getRuntime()
+                    val usedMb = (rt.totalMemory() - rt.freeMemory()) / (1024 * 1024)
+                    val totalMb = rt.totalMemory() / (1024 * 1024)
+                    flog(
+                        "perf avgMs pre=${perf.preprocMs / perf.frames} infer=${perf.inferMs / perf.frames} post=${perf.postMs / perf.frames} total=${perf.totalMs / perf.frames} mem=${usedMb}MB/${totalMb}MB",
+                        force = true
+                    )
+                }
+            }
+
+if (AppPreferences.debugOverlay) {
                 Log.d(
                     "DetectionAnalyzer",
                     "pipeline raw=${post.counts.raw} thr=${post.counts.threshold} nms=${post.counts.nms} filters=${post.counts.filters} tracks=${tracked.size} gate=${tracked.count { it.alertGatePassed }}"
