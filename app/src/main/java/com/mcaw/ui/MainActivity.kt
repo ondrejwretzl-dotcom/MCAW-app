@@ -40,6 +40,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var panelMetrics: View
     private lateinit var brakeLamp: TextView
     private lateinit var txtBrakeLamp: TextView
+    private lateinit var txtWhy: TextView
     private var lastBrakeLampUiState: Boolean = false
 
     private var pulseAnimator: ValueAnimator? = null
@@ -75,6 +76,9 @@ class MainActivity : ComponentActivity() {
             val label = intent.getStringExtra(DetectionAnalyzer.EXTRA_LABEL)
             val brakeCue =
                 intent.getBooleanExtra("brake_cue", false) || intent.getBooleanExtra("extra_brake_cue", false)
+
+            updateBrakeLamp(brakeCue)
+            updateWhy(level, alertReason)
 
             txtTtc.text = if (ttc.isFinite()) "TTC: %.2f s".format(ttc) else "TTC: --.- s"
             txtDistance.text =
@@ -162,6 +166,9 @@ class MainActivity : ComponentActivity() {
         panelMetrics = findViewById(R.id.panelMetrics)
         brakeLamp = findViewById(R.id.brakeLamp)
         txtBrakeLamp = findViewById(R.id.txtBrakeLamp)
+        txtWhy = findViewById(R.id.txtWhy)
+        // Enable scrolling in activity log panel
+        txtActivityLog.movementMethod = android.text.method.ScrollingMovementMethod()
         updateBrakeLamp(false)
 
         speedProvider = SpeedProvider(this)
@@ -324,9 +331,9 @@ class MainActivity : ComponentActivity() {
     private fun addLog(message: String) {
         val timestamp = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault())
             .format(System.currentTimeMillis())
-        logLines.addFirst("[$timestamp] $message")
-        while (logLines.size > 6) {
-            logLines.removeLast()
+        logLines.addLast("[$timestamp] $message")
+        while (logLines.size > 80) {
+            logLines.removeFirst()
         }
         txtActivityLog.text = buildString {
             append("Aktivity:\n")
@@ -432,7 +439,16 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun formatMetric(value: Float, unit: String): String {
+    
+private fun updateWhy(level: Int, alertReason: String) {
+    if (level > 0 && alertReason.isNotBlank()) {
+        txtWhy.text = "WHY: " + alertReason.replace("\n", " ").trim()
+    } else {
+        txtWhy.text = ""
+    }
+}
+
+private fun formatMetric(value: Float, unit: String): String {
         return if (value.isFinite()) "%.2f %s".format(value, unit) else "--.- $unit"
     }
 

@@ -12,7 +12,7 @@ import android.widget.EditText
 import android.widget.Spinner
 import android.widget.TextView
 import androidx.activity.ComponentActivity
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import android.app.AlertDialog
 import com.google.android.material.slider.Slider
 import com.google.android.material.switchmaterial.SwitchMaterial
 import com.mcaw.app.R
@@ -365,12 +365,12 @@ class SettingsActivity : ComponentActivity() {
     }
 
     private fun showInfo(title: String, msg: String) {
-        MaterialAlertDialogBuilder(this)
-            .setTitle(title)
-            .setMessage(msg)
-            .setPositiveButton("OK", null)
-            .show()
-    }
+    android.app.AlertDialog.Builder(this)
+        .setTitle(title)
+        .setMessage(msg)
+        .setPositiveButton("OK", null)
+        .show()
+}
 
     private fun readFloat(editText: EditText, fallback: Float): Float {
         val value = editText.text?.toString()?.trim()
