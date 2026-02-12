@@ -233,6 +233,13 @@
             android:layout_height="wrap_content"
             android:text="Filtrovat objekty v jízdním pruhu" />
 
+<com.google.android.material.switchmaterial.SwitchMaterial
+    android:id="@+id/swRoiStrictContainment"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:text="Přísné držení v ROI" />
+
+
         <com.google.android.material.switchmaterial.SwitchMaterial
             android:id="@+id/swBrakeCue"
             android:layout_width="wrap_content"

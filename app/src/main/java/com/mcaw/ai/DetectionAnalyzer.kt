@@ -111,6 +111,7 @@ class DetectionAnalyzer(
     private var lastBoxHeightTimestampMs: Long = -1L
 
     private var lastAlertLevel = 0
+    private var lastTtcLevel: Int = 0
 
     private var tts: TextToSpeech? = null
 
@@ -177,7 +178,7 @@ class DetectionAnalyzer(
 
             // Hard gate: keep only detections that are at least 80% inside ROI.
             val gatedDetections = rawDetections.filter { d ->
-                containmentRatioInTrapezoid(d.box, roiTrap.pts) >= 0.80f
+                containmentRatioInTrapezoid(d.box, roiTrap.pts) >= AppPreferences.roiContainmentThreshold()
             }
 
             val post = postProcessor.process(gatedDetections, frameW, frameH)
@@ -475,6 +476,7 @@ private fun handleAlerts(level: Int) {
     }
 
     private fun sendOverlayClear() {
+        lastTtcLevel = 0
         if (!AppPreferences.debugOverlay) return
         val roiN = AppPreferences.getRoiTrapezoidNormalized()
         val i = Intent("MCAW_DEBUG_UPDATE").setPackage(ctx.packageName)
@@ -516,6 +518,7 @@ private fun handleAlerts(level: Int) {
     }
 
     private fun sendMetricsClear() {
+        lastTtcLevel = 0
         sendMetricsUpdate(
             dist = Float.POSITIVE_INFINITY,
             approachSpeed = Float.POSITIVE_INFINITY,
@@ -545,19 +548,57 @@ private fun handleAlerts(level: Int) {
         }
     }
 
-    private fun alertLevel(distance: Float, approachSpeedMps: Float, ttc: Float, t: AlertThresholds): Int {
-        val red =
-            (ttc.isFinite() && ttc <= t.ttcRed) ||
-                (distance.isFinite() && distance <= t.distRed) ||
-                (approachSpeedMps.isFinite() && approachSpeedMps >= t.speedRed)
-        if (red) return 2
 
-        val orange =
-            (ttc.isFinite() && ttc <= t.ttcOrange) ||
-                (distance.isFinite() && distance <= t.distOrange) ||
-                (approachSpeedMps.isFinite() && approachSpeedMps >= t.speedOrange)
 
-        return if (orange) 1 else 0
+private fun ttcLevelWithHysteresis(ttc: Float, t: AlertThresholds): Int {
+    if (!ttc.isFinite()) {
+        lastTtcLevel = 0
+        return 0
+    }
+
+    val redOn = t.ttcRed
+    val redOff = redOn + 0.4f // např. 1.2 -> 1.6
+    val orangeOn = t.ttcOrange
+    val orangeOff = maxOf(orangeOn + 0.6f, redOff + 0.2f)
+
+    lastTtcLevel = when (lastTtcLevel) {
+        2 -> {
+            if (ttc >= redOff) {
+                if (ttc <= orangeOn) 1 else 0
+            } else 2
+        }
+        1 -> {
+            when {
+                ttc <= redOn -> 2
+                ttc >= orangeOff -> 0
+                else -> 1
+            }
+        }
+        else -> {
+            when {
+                ttc <= redOn -> 2
+                ttc <= orangeOn -> 1
+                else -> 0
+            }
+        }
+    }
+    return lastTtcLevel
+}
+
+private fun alertLevel(distance: Float, approachSpeedMps: Float, ttc: Float, t: AlertThresholds): Int {
+
+val ttcLevel = ttcLevelWithHysteresis(ttc, t)
+
+val redDs =
+    (distance.isFinite() && distance <= t.distRed) ||
+        (approachSpeedMps.isFinite() && approachSpeedMps >= t.speedRed)
+if (redDs || ttcLevel == 2) return 2
+
+val orangeDs =
+    (distance.isFinite() && distance <= t.distOrange) ||
+        (approachSpeedMps.isFinite() && approachSpeedMps >= t.speedOrange)
+
+return if (orangeDs || ttcLevel == 1) 1 else 0
     }
 
     private fun resetMotionState() {
