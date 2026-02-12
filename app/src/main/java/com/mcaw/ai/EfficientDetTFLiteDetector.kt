@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.Rect
 import android.os.Build
 import android.util.Log
+import androidx.camera.core.ImageProxy
 import com.mcaw.config.AppPreferences
 import com.mcaw.model.Box
 import com.mcaw.model.Detection
@@ -42,15 +43,13 @@ class EfficientDetTFLiteDetector(
     private val outScores4 = Array(1) { FloatArray(100) }
     private val outCount4 = FloatArray(1)
 
+    // Reuse raw output arrays for the 2-output (anchors) variant to avoid per-frame huge allocations.
+    private var rawBoxes2: Array<Array<FloatArray>>? = null // [1,anchors,4]
+    private var rawScores2: Array<Array<FloatArray>>? = null // [1,anchors,classes]
+    private var rawBoxesAnchorsN: Int = -1
+    private var rawScoresClassesN: Int = -1
 
-// Reuse raw output arrays for the 2-output (anchors) variant to avoid per-frame huge allocations.
-private var rawBoxes2: Array<Array<FloatArray>>? = null // [1,anchors,4]
-private var rawScores2: Array<Array<FloatArray>>? = null // [1,anchors,classes]
-private var rawBoxesAnchorsN: Int = -1
-private var rawScoresClassesN: Int = -1
-
-    // EfficientDet "raw" heads (class logits + box regression) need anchor decoding.
-    // For input 320, anchors = 19206 (levels 3..7, 3 scales, 3 aspect ratios).
+    // EfficientDet "raw" heads need anchor decoding.
     private var anchorsCache: FloatArray? = null // packed [y, x, h, w] per anchor (all normalized 0..1)
 
     init {
@@ -73,45 +72,100 @@ private var rawScoresClassesN: Int = -1
 
     fun detect(bitmap: Bitmap): List<Detection> = detect(bitmap, null)
 
-/**
- * ROI crop in pixel coordinates of the provided bitmap (after rotation).
- * Returned boxes are always in coordinates of the original [bitmap] (full frame).
- */
-fun detect(bitmap: Bitmap, roiPx: Rect?): List<Detection> {
-    val crop = cropToRoi(bitmap, roiPx)
-    val cropBitmap = crop.bitmap
+    /**
+     * ROI crop in pixel coordinates of the provided bitmap (after rotation).
+     * Returned boxes are always in coordinates of the original [bitmap] (full frame).
+     */
+    fun detect(bitmap: Bitmap, roiPx: Rect?): List<Detection> {
+        val crop = cropToRoi(bitmap, roiPx)
+        val cropBitmap = crop.bitmap
 
-    val resized = Bitmap.createScaledBitmap(cropBitmap, inputSize, inputSize, true)
-    val input = preprocess(resized)
-    val outputCount = interpreter.outputTensorCount
+        val resized = Bitmap.createScaledBitmap(cropBitmap, inputSize, inputSize, true)
+        val input = preprocessBitmap(resized)
+        val outputCount = interpreter.outputTensorCount
 
-    if (AppPreferences.debugOverlay && !modelInfoLogged) {
-        modelInfoLogged = true
-        val outputs = (0 until outputCount)
-            .joinToString { idx -> "out$idx=${interpreter.getOutputTensor(idx).shape().contentToString()}" }
-        Log.d(
-            "EfficientDet",
-            "model=$modelLabel input=${interpreter.getInputTensor(0).shape().contentToString()} type=$inputType $outputs"
-        )
-    }
-
-    val dets = if (outputCount >= 4) runFourOutput(cropBitmap, input) else runTwoOutputWithAnchors(cropBitmap, input)
-
-    if (crop.offsetX == 0f && crop.offsetY == 0f) return dets
-
-    return dets.map { d ->
-        d.copy(
-            box = Box(
-                d.box.x1 + crop.offsetX,
-                d.box.y1 + crop.offsetY,
-                d.box.x2 + crop.offsetX,
-                d.box.y2 + crop.offsetY
+        if (AppPreferences.debugOverlay && !modelInfoLogged) {
+            modelInfoLogged = true
+            val outputs = (0 until outputCount)
+                .joinToString { idx -> "out$idx=${interpreter.getOutputTensor(idx).shape().contentToString()}" }
+            Log.d(
+                "EfficientDet",
+                "model=$modelLabel input=${interpreter.getInputTensor(0).shape().contentToString()} type=$inputType $outputs"
             )
-        )
-    }
-}
+        }
 
-    private fun runFourOutput(bitmap: Bitmap, input: ByteBuffer): List<Detection> {
+        val dets = if (outputCount >= 4) {
+            runFourOutput(cropBitmap.width, cropBitmap.height, input)
+        } else {
+            runTwoOutputWithAnchors(cropBitmap.width, cropBitmap.height, input)
+        }
+
+        if (crop.offsetX == 0f && crop.offsetY == 0f) return dets
+
+        return dets.map { d ->
+            d.copy(
+                box = Box(
+                    d.box.x1 + crop.offsetX,
+                    d.box.y1 + crop.offsetY,
+                    d.box.x2 + crop.offsetX,
+                    d.box.y2 + crop.offsetY
+                )
+            )
+        }
+    }
+
+    // ---- BYTEBUFFER_PIPELINE: ImageProxy -> inputBuffer ----
+    /**
+     * Přímá detekce z ImageProxy bez Bitmap/JPEG.
+     * ROI je v rotated frame souřadnicích (po aplikaci [rotationDegrees]).
+     *
+     * Returned boxes are always in coordinates of the full rotated frame (tj. už s offsetem ROI).
+     */
+    fun detect(image: ImageProxy, roiPx: Rect?, rotationDegrees: Int): List<Detection> {
+        val (frameWRot, frameHRot) = ImagePreprocessor.rotatedFrameSize(image.width, image.height, rotationDegrees)
+        val crop = ImagePreprocessor.sanitizeCrop(frameWRot, frameHRot, roiPx)
+
+        // Fill inputBuffer (float or uint8) directly from ImageProxy
+        if (inputType == DataType.FLOAT32) {
+            ImagePreprocessor.fillFloatBufferNhwcRgb01(
+                image = image,
+                rotationDegrees = rotationDegrees,
+                crop = crop,
+                inputSize = inputSize,
+                out = inputBuffer
+            )
+        } else {
+            ImagePreprocessor.fillUint8BufferNhwcRgb(
+                image = image,
+                rotationDegrees = rotationDegrees,
+                crop = crop,
+                inputSize = inputSize,
+                out = inputBuffer
+            )
+        }
+
+        val outputCount = interpreter.outputTensorCount
+        val dets = if (outputCount >= 4) {
+            runFourOutput(crop.width, crop.height, inputBuffer)
+        } else {
+            runTwoOutputWithAnchors(crop.width, crop.height, inputBuffer)
+        }
+
+        if (crop.left == 0 && crop.top == 0) return dets
+
+        return dets.map { d ->
+            d.copy(
+                box = Box(
+                    d.box.x1 + crop.offsetX,
+                    d.box.y1 + crop.offsetY,
+                    d.box.x2 + crop.offsetX,
+                    d.box.y2 + crop.offsetY
+                )
+            )
+        }
+    }
+
+    private fun runFourOutput(frameW: Int, frameH: Int, input: ByteBuffer): List<Detection> {
         outCount4[0] = 0f
         val outputs = mapOf(0 to outBoxes4, 1 to outClasses4, 2 to outScores4, 3 to outCount4)
         interpreter.runForMultipleInputsOutputs(arrayOf(input), outputs)
@@ -127,10 +181,10 @@ fun detect(bitmap: Bitmap, roiPx: Rect?): List<Detection> {
             result.add(
                 Detection(
                     box = Box(
-                        (box[1] * bitmap.width).coerceIn(0f, bitmap.width.toFloat()),
-                        (box[0] * bitmap.height).coerceIn(0f, bitmap.height.toFloat()),
-                        (box[3] * bitmap.width).coerceIn(0f, bitmap.width.toFloat()),
-                        (box[2] * bitmap.height).coerceIn(0f, bitmap.height.toFloat())
+                        (box[1] * frameW).coerceIn(0f, frameW.toFloat()),
+                        (box[0] * frameH).coerceIn(0f, frameH.toFloat()),
+                        (box[3] * frameW).coerceIn(0f, frameW.toFloat()),
+                        (box[2] * frameH).coerceIn(0f, frameH.toFloat())
                     ),
                     score = score,
                     label = label
@@ -142,32 +196,30 @@ fun detect(bitmap: Bitmap, roiPx: Rect?): List<Detection> {
 
     /**
      * EfficientDet-Lite "raw" heads:
-     * - outScores: [1, anchors, numClasses]  (already in 0..1 for many exports; if logits, values > 1 will appear)
-     * - outBoxes:  [1, anchors, 4]          (box regression deltas dy,dx,dh,dw)
-     *
-     * We must decode using generated anchors (levels 3..7, 3 scales, 3 aspect ratios, anchorScale=4).
+     * - outScores: [1, anchors, numClasses]
+     * - outBoxes:  [1, anchors, 4] (dy,dx,dh,dw)
      */
-    private fun runTwoOutputWithAnchors(bitmap: Bitmap, input: ByteBuffer): List<Detection> {
+    private fun runTwoOutputWithAnchors(frameW: Int, frameH: Int, input: ByteBuffer): List<Detection> {
         val shape0 = interpreter.getOutputTensor(0).shape()
         val shape1 = interpreter.getOutputTensor(1).shape()
 
         val anchorsN = (shape0.getOrNull(1) ?: 0).coerceAtLeast(shape1.getOrNull(1) ?: 0)
         val classesN = maxOf(shape0.last(), shape1.last())
 
-        // Reuse huge arrays to avoid per-frame allocations (anchors variant can be very expensive otherwise).
-if (rawBoxes2 == null || rawBoxesAnchorsN != anchorsN) {
-    rawBoxes2 = Array(1) { Array(anchorsN) { FloatArray(4) } }
-    rawBoxesAnchorsN = anchorsN
-}
-if (rawScores2 == null || rawBoxesAnchorsN != anchorsN || rawScoresClassesN != classesN) {
-    rawScores2 = Array(1) { Array(anchorsN) { FloatArray(classesN) } }
-    rawScoresClassesN = classesN
-}
+        // Reuse huge arrays to avoid per-frame allocations.
+        if (rawBoxes2 == null || rawBoxesAnchorsN != anchorsN) {
+            rawBoxes2 = Array(1) { Array(anchorsN) { FloatArray(4) } }
+            rawBoxesAnchorsN = anchorsN
+        }
+        if (rawScores2 == null || rawBoxesAnchorsN != anchorsN || rawScoresClassesN != classesN) {
+            rawScores2 = Array(1) { Array(anchorsN) { FloatArray(classesN) } }
+            rawScoresClassesN = classesN
+        }
 
-val rawBoxes = rawBoxes2!!
-val rawScores = rawScores2!!
+        val rawBoxes = rawBoxes2!!
+        val rawScores = rawScores2!!
 
-val outputs = mutableMapOf<Int, Any>()
+        val outputs = mutableMapOf<Int, Any>()
         // Identify which output is boxes vs scores by last dimension.
         if (shape0.last() == 4) {
             outputs[0] = rawBoxes
@@ -181,14 +233,13 @@ val outputs = mutableMapOf<Int, Any>()
 
         val anchors = getOrCreateAnchorsPacked(anchorsN)
 
-        // COCO "vehicle-like" focus (keeps performance; labels still mapped through DetectionLabelMapper).
+        // COCO "vehicle-like" focus (keeps performance)
         val interestedClassIds = intArrayOf(0, 1, 2, 3, 4, 5, 6, 7, 8)
             .filter { it < classesN }
             .toIntArray()
 
         val out = ArrayList<Detection>(16)
         for (i in 0 until anchorsN) {
-            // pick best class among interested ones
             var bestClass = -1
             var bestScore = 0f
             val sRow = rawScores[0][i]
@@ -199,7 +250,7 @@ val outputs = mutableMapOf<Int, Any>()
                     bestClass = c
                 }
             }
-            // Heuristic: if model gives logits, they are often > 1. Convert with sigmoid.
+
             val prob = if (bestScore > 1.5f) sigmoid(bestScore) else bestScore
             if (prob < scoreThreshold || bestClass < 0) continue
 
@@ -220,7 +271,6 @@ val outputs = mutableMapOf<Int, Any>()
             var yMax = yCenter + h / 2f
             var xMax = xCenter + w / 2f
 
-            // clip normalized
             yMin = yMin.coerceIn(0f, 1f)
             xMin = xMin.coerceIn(0f, 1f)
             yMax = yMax.coerceIn(0f, 1f)
@@ -231,10 +281,10 @@ val outputs = mutableMapOf<Int, Any>()
             out.add(
                 Detection(
                     box = Box(
-                        xMin * bitmap.width,
-                        yMin * bitmap.height,
-                        xMax * bitmap.width,
-                        yMax * bitmap.height
+                        xMin * frameW,
+                        yMin * frameH,
+                        xMax * frameW,
+                        yMax * frameH
                     ),
                     score = prob,
                     label = label
@@ -243,7 +293,6 @@ val outputs = mutableMapOf<Int, Any>()
         }
 
         if (AppPreferences.debugOverlay && out.isNotEmpty()) {
-            // minimal debug for field verification
             val top = out.maxByOrNull { it.score }
             Log.d(
                 "EfficientDet",
@@ -255,8 +304,7 @@ val outputs = mutableMapOf<Int, Any>()
     }
 
     private fun sigmoid(x: Float): Float {
-        // stable-ish sigmoid for small positives/negatives typical of TFLite logits
-        return (1f / (1f + exp(-x)))
+        return (1f / (1f + kotlin.math.exp(-x)))
     }
 
     private fun getOrCreateAnchorsPacked(expectedAnchors: Int): FloatArray {
@@ -272,12 +320,10 @@ val outputs = mutableMapOf<Int, Any>()
             anchorScale = 4.0f
         )
 
-        // Defensive: if a model variant changes anchors, keep something usable (trim/extend).
         anchorsCache = when {
             packed.size == expectedAnchors * 4 -> packed
             packed.size > expectedAnchors * 4 -> packed.copyOf(expectedAnchors * 4)
             else -> {
-                // extend by repeating last anchor (should not happen for lite0 320)
                 val ext = FloatArray(expectedAnchors * 4)
                 packed.copyInto(ext, 0, 0, packed.size)
                 for (i in packed.size until ext.size) ext[i] = packed[packed.size - 1]
@@ -306,7 +352,6 @@ val outputs = mutableMapOf<Int, Any>()
             val stride = 2.0.pow(level.toDouble()).toFloat()
             val feat = ceil(inputSize / stride).toInt().coerceAtLeast(1)
 
-            // normalized base scale
             val baseScale = (anchorScale * stride) / inputSize.toFloat()
 
             for (y in 0 until feat) {
@@ -332,7 +377,6 @@ val outputs = mutableMapOf<Int, Any>()
                 }
             }
         }
-        // packed [y,x,h,w]
         val out = FloatArray(anchors.size)
         for (i in anchors.indices) out[i] = anchors[i]
         return out
@@ -354,28 +398,27 @@ val outputs = mutableMapOf<Int, Any>()
         return total * numScales * numRatios * 4
     }
 
-    
-private data class CropResult(val bitmap: Bitmap, val offsetX: Float, val offsetY: Float)
+    private data class CropResult(val bitmap: Bitmap, val offsetX: Float, val offsetY: Float)
 
-private fun cropToRoi(src: Bitmap, roiPx: Rect?): CropResult {
-    if (roiPx == null) return CropResult(src, 0f, 0f)
+    private fun cropToRoi(src: Bitmap, roiPx: Rect?): CropResult {
+        if (roiPx == null) return CropResult(src, 0f, 0f)
 
-    val l = roiPx.left.coerceIn(0, kotlin.math.max(0, src.width - 1))
-    val t = roiPx.top.coerceIn(0, kotlin.math.max(0, src.height - 1))
-    val r = roiPx.right.coerceIn(l + 1, src.width)
-    val b = roiPx.bottom.coerceIn(t + 1, src.height)
+        val l = roiPx.left.coerceIn(0, kotlin.math.max(0, src.width - 1))
+        val t = roiPx.top.coerceIn(0, kotlin.math.max(0, src.height - 1))
+        val r = roiPx.right.coerceIn(l + 1, src.width)
+        val b = roiPx.bottom.coerceIn(t + 1, src.height)
 
-    val w = kotlin.math.max(1, r - l)
-    val h = kotlin.math.max(1, b - t)
+        val w = kotlin.math.max(1, r - l)
+        val h = kotlin.math.max(1, b - t)
 
-    val cropped = Bitmap.createBitmap(src, l, t, w, h)
-    return CropResult(cropped, l.toFloat(), t.toFloat())
-}
-private fun preprocess(bitmap: Bitmap): ByteBuffer {
+        val cropped = Bitmap.createBitmap(src, l, t, w, h)
+        return CropResult(cropped, l.toFloat(), t.toFloat())
+    }
+
+    private fun preprocessBitmap(bitmap: Bitmap): ByteBuffer {
         inputBuffer.rewind()
         bitmap.getPixels(pixels, 0, inputSize, 0, 0, inputSize, inputSize)
 
-        var i = 0
         for (px in pixels) {
             val r = (px shr 16) and 0xFF
             val g = (px shr 8) and 0xFF
@@ -390,10 +433,10 @@ private fun preprocess(bitmap: Bitmap): ByteBuffer {
                 inputBuffer.put(g.toByte())
                 inputBuffer.put(b.toByte())
             }
-            i++
         }
 
         inputBuffer.rewind()
         return inputBuffer
     }
+
 }

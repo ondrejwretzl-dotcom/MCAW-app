@@ -2,7 +2,6 @@ package com.mcaw.ai
 
 import android.content.Context
 import android.content.Intent
-import android.graphics.Bitmap
 import android.graphics.RectF
 import android.graphics.PointF
 import android.media.AudioManager
@@ -134,47 +133,38 @@ class DetectionAnalyzer(
             frameIndex += 1
             val tsMs = System.currentTimeMillis()
 
-            val rawBitmap = ImageUtils.imageProxyToBitmap(image, ctx) ?: run {
-                sendOverlayClear()
-                sendMetricsClear()
-                return
-            }
-
             val rotation = image.imageInfo.rotationDegrees
-            val bitmap = ImageUtils.rotateBitmap(rawBitmap, rotation)
-
-            val frameW = bitmap.width.toFloat()
-            val frameH = bitmap.height.toFloat()
+            val (frameWRotI, frameHRotI) = ImagePreprocessor.rotatedFrameSize(image.width, image.height, rotation)
+            val frameW = frameWRotI.toFloat()
+            val frameH = frameHRotI.toFloat()
 
             val roiTrap = roiTrapezoidPx(frameW, frameH)
-            val roiBitmapAndOffset = cropForRoi(bitmap, roiTrap.bounds)
-            val roiBitmap = roiBitmapAndOffset.first
-            val roiOffset = roiBitmapAndOffset.second
+            val roiRect = android.graphics.Rect(
+                roiTrap.bounds.left.toInt(),
+                roiTrap.bounds.top.toInt(),
+                roiTrap.bounds.right.toInt(),
+                roiTrap.bounds.bottom.toInt()
+            )
 
             flog(
-                "frame proxy=${image.width}x${image.height} rot=$rotation " +
-                    "bmpRaw=${rawBitmap.width}x${rawBitmap.height} bmpRot=${bitmap.width}x${bitmap.height} " +
-                    "model=${AppPreferences.selectedModel}"
+                "frame proxy=${image.width}x${image.height} rot=$rotation rotFrame=${frameWRotI}x${frameHRotI} model=${AppPreferences.selectedModel}"
             )
 
             if (AppPreferences.debugOverlay) {
                 Log.d(
                     "DetectionAnalyzer",
-                    "frame imageProxy=${image.width}x${image.height} rot=$rotation bmpRot=${bitmap.width}x${bitmap.height}"
+                    "frame imageProxy=${image.width}x${image.height} rot=$rotation rotFrame=${frameWRotI}x${frameHRotI}"
                 )
             }
-
-            val riderSpeedRawMps = speedProvider.getCurrent().speedMps
+val riderSpeedRawMps = speedProvider.getCurrent().speedMps
             val riderSpeedMps = smoothRiderSpeed(riderSpeedRawMps)
 
             // Run detector on ROI crop for performance + to avoid picking dashboard/edges.
-            val rawDetectionsRoi = when (AppPreferences.selectedModel) {
-                0 -> yolo?.detect(roiBitmap).orEmpty()
-                1 -> det?.detect(roiBitmap).orEmpty()
+            val rawDetections = when (AppPreferences.selectedModel) {
+                0 -> yolo?.detect(image, roiRect, rotation).orEmpty()
+                1 -> det?.detect(image, roiRect, rotation).orEmpty()
                 else -> emptyList()
             }
-
-            val rawDetections = mapDetectionsFromRoiToFrame(rawDetectionsRoi, roiOffset)
 
             // Hard gate: keep only detections that are at least 80% inside ROI.
             val gatedDetections = rawDetections.filter { d ->
@@ -187,7 +177,7 @@ class DetectionAnalyzer(
             if (AppPreferences.debugOverlay) {
                 flog(
                     "roi trap n=${AppPreferences.getRoiTrapezoidNormalized()} boundsPx=[${roiTrap.bounds.left.toInt()},${roiTrap.bounds.top.toInt()},${roiTrap.bounds.right.toInt()},${roiTrap.bounds.bottom.toInt()}] " +
-                        "crop=${roiBitmap.width}x${roiBitmap.height} offset=(${roiOffset.first},${roiOffset.second}) rawRoi=${rawDetectionsRoi.size} rawMapped=${rawDetections.size} gated=${gatedDetections.size}"
+                        "raw=${rawDetections.size} gated=${gatedDetections.size}"
                 )
             }
 
@@ -217,8 +207,8 @@ class DetectionAnalyzer(
 
             val distanceRaw = DetectionPhysics.estimateDistanceMeters(
                 bbox = bestBox,
-                frameHeightPx = bitmap.height,
-                focalPx = estimateFocalLengthPx(bitmap.height),
+                frameHeightPx = frameHRotI,
+                focalPx = estimateFocalLengthPx(frameHRotI),
                 realHeightM = if (label == "motorcycle" || label == "bicycle") 1.3f else 1.5f
             )
 
@@ -231,7 +221,8 @@ class DetectionAnalyzer(
             val brakeCue = if (AppPreferences.brakeCueEnabled) {
                 computeBrakeCue(
                     tsMs = tsMs,
-                    frameBitmap = bitmap,
+                    image = image,
+                    rotationDegrees = rotation,
                     box = bestBox,
                     label = label,
                     riderSpeedMps = riderSpeedMps,
@@ -1020,39 +1011,6 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
     }
 
 
-    /**
-     * Crops bitmap to ROI for detector input. Returns (roiBitmap, offsetPx(left,top)).
-     * If ROI is invalid, returns original bitmap and (0,0).
-     */
-    private fun cropForRoi(src: Bitmap, roiPx: RectF): Pair<Bitmap, Pair<Int, Int>> {
-        val left = roiPx.left.roundToInt().coerceIn(0, src.width - 1)
-        val top = roiPx.top.roundToInt().coerceIn(0, src.height - 1)
-        val right = roiPx.right.roundToInt().coerceIn(left + 1, src.width)
-        val bottom = roiPx.bottom.roundToInt().coerceIn(top + 1, src.height)
-        val w = (right - left).coerceAtLeast(2)
-        val h = (bottom - top).coerceAtLeast(2)
-        if (left == 0 && top == 0 && w == src.width && h == src.height) {
-            return src to (0 to 0)
-        }
-        val cropped = try {
-            Bitmap.createBitmap(src, left, top, w, h)
-        } catch (_: IllegalArgumentException) {
-            src
-        }
-        return cropped to (left to top)
-    }
-
-    /** Map detection boxes from ROI-cropped bitmap coords back to full frame coords. */
-    private fun mapDetectionsFromRoiToFrame(dets: List<Detection>, offset: Pair<Int, Int>): List<Detection> {
-        val ox = offset.first.toFloat()
-        val oy = offset.second.toFloat()
-        if (ox == 0f && oy == 0f) return dets
-        return dets.map { d ->
-            val b = d.box
-            d.copy(box = Box(b.x1 + ox, b.y1 + oy, b.x2 + ox, b.y2 + oy))
-        }
-    }
-
     
     private fun estimateFocalLengthPx(frameHeightPx: Int): Float {
         val focalMm = AppPreferences.cameraFocalLengthMm
@@ -1081,7 +1039,8 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
 
     private fun computeBrakeCue(
         tsMs: Long,
-        frameBitmap: Bitmap,
+        image: ImageProxy,
+        rotationDegrees: Int,
         box: Box,
         label: String,
         riderSpeedMps: Float,
@@ -1114,7 +1073,7 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
             return BrakeCueResult(false, 0f, 0f, 0f)
         }
 
-        val sample = sampleBrakeLightSignal(frameBitmap, box)
+        val sample = sampleBrakeLightSignal(image, rotationDegrees, box)
         val redRatio = sample.first
         val intensity = sample.second
 
@@ -1166,15 +1125,14 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
      * - měří poměr "červených" pixelů + průměrnou intenzitu červené složky.
      * Sampling stride drží výkon.
      */
-    private fun sampleBrakeLightSignal(frame: Bitmap, box: Box): Pair<Float, Float> {
-        val w = frame.width
-        val h = frame.height
-        if (w <= 0 || h <= 0) return 0f to 0f
+    private fun sampleBrakeLightSignal(image: ImageProxy, rotationDegrees: Int, box: Box): Pair<Float, Float> {
+        val (frameWRot, frameHRot) = ImagePreprocessor.rotatedFrameSize(image.width, image.height, rotationDegrees)
+        if (frameWRot <= 0 || frameHRot <= 0) return 0f to 0f
 
-        val x1 = box.x1.toInt().coerceIn(0, w - 1)
-        val y1 = box.y1.toInt().coerceIn(0, h - 1)
-        val x2 = box.x2.toInt().coerceIn(0, w - 1)
-        val y2 = box.y2.toInt().coerceIn(0, h - 1)
+        val x1 = box.x1.toInt().coerceIn(0, frameWRot - 1)
+        val y1 = box.y1.toInt().coerceIn(0, frameHRot - 1)
+        val x2 = box.x2.toInt().coerceIn(0, frameWRot - 1)
+        val y2 = box.y2.toInt().coerceIn(0, frameHRot - 1)
         val left = min(x1, x2)
         val right = max(x1, x2)
         val top = min(y1, y2)
@@ -1186,8 +1144,10 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
         val roiTop = (bottom - (bh * 0.60f)).toInt().coerceIn(top, bottom - 1)
         val roiBottom = bottom
         val insetX = (bw * 0.12f).toInt().coerceAtLeast(0)
-        val roiLeft = (left + insetX).coerceIn(0, w - 1)
-        val roiRight = (right - insetX).coerceIn(roiLeft + 1, w)
+        val roiLeft = (left + insetX).coerceIn(0, frameWRot - 1)
+        val roiRight = (right - insetX).coerceIn(roiLeft + 1, frameWRot)
+
+        val sampler = ImagePreprocessor.newSampler(image, rotationDegrees)
 
         val step = 3 // performance
         var redCount = 0
@@ -1198,12 +1158,11 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
         while (yy < roiBottom) {
             var xx = roiLeft
             while (xx < roiRight) {
-                val c = frame.getPixel(xx, yy)
-                val r = (c shr 16) and 0xFF
-                val g = (c shr 8) and 0xFF
-                val b = c and 0xFF
+                val c = ImagePreprocessor.sampleRgb8Bilinear(sampler, xx.toFloat(), yy.toFloat())
+                val r = c.r
+                val g = c.g
+                val b = c.b
 
-                // červená heuristika
                 val isRed = r > 80 && r > (g * 13 / 10) && r > (b * 13 / 10)
                 if (isRed) redCount += 1
                 sumRed += r.toLong()

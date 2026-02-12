@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Rect
 import android.util.Log
+import androidx.camera.core.ImageProxy
 import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
@@ -24,7 +25,6 @@ class YoloOnnxDetector(
     private val session: OrtSession
 
     // Reuse buffers to reduce GC / CPU.
-    private val pixels = IntArray(inputSize * inputSize)
     private val hw = inputSize * inputSize
     private val chw = 3 * hw
     private val data = FloatArray(chw)
@@ -54,8 +54,57 @@ class YoloOnnxDetector(
                 val out = result[0] as OnnxTensor
                 out.use {
                     val arr = it.floatBuffer.toArray()
-					val dets = parseYoloOutput(arr, it.info.shape, cropBitmap.width, cropBitmap.height)
-					if (crop.offsetX == 0f && crop.offsetY == 0f) return dets
+                    val dets = parseYoloOutput(arr, it.info.shape, cropBitmap.width, cropBitmap.height)
+                    if (crop.offsetX == 0f && crop.offsetY == 0f) return dets
+                    return dets.map { d ->
+                        d.copy(
+                            box = Box(
+                                d.box.x1 + crop.offsetX,
+                                d.box.y1 + crop.offsetY,
+                                d.box.x2 + crop.offsetX,
+                                d.box.y2 + crop.offsetY
+                            )
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    // ---- BYTEBUFFER_PIPELINE: ImageProxy -> Float NCHW ----
+    /**
+     * Přímá detekce z ImageProxy bez Bitmap/JPEG.
+     * ROI je v rotated frame souřadnicích (po aplikaci [rotationDegrees]).
+     *
+     * Returned boxes are always in coordinates of the full rotated frame (tj. už s offsetem ROI).
+     */
+    fun detect(image: ImageProxy, roiPx: Rect?, rotationDegrees: Int): List<Detection> {
+        val (frameWRot, frameHRot) = ImagePreprocessor.rotatedFrameSize(image.width, image.height, rotationDegrees)
+        val crop = ImagePreprocessor.sanitizeCrop(frameWRot, frameHRot, roiPx)
+
+        // Fill NCHW float [0..1] directly into reused array
+        ImagePreprocessor.fillFloatNchwRgb01(
+            image = image,
+            rotationDegrees = rotationDegrees,
+            crop = crop,
+            inputSize = inputSize,
+            out = data
+        )
+
+        val inputName = session.inputNames.iterator().next()
+        val input = OnnxTensor.createTensor(
+            env,
+            FloatBuffer.wrap(data),
+            longArrayOf(1, 3, inputSize.toLong(), inputSize.toLong())
+        )
+
+        input.use {
+            session.run(mapOf(inputName to it)).use { result ->
+                val out = result[0] as OnnxTensor
+                out.use { t ->
+                    val arr = t.floatBuffer.toArray()
+                    val dets = parseYoloOutput(arr, t.info.shape, crop.width, crop.height)
+                    if (crop.left == 0 && crop.top == 0) return dets
                     return dets.map { d ->
                         d.copy(
                             box = Box(
@@ -84,12 +133,12 @@ class YoloOnnxDetector(
         val w = max(1, r - l)
         val h = max(1, b - t)
 
-        // createBitmap may share pixels depending on config; ok for our use.
         val cropped = Bitmap.createBitmap(src, l, t, w, h)
         return CropResult(cropped, l.toFloat(), t.toFloat())
     }
 
     private fun preprocessNchw(bmp: Bitmap): OnnxTensor {
+        val pixels = IntArray(inputSize * inputSize)
         bmp.getPixels(pixels, 0, inputSize, 0, 0, inputSize, inputSize)
 
         // NCHW float32 normalized 0..1
