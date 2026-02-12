@@ -30,6 +30,14 @@ jobs:
       - name: Verify Gradle
         run: gradle -v
 
+      # DŮLEŽITÉ: bez tohoto se na každém fresh runneru vytvoří nový debug.keystore,
+      # a APK pak nejde aktualizovat (INSTALL_FAILED_UPDATE_INCOMPATIBLE / "Aplikace v konfliktu").
+      - name: Cache debug keystore
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: mcaw-debug-keystore-v1
+
       # Build bez wrapperu
       - name: Build Debug
         run: gradle --no-daemon assembleDebug
