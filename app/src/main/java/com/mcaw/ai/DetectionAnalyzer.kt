@@ -216,7 +216,7 @@ val riderSpeedRawMps = speedProvider.getCurrent().speedMps
             }
 
             val tracked = tracker.update(post.accepted)
-            val bestTrack = selectLockedTarget(tracked, frameW, frameH)
+            val bestTrack = selectLockedTarget(tracked, frameW, frameH, roiTrap)
 
             if (bestTrack == null) {
                 lockedTrackId = null
@@ -246,7 +246,9 @@ val riderSpeedRawMps = speedProvider.getCurrent().speedMps
                 realHeightM = if (label == "motorcycle" || label == "bicycle") 1.3f else 1.5f
             )
 
-            val distanceM = smoothDistance(distanceRaw ?: Float.NaN)
+            val distanceScaled = if (distanceRaw != null && distanceRaw.isFinite()) distanceRaw * AppPreferences.distanceScale else distanceRaw
+
+            val distanceM = smoothDistance(distanceScaled ?: Float.NaN)
 
             // REL speed (signed internal) from sliding-window + EMA
             val relSpeedSigned = computeRelativeSpeedSignedWindow(bestTrack.id, distanceM, tsMs)
@@ -958,16 +960,49 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
         return ttc
     }
 
+
+    private fun egoOffsetInRoiN(box: Box, frameW: Float, frameH: Float, maxOffset: Float): Float {
+        if (frameW <= 0f || frameH <= 0f) return 1f
+        val roi = AppPreferences.getRoiTrapezoidNormalized()
+        val cxN = (box.cx / frameW).coerceIn(0f, 1f)
+        val yBottomN = (box.y2 / frameH).coerceIn(0f, 1f)
+
+        // If bottom is outside ROI vertical span, treat as outside.
+        if (yBottomN < roi.topY || yBottomN > roi.bottomY) return 1f
+
+        // Linear interpolate half-width between top and bottom at given y.
+        val t = ((yBottomN - roi.topY) / (roi.bottomY - roi.topY)).coerceIn(0f, 1f)
+        val halfW = (roi.topHalfW + (roi.bottomHalfW - roi.topHalfW) * t).coerceAtLeast(0.001f)
+
+        val off = kotlin.math.abs(cxN - roi.centerX) / halfW
+        // Normalize by maxOffset so priority can use it too if needed.
+        return off.coerceIn(0f, 2f)
+    }
+
     private fun selectLockedTarget(
         tracks: List<TemporalTracker.TrackedDetection>,
         frameW: Float,
-        frameH: Float
+        frameH: Float,
+        roiTrap: RoiTrapPx
     ): TemporalTracker.TrackedDetection? {
         if (tracks.isEmpty() || frameW <= 0f || frameH <= 0f) return null
 
         val gated = tracks.filter { it.alertGatePassed && it.misses == 0 }
         val pool = if (gated.isNotEmpty()) gated else tracks.filter { it.misses == 0 }
         if (pool.isEmpty()) return null
+
+        // Optional ego-path gating inside ROI trapezoid (reduces side-object false positives in city).
+        // Keeps behavior backward-compatible: if gating removes everything, fallback to original pool.
+        val poolEgo = if (AppPreferences.laneFilter) {
+            val maxOff = AppPreferences.laneEgoMaxOffset
+            val filtered = pool.filter { t ->
+                egoOffsetInRoiN(t.detection.box, frameW, frameH, maxOff) <= maxOff
+            }
+            if (filtered.isNotEmpty()) filtered else pool
+        } else {
+            pool
+        }
+
 
         fun priority(t: TemporalTracker.TrackedDetection): Float {
             val d = t.detection
@@ -979,14 +1014,21 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
             val dy = abs(cyN - 0.55f)
             val centerScore = (1f - (dx * 1.4f + dy * 1.0f)).coerceIn(0f, 1f)
             val score = d.score.coerceIn(0f, 1f)
-            return (areaNorm * 0.55f) + (centerScore * 0.30f) + (score * 0.15f)
+            val egoScore = if (AppPreferences.laneFilter) {
+                val maxOff = AppPreferences.laneEgoMaxOffset
+                val off = egoOffsetInRoiN(b, frameW, frameH, maxOff)
+                (1f - (off / maxOff)).coerceIn(0f, 1f)
+            } else {
+                0.5f
+            }
+            return (areaNorm * 0.45f) + (centerScore * 0.25f) + (score * 0.15f) + (egoScore * 0.15f)
         }
 
-        val bestNow = pool.maxByOrNull { priority(it) } ?: return null
+        val bestNow = poolEgo.maxByOrNull { priority(it) } ?: return null
         val bestNowPrio = priority(bestNow)
 
         val lockedId = lockedTrackId
-        val locked = if (lockedId != null) pool.firstOrNull { it.id == lockedId } else null
+        val locked = if (lockedId != null) poolEgo.firstOrNull { it.id == lockedId } else null
 
         if (locked == null) {
             lockedTrackId = bestNow.id

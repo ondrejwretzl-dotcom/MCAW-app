@@ -18,6 +18,24 @@ object AppPreferences {
     @Volatile
     var cameraSensorHeightMm: Float = Float.NaN
 
+
+    // ---- Calibration / robustness knobs ----
+    /**
+     * Násobek vzdálenosti z monokulárního odhadu (1.0 = beze změny).
+     * Praktické pro doladění podle telefonu / FOV / EIS cropu bez rozbití pipeline.
+     */
+    var distanceScale: Float
+        get() = prefs.getFloat("calib_distance_scale", 1.0f).coerceIn(0.50f, 2.00f)
+        set(v) = prefs.edit().putFloat("calib_distance_scale", v.coerceIn(0.50f, 2.00f)).apply()
+
+    /**
+     * Maximální dovolený laterální offset cíle v rámci ROI trapezoidu (ego-path gating).
+     * 0 = jen přesný střed, 1 = celý trapezoid. Default 0.55 = konzervativní město.
+     */
+    var laneEgoMaxOffset: Float
+        get() = prefs.getFloat("lane_ego_max_offset", 0.55f).coerceIn(0.20f, 1.00f)
+        set(v) = prefs.edit().putFloat("lane_ego_max_offset", v.coerceIn(0.20f, 1.00f)).apply()
+
     fun init(ctx: Context) {
         prefs = ctx.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
     }
