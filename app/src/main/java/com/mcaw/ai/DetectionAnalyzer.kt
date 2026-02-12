@@ -505,7 +505,7 @@ private fun handleAlerts(level: Int) {
                 AppPreferences.userSpeedRed
             )
 
-            else -> AlertThresholds(3.0f, 1.5f, 16f, 9f, 3f, 5f)
+            else -> AlertThresholds(3.0f, 1.2f, 15f, 8f, 3f, 5f)
         }
     }
 

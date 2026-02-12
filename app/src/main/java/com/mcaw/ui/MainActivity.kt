@@ -1,12 +1,13 @@
 package com.mcaw.ui
 
 import android.Manifest
+import android.animation.ValueAnimator
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.animation.ValueAnimator
+import android.os.SystemClock
 import android.view.View
 import android.widget.Button
 import android.widget.TextView
@@ -45,13 +46,22 @@ class MainActivity : ComponentActivity() {
     private var pendingAction: PendingAction? = null
     private lateinit var speedProvider: SpeedProvider
     private lateinit var speedMonitor: SpeedMonitor
+    private var speedMonitorStarted: Boolean = false
+
     private val logLines: ArrayDeque<String> = ArrayDeque()
     private val speedHandler = Handler(Looper.getMainLooper())
     private var activityLogFileName: String = ""
 
+    // --- Rider speed UX stabilization ---
+    // Metrics from DetectionAnalyzer should be the primary source (when camera/service runs).
+    // SpeedMonitor polling stays as a fallback only when metrics haven't arrived recently.
+    private var lastMetricsRiderSpeedUpdateMs: Long = 0L
+    private var lastRiderSpeedText: String? = null
+
     private val metricsReceiver = object : android.content.BroadcastReceiver() {
         override fun onReceive(context: android.content.Context?, intent: android.content.Intent?) {
             if (intent == null) return
+
             val ttc = intent.getFloatExtra(DetectionAnalyzer.EXTRA_TTC, Float.POSITIVE_INFINITY)
             val distance =
                 intent.getFloatExtra(DetectionAnalyzer.EXTRA_DISTANCE, Float.POSITIVE_INFINITY)
@@ -62,16 +72,18 @@ class MainActivity : ComponentActivity() {
                 intent.getFloatExtra(DetectionAnalyzer.EXTRA_RIDER_SPEED, Float.POSITIVE_INFINITY)
             val level = intent.getIntExtra(DetectionAnalyzer.EXTRA_LEVEL, 0)
             val label = intent.getStringExtra(DetectionAnalyzer.EXTRA_LABEL)
-            val brakeCue = intent.getBooleanExtra("brake_cue", false) || intent.getBooleanExtra("extra_brake_cue", false)
+            val brakeCue =
+                intent.getBooleanExtra("brake_cue", false) || intent.getBooleanExtra("extra_brake_cue", false)
 
             txtTtc.text = if (ttc.isFinite()) "TTC: %.2f s".format(ttc) else "TTC: --.- s"
             txtDistance.text =
                 if (distance.isFinite()) "Vzdálenost: %.2f m".format(distance) else
                     "Vzdálenost: --.- m"
-            val riderKmh = if (riderSpeed.isFinite()) riderSpeed * 3.6f else Float.POSITIVE_INFINITY
-            txtRiderSpeed.text =
-                if (riderKmh.isFinite()) "Rychlost jezdce: %.1f km/h".format(riderKmh) else
-                    "Rychlost jezdce: --.- km/h"
+
+            // Rider speed from analyzer (primary)
+            val riderText = formatRiderSpeedFromMps(riderSpeed)
+            applyRiderSpeedText(riderText, fromMetrics = true)
+
             val speedKmh = if (speed.isFinite()) speed * 3.6f else Float.POSITIVE_INFINITY
             val objKmh = if (objectSpeed.isFinite()) objectSpeed * 3.6f else Float.POSITIVE_INFINITY
 
@@ -81,6 +93,7 @@ class MainActivity : ComponentActivity() {
             txtObjectSpeed.text =
                 if (objKmh.isFinite()) "Rychlost objektu: %.1f km/h".format(objKmh) else
                     "Rychlost objektu: --.- km/h"
+
             val mappedLabel = LabelMapper.mapLabel(label)
             txtDetectedObject.text = if (mappedLabel.isNotBlank()) {
                 "Detekovaný objekt: $mappedLabel"
@@ -105,7 +118,9 @@ class MainActivity : ComponentActivity() {
 
             // Celkový stav (overall level) promítneme do statusu, aby bylo jasné, že může být horší než TTC
             txtStatus.setTextColor(overallColor)
-            applyVisualAlert(level, ttcLevel, riderKmh)
+
+            val riderKmhForUi = if (riderSpeed.isFinite()) riderSpeed * 3.6f else Float.POSITIVE_INFINITY
+            applyVisualAlert(level, ttcLevel, riderKmhForUi)
 
             val relKmhLog = if (speed.isFinite()) speed * 3.6f else Float.POSITIVE_INFINITY
             val objKmhLog = if (objectSpeed.isFinite()) objectSpeed * 3.6f else Float.POSITIVE_INFINITY
@@ -118,7 +133,7 @@ class MainActivity : ComponentActivity() {
             logActivity(
                 "metrics ttc=${formatMetric(ttc, "s")} dist=${formatMetric(distance, "m")} " +
                     "rel=${formatMetric(relKmhLog, "km/h")} obj=${formatMetric(objKmhLog, "km/h")} " +
-                    "level=$level"
+                    "level=$level brakeCue=$brakeCue"
             )
         }
     }
@@ -146,6 +161,7 @@ class MainActivity : ComponentActivity() {
         brakeLamp = findViewById(R.id.brakeLamp)
         txtBrakeLamp = findViewById(R.id.txtBrakeLamp)
         updateBrakeLamp(false)
+
         speedProvider = SpeedProvider(this)
         speedMonitor = SpeedMonitor(speedProvider)
         activityLogFileName = "mcaw_activity_${sessionStamp()}.txt"
@@ -195,7 +211,7 @@ class MainActivity : ComponentActivity() {
                 ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
             }) {
             runAction(action)
-            speedMonitor.start()
+            startSpeedMonitorIfPermitted()
             addLog("Ověřeno oprávnění: vše v pořádku")
             logActivity("permissions_ok")
             return
@@ -204,6 +220,24 @@ class MainActivity : ComponentActivity() {
         ActivityCompat.requestPermissions(this, requiredPerms, 1001)
         addLog("Žádost o oprávnění: kamera + poloha")
         logActivity("permissions_request")
+    }
+
+    private fun startSpeedMonitorIfPermitted() {
+        if (requiredPerms.any {
+                ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+            }) return
+
+        if (!speedMonitorStarted) {
+            speedMonitor.start()
+            speedMonitorStarted = true
+        }
+    }
+
+    private fun stopSpeedMonitor() {
+        if (speedMonitorStarted) {
+            speedMonitor.stop()
+            speedMonitorStarted = false
+        }
     }
 
     private fun startEngine() {
@@ -237,7 +271,7 @@ class MainActivity : ComponentActivity() {
             if (action != null) {
                 runAction(action)
             }
-            speedMonitor.start()
+            startSpeedMonitorIfPermitted()
             addLog("Oprávnění udělena")
             logActivity("permissions_granted")
         } else {
@@ -254,20 +288,20 @@ class MainActivity : ComponentActivity() {
         } else {
             registerReceiver(metricsReceiver, filter)
         }
-        if (requiredPerms.all {
-                ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
-            }) {
-            speedMonitor.start()
+
+        startSpeedMonitorIfPermitted()
+        if (speedMonitorStarted) {
             addLog("GPS monitor spuštěn")
             logActivity("gps_monitor_start")
         }
+
         startSpeedUpdates()
     }
 
     override fun onStop() {
         unregisterReceiver(metricsReceiver)
         stopPulse()
-        speedMonitor.stop()
+        stopSpeedMonitor()
         addLog("GPS monitor zastaven")
         logActivity("gps_monitor_stop")
         stopSpeedUpdates()
@@ -303,7 +337,6 @@ class MainActivity : ComponentActivity() {
         logActivity("ui_log $message")
     }
 
-    
     private data class AlertThresholds(
         val ttcOrange: Float,
         val ttcRed: Float
@@ -331,7 +364,6 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun applyVisualAlert(overallLevel: Int, ttcLevel: Int, riderKmh: Float) {
-        // Status text: reflect whether alerts are gated by low speed
         val riderStanding = riderKmh.isFinite() && riderKmh < 2.0f
         txtStatus.text = when {
             !serviceRunning -> "Služba: ZASTAVENA"
@@ -341,15 +373,13 @@ class MainActivity : ComponentActivity() {
             else -> "Služba: AKTIVNÍ · OK"
         }
 
-        // Background emphasis (safe -> calm, warning -> orange pulse, critical -> red pulse)
         val bgColor = when (overallLevel) {
-            2 -> android.graphics.Color.parseColor("#331B1B") // dark red
-            1 -> android.graphics.Color.parseColor("#332514") // dark orange
+            2 -> android.graphics.Color.parseColor("#331B1B")
+            1 -> android.graphics.Color.parseColor("#332514")
             else -> android.graphics.Color.parseColor("#1E222A")
         }
         txtStatus.setBackgroundColor(bgColor)
 
-        // TTC text background follows TTC level (so user sees TTC threshold crossing clearly)
         val ttcBg = when (ttcLevel) {
             2 -> android.graphics.Color.parseColor("#331B1B")
             1 -> android.graphics.Color.parseColor("#332514")
@@ -357,7 +387,6 @@ class MainActivity : ComponentActivity() {
         }
         txtTtc.setBackgroundColor(ttcBg)
 
-        // Pulse panel only when service is running + danger state (and not standing)
         val shouldPulse = serviceRunning && !riderStanding && overallLevel > 0
         if (shouldPulse) startPulse(overallLevel) else stopPulse()
     }
@@ -383,10 +412,9 @@ class MainActivity : ComponentActivity() {
         panelMetrics.alpha = 1f
     }
 
-
     private fun updateBrakeLamp(active: Boolean) {
-        // Semafor: zhasnuto = nebrzdi, cervene = brzdi
-        val color = if (active) android.graphics.Color.parseColor("#FF2D2D") else android.graphics.Color.parseColor("#3A3F4A")
+        val color =
+            if (active) android.graphics.Color.parseColor("#FF2D2D") else android.graphics.Color.parseColor("#3A3F4A")
         val bg = (brakeLamp.background as? android.graphics.drawable.GradientDrawable)
             ?: android.graphics.drawable.GradientDrawable().apply {
                 shape = android.graphics.drawable.GradientDrawable.OVAL
@@ -402,16 +430,23 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-private fun formatMetric(value: Float, unit: String): String {
+    private fun formatMetric(value: Float, unit: String): String {
         return if (value.isFinite()) "%.2f %s".format(value, unit) else "--.- $unit"
     }
 
     private fun startSpeedUpdates() {
         speedHandler.post(object : Runnable {
             override fun run() {
-                val speedMps = speedMonitor.pollCurrentSpeedMps()
-                val speedKmh = speedMps * 3.6f
-                txtRiderSpeed.text = "Rychlost jezdce: %.1f km/h".format(speedKmh)
+                // Fallback speed update only if analyzer metrics haven't updated recently.
+                val now = SystemClock.elapsedRealtime()
+                val allowFallback = (now - lastMetricsRiderSpeedUpdateMs) > 1500L
+
+                if (allowFallback) {
+                    val speedMps = speedMonitor.pollCurrentSpeedMps()
+                    val text = formatRiderSpeedFromMps(speedMps)
+                    applyRiderSpeedText(text, fromMetrics = false)
+                }
+
                 speedHandler.postDelayed(this, 1000L)
             }
         })
@@ -419,6 +454,25 @@ private fun formatMetric(value: Float, unit: String): String {
 
     private fun stopSpeedUpdates() {
         speedHandler.removeCallbacksAndMessages(null)
+    }
+
+    private fun formatRiderSpeedFromMps(speedMps: Float): String {
+        if (!speedMps.isFinite() || speedMps < 0f) return "Rychlost jezdce: --.- km/h"
+
+        // deadband (GPS jitter at low speeds)
+        val deadbandMps = 0.5f // ~1.8 km/h
+        val v = if (speedMps < deadbandMps) 0f else speedMps.coerceIn(0f, 80f)
+        val kmh = v * 3.6f
+        return "Rychlost jezdce: %.1f km/h".format(kmh)
+    }
+
+    private fun applyRiderSpeedText(text: String, fromMetrics: Boolean) {
+        if (fromMetrics) {
+            lastMetricsRiderSpeedUpdateMs = SystemClock.elapsedRealtime()
+        }
+        if (lastRiderSpeedText == text) return
+        txtRiderSpeed.text = text
+        lastRiderSpeedText = text
     }
 
     private fun logActivity(message: String) {
@@ -439,3 +493,4 @@ private fun formatMetric(value: Float, unit: String): String {
         OPEN_CAMERA
     }
 }
+
