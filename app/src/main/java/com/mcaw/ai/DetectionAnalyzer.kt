@@ -5,11 +5,11 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.RectF
 import android.graphics.PointF
-import android.os.SystemClock
 import android.media.AudioManager
 import android.media.MediaPlayer
 import android.os.VibrationEffect
 import android.os.Vibrator
+import android.os.SystemClock
 import android.speech.tts.TextToSpeech
 import android.util.Log
 import androidx.camera.core.ImageAnalysis
@@ -47,11 +47,23 @@ class DetectionAnalyzer(
 
     private val analyzerLogFileName: String = "mcaw_analyzer_${System.currentTimeMillis()}.txt"
 
+
+    // Performance tuning (PACK1_THROTTLE_LOG_TRACK2)
+    private var frameIndex: Long = 0L
+    private var lastMetricsSentElapsedMs: Long = 0L
+    private var lastOverlaySentElapsedMs: Long = 0L
+    private var lastMetricsSentAlertLevel: Int = -1
+    private var lastOverlaySentAlertLevel: Int = -1
+
+    private val metricsIntervalMs: Long = 80L   // ~12.5 Hz
+    private val overlayIntervalMs: Long = 80L   // ~12.5 Hz
+    private val logEveryNFrames: Long = 10L     // log sampling when debug overlay enabled
+
     private val postProcessor = DetectionPostProcessor(
         DetectionPostProcessor.Config(debug = AppPreferences.debugOverlay)
     )
 
-    private val tracker = TemporalTracker(minConsecutiveForAlert = 3)
+    private val tracker = TemporalTracker(minConsecutiveForAlert = 2)
 
     // Target lock to avoid switching between objects (stability for TTC/alerts)
     private var lockedTrackId: Long? = null
@@ -102,8 +114,9 @@ class DetectionAnalyzer(
 
     private var tts: TextToSpeech? = null
 
-    private fun flog(msg: String) {
+    private fun flog(msg: String, force: Boolean = false) {
         if (!AppPreferences.debugOverlay) return
+        if (!force && (frameIndex % logEveryNFrames != 0L)) return
         PublicLogWriter.appendLogLine(ctx, analyzerLogFileName, msg)
     }
 
@@ -117,6 +130,7 @@ class DetectionAnalyzer(
 
     override fun analyze(image: ImageProxy) {
         try {
+            frameIndex += 1
             val tsMs = System.currentTimeMillis()
 
             val rawBitmap = ImageUtils.imageProxyToBitmap(image, ctx) ?: run {
@@ -149,22 +163,8 @@ class DetectionAnalyzer(
                 )
             }
 
-            val riderReading = speedProvider.getCurrent()
-            val riderSpeedRawMps = riderReading.speedMps
+            val riderSpeedRawMps = speedProvider.getCurrent().speedMps
             val riderSpeedMps = smoothRiderSpeed(riderSpeedRawMps)
-
-            // Speed validity is based on the provider state (not on a numeric value),
-            // so that "UNKNOWN speed" does not get treated as "standing still".
-            val nowSpeedMs = SystemClock.elapsedRealtime()
-            val riderSpeedValid =
-                riderReading.source != SpeedProvider.Source.UNKNOWN &&
-                    riderReading.confidence >= 0.50f &&
-                    (nowSpeedMs - riderReading.timestampMs) <= 2500L &&
-                    riderSpeedMps.isFinite() &&
-                    riderSpeedMps >= 0f
-
-            // Stationary gate applies ONLY when speed is valid (prevents disabling alerts in tunnels).
-            val riderStationary = riderSpeedValid && riderSpeedMps < (2.0f / 3.6f)
 
             // Run detector on ROI crop for performance + to avoid picking dashboard/edges.
             val rawDetectionsRoi = when (AppPreferences.selectedModel) {
@@ -281,15 +281,15 @@ class DetectionAnalyzer(
                 if (riderSpeedMps.isFinite()) (riderSpeedMps - relSpeedSigned) else Float.POSITIVE_INFINITY
 
             val thresholds = thresholdsForMode(AppPreferences.detectionMode)
+            val riderSpeedKnown = riderSpeedMps.isFinite()
+            val riderStanding = riderSpeedKnown && riderSpeedMps <= (2.0f / 3.6f) // < 2 km/h
 
-            // Gate alerts only when we are confidently stationary. If speed is UNKNOWN,
-            // keep alerts running based on TTC/distance/approach speed.
-            val level =
-                if (riderStationary) 0 else alertLevel(distanceM, approachSpeedMps, ttc, thresholds)
+            val level = if (riderStanding) 0 else alertLevel(distanceM, approachSpeedMps, ttc, thresholds)
 
-            if (riderStationary) {
+            if (riderStanding) {
                 stopActiveAlerts()
             } else {
+                // When speed is UNKNOWN, we still allow alerts (degraded mode) based on TTC/distance/approach speed.
                 handleAlerts(level)
             }
 
@@ -436,8 +436,17 @@ private fun handleAlerts(level: Int) {
         ttc: Float,
         label: String,
         brakeCue: Boolean,
-        alertLevel: Int
+        alertLevel: Int,
+        force: Boolean = false
     ) {
+        if (!AppPreferences.debugOverlay) return
+
+        val now = SystemClock.elapsedRealtime()
+        val shouldSend = force || (now - lastOverlaySentElapsedMs >= overlayIntervalMs) || (alertLevel != lastOverlaySentAlertLevel)
+        if (!shouldSend) return
+        lastOverlaySentElapsedMs = now
+        lastOverlaySentAlertLevel = alertLevel
+
         val roiN = AppPreferences.getRoiTrapezoidNormalized()
         val i = Intent("MCAW_DEBUG_UPDATE").setPackage(ctx.packageName)
         i.putExtra("clear", false)
@@ -466,6 +475,7 @@ private fun handleAlerts(level: Int) {
     }
 
     private fun sendOverlayClear() {
+        if (!AppPreferences.debugOverlay) return
         val roiN = AppPreferences.getRoiTrapezoidNormalized()
         val i = Intent("MCAW_DEBUG_UPDATE").setPackage(ctx.packageName)
         i.putExtra("clear", true)
@@ -484,8 +494,15 @@ private fun handleAlerts(level: Int) {
         ttc: Float,
         level: Int,
         label: String,
-        brakeCue: Boolean
+        brakeCue: Boolean,
+        force: Boolean = false
     ) {
+        val now = SystemClock.elapsedRealtime()
+        val shouldSend = force || (now - lastMetricsSentElapsedMs >= metricsIntervalMs) || (level != lastMetricsSentAlertLevel)
+        if (!shouldSend) return
+        lastMetricsSentElapsedMs = now
+        lastMetricsSentAlertLevel = level
+
         val i = Intent(ACTION_METRICS_UPDATE).setPackage(ctx.packageName)
         i.putExtra(EXTRA_DISTANCE, dist)
         i.putExtra(EXTRA_SPEED, approachSpeed)
@@ -507,7 +524,8 @@ private fun handleAlerts(level: Int) {
             ttc = Float.POSITIVE_INFINITY,
             level = 0,
             label = "",
-            brakeCue = false
+            brakeCue = false,
+            force = true
         )
     }
 
