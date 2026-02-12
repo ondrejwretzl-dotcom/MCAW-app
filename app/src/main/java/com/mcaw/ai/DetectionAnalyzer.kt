@@ -174,11 +174,13 @@ val riderSpeedRawMps = speedProvider.getCurrent().speedMps
             val riderSpeedMps = smoothRiderSpeed(riderSpeedRawMps)
 
             // Run detector on ROI crop for performance + to avoid picking dashboard/edges.
+            val tPreNs = SystemClock.elapsedRealtimeNanos()
             val rawDetections = when (AppPreferences.selectedModel) {
                 0 -> yolo?.detect(image, roiRect, rotation).orEmpty()
                 1 -> det?.detect(image, roiRect, rotation).orEmpty()
                 else -> emptyList()
             }
+            val tInferNs = SystemClock.elapsedRealtimeNanos()
 
             // Hard gate: keep only detections that are at least 80% inside ROI.
             val gatedDetections = rawDetections.filter { d ->
