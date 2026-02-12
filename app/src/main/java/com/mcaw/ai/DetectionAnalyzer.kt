@@ -5,7 +5,8 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.RectF
 import android.graphics.PointF
-import android.media.AudioManager
+import android.media.Audio
+import android.os.SystemClockManager
 import android.media.MediaPlayer
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -148,8 +149,22 @@ class DetectionAnalyzer(
                 )
             }
 
-            val riderSpeedRawMps = speedProvider.getCurrent().speedMps
+            val riderReading = speedProvider.getCurrent()
+            val riderSpeedRawMps = riderReading.speedMps
             val riderSpeedMps = smoothRiderSpeed(riderSpeedRawMps)
+
+            // Speed validity is based on the provider state (not on a numeric value),
+            // so that "UNKNOWN speed" does not get treated as "standing still".
+            val nowSpeedMs = SystemClock.elapsedRealtime()
+            val riderSpeedValid =
+                riderReading.source != SpeedProvider.Source.UNKNOWN &&
+                    riderReading.confidence >= 0.50f &&
+                    (nowSpeedMs - riderReading.timestampMs) <= 2500L &&
+                    riderSpeedMps.isFinite() &&
+                    riderSpeedMps >= 0f
+
+            // Stationary gate applies ONLY when speed is valid (prevents disabling alerts in tunnels).
+            val riderStationary = riderSpeedValid && riderSpeedMps < (2.0f / 3.6f)
 
             // Run detector on ROI crop for performance + to avoid picking dashboard/edges.
             val rawDetectionsRoi = when (AppPreferences.selectedModel) {
@@ -266,10 +281,13 @@ class DetectionAnalyzer(
                 if (riderSpeedMps.isFinite()) (riderSpeedMps - relSpeedSigned) else Float.POSITIVE_INFINITY
 
             val thresholds = thresholdsForMode(AppPreferences.detectionMode)
-            val level =
-                if (riderSpeedMps <= 0.01f) 0 else alertLevel(distanceM, approachSpeedMps, ttc, thresholds)
 
-            if (riderSpeedMps <= 0.01f) {
+            // Gate alerts only when we are confidently stationary. If speed is UNKNOWN,
+            // keep alerts running based on TTC/distance/approach speed.
+            val level =
+                if (riderStationary) 0 else alertLevel(distanceM, approachSpeedMps, ttc, thresholds)
+
+            if (riderStationary) {
                 stopActiveAlerts()
             } else {
                 handleAlerts(level)
@@ -555,7 +573,7 @@ private fun handleAlerts(level: Int) {
         if (!speedRawMps.isFinite() || speedRawMps < 0f) {
             riderSpeedEmaValid = false
             riderSpeedEma = 0f
-            return 0f
+            return Float.NaN
         }
         val deadband = 0.8f // ~2.9 km/h
         val v = if (speedRawMps < deadband) 0f else speedRawMps.coerceIn(0f, 80f)
