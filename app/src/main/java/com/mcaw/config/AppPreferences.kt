@@ -36,7 +36,49 @@ object AppPreferences {
         get() = prefs.getFloat("lane_ego_max_offset", 0.55f).coerceIn(0.20f, 1.00f)
         set(v) = prefs.edit().putFloat("lane_ego_max_offset", v.coerceIn(0.20f, 1.00f)).apply()
 
-    fun init(ctx: Context) {
+    
+/**
+ * Výška kamery nad zemí (m) pro ground-plane odhad vzdálenosti.
+ * Auto typicky ~1.1–1.5, moto často ~0.9–1.3 podle mountu.
+ */
+var cameraMountHeightM: Float
+    get() = prefs.getFloat("calib_camera_height_m", 1.20f).coerceIn(0.30f, 3.00f)
+    set(v) = prefs.edit().putFloat("calib_camera_height_m", v.coerceIn(0.30f, 3.00f)).apply()
+
+/**
+ * Náklon kamery (pitch) dolů v stupních. 0 = horizont, kladné hodnoty = dolů.
+ * Typicky 3–10°.
+ */
+var cameraPitchDownDeg: Float
+    get() = prefs.getFloat("calib_camera_pitch_deg", 6.0f).coerceIn(-10.0f, 25.0f)
+    set(v) = prefs.edit().putFloat("calib_camera_pitch_deg", v.coerceIn(-10.0f, 25.0f)).apply()
+
+/**
+ * Quality gating: při špatné kvalitě (tma / motion blur) přepne alerting do konzervativního režimu.
+ */
+var qualityGatingEnabled: Boolean
+    get() = prefs.getBoolean("quality_gating", true)
+    set(v) = prefs.edit().putBoolean("quality_gating", v).apply()
+
+/**
+ * Cut-in ochrana: dočasně povolí větší ego offset, když cíl rychle roste a míří do středu.
+ */
+var cutInProtectionEnabled: Boolean
+    get() = prefs.getBoolean("cutin_protection", true)
+    set(v) = prefs.edit().putBoolean("cutin_protection", v).apply()
+
+var cutInOffsetBoost: Float
+    get() = prefs.getFloat("cutin_offset_boost", 0.25f).coerceIn(0.05f, 0.50f)
+    set(v) = prefs.edit().putFloat("cutin_offset_boost", v.coerceIn(0.05f, 0.50f)).apply()
+
+var cutInBoostMs: Long
+    get() = prefs.getLong("cutin_boost_ms", 900L).coerceIn(200L, 2500L)
+    set(v) = prefs.edit().putLong("cutin_boost_ms", v.coerceIn(200L, 2500L)).apply()
+
+var cutInGrowthRatio: Float
+    get() = prefs.getFloat("cutin_growth_ratio", 1.25f).coerceIn(1.05f, 2.00f)
+    set(v) = prefs.edit().putFloat("cutin_growth_ratio", v.coerceIn(1.05f, 2.00f)).apply()
+fun init(ctx: Context) {
         prefs = ctx.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
     }
 

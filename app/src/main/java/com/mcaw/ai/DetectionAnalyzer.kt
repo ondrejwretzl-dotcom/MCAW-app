@@ -59,6 +59,66 @@ class DetectionAnalyzer(
     private val perf = PerfAgg()
 
 
+// Frame quality heuristics (cheap): low-light + low edge energy => likely blur/noise.
+private data class FrameQuality(val poor: Boolean, val meanLuma: Float, val meanGrad: Float)
+
+private fun assessFrameQuality(image: ImageProxy): FrameQuality {
+    if (!AppPreferences.qualityGatingEnabled) return FrameQuality(poor = false, meanLuma = Float.NaN, meanGrad = Float.NaN)
+    val plane = image.planes.firstOrNull() ?: return FrameQuality(false, Float.NaN, Float.NaN)
+    val buf = plane.buffer
+    val rowStride = plane.rowStride
+    val w = image.width
+    val h = image.height
+    if (w <= 0 || h <= 0 || rowStride <= 0) return FrameQuality(false, Float.NaN, Float.NaN)
+
+    // sample a central window to avoid sky/dashboard; works regardless of rotation.
+    val x0 = (w * 0.20f).toInt().coerceIn(0, w - 1)
+    val x1 = (w * 0.80f).toInt().coerceIn(x0 + 1, w)
+    val y0 = (h * 0.25f).toInt().coerceIn(0, h - 1)
+    val y1 = (h * 0.85f).toInt().coerceIn(y0 + 1, h)
+
+    val step = 10 // coarse subsample for speed
+    var sumL = 0.0
+    var sumG = 0.0
+    var n = 0
+
+    fun yAt(x: Int, y: Int): Int {
+        val idx = y * rowStride + x
+        return buf.get(idx).toInt() and 0xFF
+    }
+
+    try {
+        var y = y0
+        while (y < y1) {
+            var x = x0
+            while (x < x1 - 1) {
+                val p = yAt(x, y)
+                val p2 = yAt(x + 1, y)
+                val g = kotlin.math.abs(p2 - p)
+                sumL += p
+                sumG += g
+                n++
+                x += step
+            }
+            y += step
+        }
+    } catch (t: Throwable) {
+        return FrameQuality(false, Float.NaN, Float.NaN)
+    }
+
+    if (n <= 0) return FrameQuality(false, Float.NaN, Float.NaN)
+    val meanL = (sumL / n).toFloat()
+    val meanG = (sumG / n).toFloat()
+
+    // Thresholds tuned to be conservative on phones (Samsung A56).
+    val lowLight = meanL < 45f
+    val lowEdges = meanG < 6.0f
+    val poor = lowLight || lowEdges
+    return FrameQuality(poor = poor, meanLuma = meanL, meanGrad = meanG)
+}
+
+
+
     // Performance tuning (PACK1_THROTTLE_LOG_TRACK2)
     private var frameIndex: Long = 0L
     private var lastMetricsSentElapsedMs: Long = 0L
@@ -125,6 +185,55 @@ class DetectionAnalyzer(
     private var audioFocusRequest: Any? = null // AudioFocusRequest on API 26+, kept as Any for source compat
     private var audioFocusGranted: Boolean = false
 
+// --- Cut-in detection (dynamic ego offset boost) ---
+private var cutInPrevAreaNorm: Float = Float.NaN
+private var cutInPrevOffset: Float = Float.NaN
+private var cutInPrevTsMs: Long = -1L
+private var cutInBoostUntilMs: Long = -1L
+
+private fun dynamicEgoMaxOffset(tsMs: Long): Float {
+    val base = AppPreferences.laneEgoMaxOffset
+    if (!AppPreferences.cutInProtectionEnabled) return base
+    val boosted = if (cutInBoostUntilMs > 0L && tsMs <= cutInBoostUntilMs) {
+        (base + AppPreferences.cutInOffsetBoost).coerceIn(0.20f, 1.00f)
+    } else {
+        base
+    }
+    return boosted
+}
+
+private fun updateCutInState(tsMs: Long, box: Box, frameW: Float, frameH: Float) {
+    if (!AppPreferences.cutInProtectionEnabled) return
+    if (frameW <= 0f || frameH <= 0f) return
+
+    val areaNorm = (box.area / (frameW * frameH)).coerceIn(0f, 1f)
+    val off = egoOffsetInRoiN(box, frameW, frameH, 1.0f)
+
+    if (!cutInPrevAreaNorm.isFinite() || cutInPrevTsMs <= 0L) {
+        cutInPrevAreaNorm = areaNorm
+        cutInPrevOffset = off
+        cutInPrevTsMs = tsMs
+        return
+    }
+
+    val dtMs = (tsMs - cutInPrevTsMs).coerceAtLeast(0L)
+    if (dtMs in 80L..450L) {
+        val growth = if (cutInPrevAreaNorm > 0f) (areaNorm / cutInPrevAreaNorm) else 1f
+        val movingToCenter = off < (cutInPrevOffset - 0.08f)
+
+        if (growth.isFinite() && growth >= AppPreferences.cutInGrowthRatio && movingToCenter) {
+            cutInBoostUntilMs = tsMs + AppPreferences.cutInBoostMs
+            flog("cutin boost until=$cutInBoostUntilMs growth=%.2f off=%.2f->%.2f".format(growth, cutInPrevOffset, off), force = true)
+        }
+    }
+
+    // update baseline
+    cutInPrevAreaNorm = areaNorm
+    cutInPrevOffset = off
+    cutInPrevTsMs = tsMs
+}
+
+
     // --- Per-track motion state (fix: prevent REL/TTC resets when tracker switches IDs) ---
     private data class MotionState(
         val distHistory: ArrayDeque<DistSample> = ArrayDeque(),
@@ -190,6 +299,13 @@ class DetectionAnalyzer(
 val riderSpeedRawMps = speedProvider.getCurrent().speedMps
             val riderSpeedMps = smoothRiderSpeed(riderSpeedRawMps)
 
+// Frame quality assessment (fast heuristics on Y plane).
+val quality = assessFrameQuality(image)
+if (AppPreferences.debugOverlay) {
+    flog("quality poor=${quality.poor} luma=%.1f grad=%.2f".format(quality.meanLuma, quality.meanGrad))
+}
+
+
             // Run detector on ROI crop for performance + to avoid picking dashboard/edges.
             val tPreNs = SystemClock.elapsedRealtimeNanos()
             val rawDetections = when (AppPreferences.selectedModel) {
@@ -216,7 +332,7 @@ val riderSpeedRawMps = speedProvider.getCurrent().speedMps
             }
 
             val tracked = tracker.update(post.accepted)
-            val bestTrack = selectLockedTarget(tracked, frameW, frameH, roiTrap)
+            val bestTrack = selectLockedTarget(tracked, frameW, frameH, roiTrap, tsMs)
 
             if (bestTrack == null) {
                 lockedTrackId = null
@@ -237,16 +353,39 @@ val riderSpeedRawMps = speedProvider.getCurrent().speedMps
 
             val best0 = bestTrack.detection
             val bestBox = clampBox(best0.box, frameW, frameH)
+            updateCutInState(tsMs, bestBox, frameW, frameH)
             val label = DetectionLabelMapper.toCanonical(best0.label) ?: (best0.label ?: "unknown")
 
-            val distanceRaw = DetectionPhysics.estimateDistanceMeters(
-                bbox = bestBox,
-                frameHeightPx = frameHRotI,
-                focalPx = estimateFocalLengthPx(frameHRotI),
-                realHeightM = if (label == "motorcycle" || label == "bicycle") 1.3f else 1.5f
-            )
+            
+// Distance estimation: blend bbox-height monocular + ground-plane (height + pitch) for robustness.
+val focalPx = estimateFocalLengthPx(frameHRotI)
+val distFromHeight = DetectionPhysics.estimateDistanceMeters(
+    bbox = bestBox,
+    frameHeightPx = frameHRotI,
+    focalPx = focalPx,
+    realHeightM = if (label == "motorcycle" || label == "bicycle") 1.3f else 1.5f
+)
 
-            val distanceScaled = if (distanceRaw != null && distanceRaw.isFinite()) distanceRaw * AppPreferences.distanceScale else distanceRaw
+val distFromGround = DetectionPhysics.estimateDistanceGroundPlaneMeters(
+    bbox = bestBox,
+    frameHeightPx = frameHRotI,
+    focalPx = focalPx,
+    camHeightM = AppPreferences.cameraMountHeightM,
+    pitchDownDeg = AppPreferences.cameraPitchDownDeg
+)
+
+// Weight ground estimate more when bbox bottom is near the bottom of frame (likely on road).
+val yBottomN = (bestBox.y2 / frameH).coerceIn(0f, 1f)
+val wGround = ((yBottomN - 0.55f) / 0.35f).coerceIn(0f, 1f)
+val distanceRaw = when {
+    distFromHeight != null && distFromGround != null -> (distFromGround * wGround) + (distFromHeight * (1f - wGround))
+    distFromGround != null -> distFromGround
+    else -> distFromHeight
+}
+
+val distanceScaled =
+    if (distanceRaw != null && distanceRaw.isFinite()) distanceRaw * AppPreferences.distanceScale else distanceRaw
+
 
             val distanceM = smoothDistance(distanceScaled ?: Float.NaN)
 
@@ -322,7 +461,8 @@ val decision = if (riderStanding) {
         distanceM = distanceM,
         approachSpeedMps = approachSpeedMps,
         ttc = ttc,
-        thresholds = thresholds
+        thresholds = thresholds,
+        qualityPoor = quality.poor
     )
 }
 
@@ -457,44 +597,61 @@ if (AppPreferences.debugOverlay) {
         abandonAlertAudioFocus(am)
     }
 
-    private fun playAlertSound(resId: Int) {
-        runCatching {
-            val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            requestAlertAudioFocus(am)
+    
+private fun playAlertSound(resId: Int) {
+    runCatching {
+        val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        requestAlertAudioFocus(am)
 
-            // Stop previous
-            alertPlayer?.setOnCompletionListener(null)
-            runCatching { alertPlayer?.stop() }
-            runCatching { alertPlayer?.release() }
-            alertPlayer = null
+        // Stop previous
+        alertPlayer?.setOnCompletionListener(null)
+        runCatching { alertPlayer?.stop() }
+        runCatching { alertPlayer?.release() }
+        alertPlayer = null
 
-            val mp = MediaPlayer.create(ctx, resId) ?: return
-            alertPlayer = mp
+        val mp = MediaPlayer()
+        alertPlayer = mp
 
-            // Make sure it's loud enough and uses alarm-ish stream (best effort).
-            runCatching { mp.setAudioStreamType(AudioManager.STREAM_ALARM) }
+        // Prefer Media/sonification so it follows MEDIA volume (alarm volume is often 0).
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+            mp.setAudioAttributes(
+                android.media.AudioAttributes.Builder()
+                    .setUsage(android.media.AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build()
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            mp.setAudioStreamType(AudioManager.STREAM_MUSIC)
+        }
 
-            mp.setOnCompletionListener { player ->
-                runCatching { player.release() }
-                if (alertPlayer === player) alertPlayer = null
-                abandonAlertAudioFocus(am)
-            }
-            mp.setOnErrorListener { player, _, _ ->
-                runCatching { player.release() }
-                if (alertPlayer === player) alertPlayer = null
-                abandonAlertAudioFocus(am)
-                true
-            }
-
-            mp.start()
-        }.onFailure {
-            // On any failure, make sure we don't keep a broken player or focus.
-            val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            runCatching { alertPlayer?.release() }
-            alertPlayer = null
+        val uri = android.net.Uri.parse("android.resource://${ctx.packageName}/$resId")
+        mp.setDataSource(ctx, uri)
+        mp.isLooping = false
+        mp.setOnCompletionListener { player ->
+            runCatching { player.release() }
+            if (alertPlayer === player) alertPlayer = null
             abandonAlertAudioFocus(am)
         }
+        mp.setOnErrorListener { player, what, extra ->
+            flog("alert sound error what=$what extra=$extra", force = true)
+            runCatching { player.release() }
+            if (alertPlayer === player) alertPlayer = null
+            abandonAlertAudioFocus(am)
+            true
+        }
+
+        mp.prepare()
+        mp.start()
+    }.onFailure {
+        val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        flog("alert sound fail: ${it.javaClass.simpleName} ${it.message}", force = true)
+        runCatching { alertPlayer?.release() }
+        alertPlayer = null
+        abandonAlertAudioFocus(am)
     }
+}
+
 
     private fun requestAlertAudioFocus(am: AudioManager) {
         if (audioFocusGranted) return
@@ -512,7 +669,7 @@ if (AppPreferences.debugOverlay) {
             @Suppress("DEPRECATION")
             audioFocusGranted = (am.requestAudioFocus(
                 null,
-                AudioManager.STREAM_ALARM,
+                AudioManager.STREAM_MUSIC,
                 AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
             ) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
         }
@@ -713,11 +870,19 @@ private data class AlertDecision(
  * Keeps behavior consistent with [alertLevel] (same thresholds + hysteresis).
  */
 private fun computeAlertDecision(
-    distanceM: Float,
-    approachSpeedMps: Float,
-    ttc: Float,
-    thresholds: AlertThresholds
-): AlertDecision {
+        distanceM: Float,
+        approachSpeedMps: Float,
+        ttc: Float,
+        thresholds: AlertThresholds,
+        qualityPoor: Boolean
+    ): AlertDecision {
+
+        // Quality gating: in low-light / blur, avoid noisy alerts (city lights, bumps).
+        // Conservative mode:
+        // - suppress ORANGE completely
+        // - allow RED only if clearly critical (stricter thresholds)
+        val conservative = AppPreferences.qualityGatingEnabled && qualityPoor
+
     val ttcLevel = ttcLevelWithHysteresis(ttc, thresholds)
 
     val distRed = distanceM.isFinite() && distanceM <= thresholds.distRed
@@ -732,8 +897,18 @@ private fun computeAlertDecision(
         else -> 0
     }
 
+val effectiveLevel = if (conservative) {
+    // Suppress ORANGE; RED only when truly critical (stricter by 20%).
+    val strongRed = (ttc.isFinite() && ttc <= (thresholds.ttcRed * 0.80f)) ||
+        (distanceM.isFinite() && distanceM <= (thresholds.distRed * 0.80f)) ||
+        (approachSpeedMps.isFinite() && approachSpeedMps >= (thresholds.speedRed * 1.10f))
+    if (strongRed) 2 else 0
+} else {
+    level
+}
+
     // Reason (priority: TTC > DIST > REL), include current values + thresholds for quick tuning.
-    val reasonCore = when (level) {
+    val reasonCore = when (effectiveLevel) {
         2 -> when {
             ttcLevel == 2 -> "TTC<=RED (ttc=%.2fs thr=%.2fs)".format(ttc, thresholds.ttcRed)
             distRed -> "DIST<=RED (d=%.2fm thr=%.2fm)".format(distanceM, thresholds.distRed)
@@ -757,7 +932,7 @@ private fun computeAlertDecision(
         append(" rel="); append(if (approachSpeedMps.isFinite()) "%.2f".format(approachSpeedMps) else "INF")
     }
 
-    return AlertDecision(level = level, reason = summary)
+    return AlertDecision(level = effectiveLevel, reason = summary + if (conservative) " | QCONSERV" else "")
 }
 
 private fun ttcLevelWithHysteresis(ttc: Float, t: AlertThresholds): Int {
@@ -983,7 +1158,8 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
         tracks: List<TemporalTracker.TrackedDetection>,
         frameW: Float,
         frameH: Float,
-        roiTrap: RoiTrapPx
+        roiTrap: RoiTrapPx,
+        tsMs: Long
     ): TemporalTracker.TrackedDetection? {
         if (tracks.isEmpty() || frameW <= 0f || frameH <= 0f) return null
 
@@ -994,7 +1170,7 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
         // Optional ego-path gating inside ROI trapezoid (reduces side-object false positives in city).
         // Keeps behavior backward-compatible: if gating removes everything, fallback to original pool.
         val poolEgo = if (AppPreferences.laneFilter) {
-            val maxOff = AppPreferences.laneEgoMaxOffset
+            val maxOff = dynamicEgoMaxOffset(tsMs)
             val filtered = pool.filter { t ->
                 egoOffsetInRoiN(t.detection.box, frameW, frameH, maxOff) <= maxOff
             }
@@ -1015,7 +1191,7 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
             val centerScore = (1f - (dx * 1.4f + dy * 1.0f)).coerceIn(0f, 1f)
             val score = d.score.coerceIn(0f, 1f)
             val egoScore = if (AppPreferences.laneFilter) {
-                val maxOff = AppPreferences.laneEgoMaxOffset
+                val maxOff = dynamicEgoMaxOffset(tsMs)
                 val off = egoOffsetInRoiN(b, frameW, frameH, maxOff)
                 (1f - (off / maxOff)).coerceIn(0f, 1f)
             } else {

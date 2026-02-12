@@ -41,6 +41,48 @@ object DetectionPhysics {
     }
 
 
+
+/**
+ * Odhad vzdálenosti pomocí ground-plane (kamera výška + pitch).
+ * Používá spodní hranu bboxu jako přibližný kontakt se zemí.
+ *
+ * Model:
+ *   angleToPoint = atan((yBottom - cy) / focalPx)
+ *   total = pitchDown + angleToPoint
+ *   dist = camHeight / tan(total)
+ */
+fun estimateDistanceGroundPlaneMeters(
+    bbox: Box,
+    frameHeightPx: Int,
+    focalPx: Float,
+    camHeightM: Float,
+    pitchDownDeg: Float,
+    minDistanceM: Float = 0.7f,
+    maxDistanceM: Float = 200f
+): Float? {
+    if (frameHeightPx <= 0 || focalPx <= 0f) return null
+    if (!camHeightM.isFinite() || camHeightM <= 0.1f) return null
+
+    val y2Raw = bbox.y2
+    if (!y2Raw.isFinite() || y2Raw <= 0f) return null
+
+    val yBottomPx = when {
+        y2Raw <= 2.0f -> y2Raw * frameHeightPx.toFloat()
+        else -> y2Raw
+    }.coerceIn(0f, frameHeightPx.toFloat())
+
+    val cy = frameHeightPx.toFloat() * 0.5f
+    val pitchRad = Math.toRadians(pitchDownDeg.toDouble()).toFloat()
+    val angleToPoint = kotlin.math.atan((yBottomPx - cy) / focalPx)
+    val total = pitchRad + angleToPoint
+
+    // total <= 0 => bod je nad horizontem; dist jde do nekonečna / záporná
+    if (!total.isFinite() || total <= 0.001f) return null
+
+    val dist = (camHeightM / kotlin.math.tan(total))
+    if (!dist.isFinite() || dist <= 0f) return null
+    return dist.coerceIn(minDistanceM, maxDistanceM)
+}
     /**
      * TTC z růstu velikosti bboxu (logaritmická derivace).
      * prevH, currH v pixelech; dtSec v sekundách.
