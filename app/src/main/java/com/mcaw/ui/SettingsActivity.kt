@@ -92,8 +92,9 @@ class SettingsActivity : ComponentActivity() {
         val sliderLaneWidth = findViewById<Slider>(R.id.sliderLaneWidth)
         val sliderDistanceScale = findViewById<Slider>(R.id.sliderDistanceScale)
         val txtLaneWidthValue = findViewById<TextView>(R.id.txtLaneWidthValue)
-        val txtDistanceScaleValue = findViewById<TextView>\(R\.id\.txtDistanceScaleValue\)
+        val txtDistanceScaleValue = findViewById<TextView>(R.id.txtDistanceScaleValue)
 
+        // Alert sound volumes (4-step like Lane Width)
         val sliderOrangeVolume = findViewById<Slider>(R.id.sliderOrangeVolume)
         val sliderRedVolume = findViewById<Slider>(R.id.sliderRedVolume)
         val txtOrangeVolumeValue = findViewById<TextView>(R.id.txtOrangeVolumeValue)
@@ -320,36 +321,6 @@ Typicky 3–10°. Příliš velký sklon může zkrátit dohled; příliš malý
         etCameraMountHeight?.addTextChangedListener(cameraWatcher)
         etCameraPitchDownDeg?.addTextChangedListener(cameraWatcher)
 
-    }
-
-
-    private fun volumeLabel(level: Int): String = when (level.coerceIn(0, 3)) {
-        0 -> "Normální"
-        1 -> "Silná"
-        2 -> "Velmi silná"
-        else -> "Max"
-    }
-
-    private fun bindAlertVolumeSlider(slider: Slider?, valueView: TextView?, isRed: Boolean) {
-        if (slider == null) return
-        slider.valueFrom = 0f
-        slider.valueTo = 3f
-        slider.stepSize = 1f
-
-        val level = if (isRed) AppPreferences.soundRedVolumeLevel else AppPreferences.soundOrangeVolumeLevel
-        slider.value = level.toFloat()
-        valueView?.text = volumeLabel(level)
-
-        slider.addOnChangeListener { _, v, fromUser ->
-            if (!fromUser) return@addOnChangeListener
-            val lvl = v.toInt().coerceIn(0, 3)
-            if (isRed) {
-                AppPreferences.soundRedVolumeLevel = lvl
-            } else {
-                AppPreferences.soundOrangeVolumeLevel = lvl
-            }
-            valueView?.text = volumeLabel(lvl)
-        }
     }
 
     private fun bindLaneWidthSlider(slider: Slider?, valueView: TextView?) {

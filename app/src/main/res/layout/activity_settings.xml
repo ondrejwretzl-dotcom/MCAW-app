@@ -406,62 +406,6 @@
                     android:layout_height="wrap_content"
                     android:text="Zvuk pro červenou" />
 
-                <TextView
-                    android:layout_marginTop="10dp"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="Hlasitost zvuku alertů"
-                    android:textColor="#0F172A"
-                    android:textStyle="bold" />
-
-                <!-- Hlasitost ORANGE -->
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical">
-
-                    <TextView
-                        android:id="@+id/txtOrangeVolumeValue"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Velmi silná"
-                        android:textColor="#475569"
-                        android:layout_marginEnd="10dp" />
-
-                    <com.google.android.material.slider.Slider
-                        android:id="@+id/sliderOrangeVolume"
-                        android:layout_width="0dp"
-                        android:layout_weight="1"
-                        android:layout_height="wrap_content"
-                        app:labelBehavior="gone" />
-                </LinearLayout>
-
-                <!-- Hlasitost RED -->
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:layout_marginTop="6dp">
-
-                    <TextView
-                        android:id="@+id/txtRedVolumeValue"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Max"
-                        android:textColor="#475569"
-                        android:layout_marginEnd="10dp" />
-
-                    <com.google.android.material.slider.Slider
-                        android:id="@+id/sliderRedVolume"
-                        android:layout_width="0dp"
-                        android:layout_weight="1"
-                        android:layout_height="wrap_content"
-                        app:labelBehavior="gone" />
-                </LinearLayout>
-
-
                 <!-- Hlasitost alertů (škálování MediaPlayeru) -->
                 <TextView
                     android:layout_width="match_parent"
@@ -489,7 +433,7 @@
                         android:id="@+id/txtOrangeVolumeValue"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="75 %"
+                        android:text="Velmi silná"
                         android:textColor="#475569"
                         android:layout_marginEnd="10dp" />
 
@@ -519,7 +463,7 @@
                         android:id="@+id/txtRedVolumeValue"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="100 %"
+                        android:text="Max"
                         android:textColor="#475569"
                         android:layout_marginEnd="10dp" />
 
