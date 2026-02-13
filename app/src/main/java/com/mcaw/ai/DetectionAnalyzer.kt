@@ -184,14 +184,14 @@ private fun assessFrameQuality(image: ImageProxy): FrameQuality {
     private var alertPlayer: MediaPlayer? = null
     private var audioFocusRequest: Any? = null // AudioFocusRequest on API 26+, kept as Any for source compat
     private var audioFocusGranted: Boolean = false
-    private var lastFocusGain: Int = gain
+    private var lastFocusGain: Int = android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
     private var lastFocusUsage: Int = android.media.AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE
 
-// --- Cut-in detection (dynamic ego offset boost) ---
-private var cutInPrevAreaNorm: Float = Float.NaN
-private var cutInPrevOffset: Float = Float.NaN
-private var cutInPrevTsMs: Long = -1L
-private var cutInBoostUntilMs: Long = -1L
+    // --- Cut-in detection (dynamic ego offset boost) ---
+    private var cutInPrevAreaNorm: Float = Float.NaN
+    private var cutInPrevOffset: Float = Float.NaN
+    private var cutInPrevTsMs: Long = -1L
+    private var cutInBoostUntilMs: Long = -1L
 
 private fun dynamicEgoMaxOffset(tsMs: Long): Float {
     val base = AppPreferences.laneEgoMaxOffset
