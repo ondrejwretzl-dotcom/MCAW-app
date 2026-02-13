@@ -212,6 +212,15 @@ var alertReason: String = ""
     private val minTopHalfWN = 0.06f
     private val minBottomHalfWN = 0.12f
 
+
+    private fun clampCenterX(centerX: Float, topHalfW: Float, bottomHalfW: Float): Float {
+        val maxHalfW = max(topHalfW, bottomHalfW).coerceIn(0f, 0.5f)
+        val minCx = maxHalfW
+        val maxCx = 1f - maxHalfW
+        // If widths are extreme and min > max, fall back to 0.5 (shouldn't happen due to width clamps).
+        return if (minCx <= maxCx) centerX.coerceIn(minCx, maxCx) else 0.5f
+    }
+
     private fun colorForAlert(level: Int): Int {
         return when (level.coerceIn(0, 2)) {
             2 -> Color.RED
@@ -462,6 +471,7 @@ var alertReason: String = ""
                 val by = ty + h
                 topY = ty
                 bottomY = by
+                centerX = centerX + dxN
             }
 
             DragHandle.TOP_Y -> {
@@ -494,6 +504,8 @@ var alertReason: String = ""
 
         // enforce trapezoid constraint (bottom >= top)
         if (bottomHalfW < topHalfW) bottomHalfW = topHalfW
+
+        centerX = clampCenterX(centerX, topHalfW, bottomHalfW)
 
         roiTopY = topY
         roiBottomY = bottomY
