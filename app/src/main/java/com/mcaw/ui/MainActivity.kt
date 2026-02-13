@@ -353,9 +353,18 @@ class MainActivity : ComponentActivity() {
     )
 
     private fun thresholdsForModeUi(): AlertThresholds {
-        return when (AppPreferences.detectionMode) {
-            1 -> AlertThresholds(ttcOrange = 4.0f, ttcRed = 1.5f)
-            2 -> AlertThresholds(
+        val mode = AppPreferences.detectionMode
+        val resolved = when (mode) {
+            AppPreferences.MODE_AUTO -> {
+                val kmh = AppPreferences.lastSpeedMps * 3.6f
+                if (kmh.isFinite() && kmh > 55f) AppPreferences.MODE_SPORT else AppPreferences.MODE_CITY
+            }
+            else -> mode
+        }
+
+        return when (resolved) {
+            AppPreferences.MODE_SPORT -> AlertThresholds(ttcOrange = 4.0f, ttcRed = 1.5f)
+            AppPreferences.MODE_USER -> AlertThresholds(
                 ttcOrange = AppPreferences.userTtcOrange,
                 ttcRed = AppPreferences.userTtcRed
             )

@@ -171,7 +171,7 @@ Typicky 3–10°. Příliš velký sklon může zkrátit dohled; příliš malý
             override fun onItemSelected(parent: AdapterView<*>, view: View?, position: Int, id: Long) {
                 AppPreferences.detectionMode = position
                 txtModeDetails.text = modeSummary(position)
-                groupUser.visibility = if (position == 2) View.VISIBLE else View.GONE
+                groupUser.visibility = if (position == AppPreferences.MODE_USER) View.VISIBLE else View.GONE
             }
 
             override fun onNothingSelected(parent: AdapterView<*>) = Unit
@@ -432,12 +432,16 @@ private fun resetRecommended() {
 
     private fun modeSummary(mode: Int): String {
         return when (mode) {
-            0 -> {
+            AppPreferences.MODE_AUTO -> {
+                "Automat: do 55 km/h → Město, nad 55 km/h → Sport. " +
+                    "Hystereze 53/57 km/h, nepřepíná při aktivním alertu."
+            }
+            AppPreferences.MODE_CITY -> {
                 "Město: OK > 4.0 s / 20 m / 3 m/s · " +
                     "Upozornění ≤ 3.0 s / 15 m / 3 m/s · " +
                     "Kritické ≤ 1.2 s / 6 m / 5 m/s"
             }
-            1 -> {
+            AppPreferences.MODE_SPORT -> {
                 "Sport: OK > 5.0 s / 40 m / 5 m/s · " +
                     "Upozornění ≤ 4.0 s / 30 m / 5 m/s · " +
                     "Kritické ≤ 1.5 s / 12 m / 9 m/s"

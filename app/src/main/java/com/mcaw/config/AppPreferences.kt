@@ -89,9 +89,39 @@ fun init(ctx: Context) {
     }
 
     // MODE SETTINGS
+    const val MODE_AUTO = 0
+    const val MODE_CITY = 1
+    const val MODE_SPORT = 2
+    const val MODE_USER = 3
+
+    private const val KEY_MODE = "mode"
+    private const val KEY_MODE_MIGRATED_V2 = "mode_migrated_v2"
+
+    /**
+     * Detekční režim (vybraný uživatelem v UI):
+     * 0 = Automat (default)
+     * 1 = Město
+     * 2 = Sport
+     * 3 = Uživatel
+     *
+     * Pozn.: proběhne migrace starých hodnot (Město=0, Sport=1, Uživatel=2) -> +1.
+     */
     var detectionMode: Int
-        get() = prefs.getInt("mode", 0)
-        set(v) = prefs.edit().putInt("mode", v).apply()
+        get() {
+            val raw = prefs.getInt(KEY_MODE, MODE_AUTO)
+            val migrated = prefs.getBoolean(KEY_MODE_MIGRATED_V2, false)
+            if (!migrated) {
+                // v1: 0=Město, 1=Sport, 2=Uživatel -> v2: +1 (0 je nově Automat)
+                if (raw in 0..2) {
+                    val v2 = (raw + 1).coerceIn(MODE_AUTO, MODE_USER)
+                    prefs.edit().putInt(KEY_MODE, v2).putBoolean(KEY_MODE_MIGRATED_V2, true).apply()
+                    return v2
+                }
+                prefs.edit().putBoolean(KEY_MODE_MIGRATED_V2, true).apply()
+            }
+            return raw.coerceIn(MODE_AUTO, MODE_USER)
+        }
+        set(v) = prefs.edit().putInt(KEY_MODE, v.coerceIn(MODE_AUTO, MODE_USER)).apply()
 
     // MODEL SETTINGS
     var selectedModel: Int

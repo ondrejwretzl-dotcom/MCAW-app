@@ -15,6 +15,7 @@ import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import com.mcaw.app.R
 import com.mcaw.config.AppPreferences
+import com.mcaw.config.DetectionModePolicy
 import com.mcaw.location.SpeedProvider
 import com.mcaw.model.Box
 import com.mcaw.model.Detection
@@ -135,6 +136,9 @@ private fun assessFrameQuality(image: ImageProxy): FrameQuality {
     )
 
     private val tracker = TemporalTracker(minConsecutiveForAlert = 2)
+
+    // Auto mode state (single source of truth in DetectionModePolicy)
+    private val autoModeSwitcher = DetectionModePolicy.AutoModeSwitcher()
 
     // Target lock to avoid switching between objects (stability for TTC/alerts)
     private var lockedTrackId: Long? = null
@@ -449,7 +453,11 @@ val distanceScaled =
             val objectSpeedMps =
                 if (riderSpeedMps.isFinite()) (riderSpeedMps - relSpeedSigned) else Float.POSITIVE_INFINITY
 
-            val thresholds = thresholdsForMode(AppPreferences.detectionMode)
+            val modeRes = autoModeSwitcher.resolve(AppPreferences.detectionMode, riderSpeedMps, lastAlertLevel, tsMs)
+            if (modeRes.changed) {
+                flog("auto_mode effective=${'$'}{modeName(modeRes.effectiveMode)} reason=${'$'}{modeRes.reason}", force = true)
+            }
+            val thresholds = thresholdsForMode(modeRes.effectiveMode)
             val riderSpeedKnown = riderSpeedMps.isFinite()
 val riderStanding = riderSpeedKnown && riderSpeedMps <= (2.0f / 3.6f) // < 2 km/h
 

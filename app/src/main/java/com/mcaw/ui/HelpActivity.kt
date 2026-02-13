@@ -26,7 +26,15 @@ Hlavní ukazatel je TTC (Time To Collision) – čas do možné srážky.
 • Rychlost přibližování
 • TTC (čas do možné srážky)
 
-2) „Omezit detekci na jízdní dráhu“
+2) Detekční režimy
+Režim ovlivňuje prahy pro oranžové/červené varování.
+• Automat (default): do ~55 km/h používá prahy „Město“, nad ~55 km/h prahy „Sport“.
+  Aby režim necvakal tam a zpět, používá hysterezi 53/57 km/h a nepřepíná během aktivního alertu.
+• Město: konzervativní nastavení pro běžný provoz.
+• Sport: delší dohled a agresivnější reakce ve vyšších rychlostech.
+• Uživatel: vlastní prahy TTC / vzdálenost / rychlost.
+
+3) „Omezit detekci na jízdní dráhu“
 Když je zapnuto:
 • bere jen objekty v jízdní dráze (trapezoid ROI)
 • méně falešných alarmů (boky, protisměr, parkovaná auta)
@@ -40,34 +48,34 @@ Doporučení:
 • Dálnice → zapnuto
 • Testování → podle potřeby
 
-3) Šířka pruhu (tolerance do stran)
+4) Šířka pruhu (tolerance do stran)
 Určuje, jak daleko od středu ROI může být objekt a pořád se bere jako „před tebou“.
 • Úzký: méně rušení, ale může přehlédnout cut‑in
 • Široký: lépe zachytí cut‑in, ale může víc varovat
 
-4) Ochrana proti náhlému najetí (cut‑in)
+5) Ochrana proti náhlému najetí (cut‑in)
 Pomáhá zachytit situaci, kdy auto rychle najede do tvé dráhy.
 Doporučeno: zapnuto.
 
-5) Kalibrace vzdálenosti
+6) Kalibrace vzdálenosti
 Když aplikace:
 • hlásí systematicky menší vzdálenost → zvyš kalibraci („Více“)
 • hlásí systematicky větší vzdálenost → sniž kalibraci („Méně“)
 
 Záleží na telefonu, uchycení a výšce kamery.
 
-5a) Kalibrace kamery (výška + sklon)
+6a) Kalibrace kamery (výška + sklon)
 Tyto hodnoty pomáhají zpřesnit odhad vzdálenosti z obrazu:
 • Výška kamery (m): výška čočky nad zemí. Auto typicky 1.1–1.5 m, moto často 0.9–1.3 m.
 • Sklon kamery dolů (°): 0° = horizont, kladné hodnoty = dolů (typicky 3–10°).
 
 Pokud aplikace hlásí vzdálenost systematicky špatně i po „Kalibraci vzdálenosti“, doladit tyto parametry.
 
-6) Kvalita obrazu (tma / vibrace / rozmazání)
+7) Kvalita obrazu (tma / vibrace / rozmazání)
 Když je zapnuto, aplikace je méně agresivní v horších podmínkách a méně ruší.
 Doporučeno: zapnuto.
 
-7) Jak správně nastavit telefon
+8) Jak správně nastavit telefon
 • Telefon musí být pevně uchycený a stabilní
 • Kamera musí mít čistý výhled
 • Telefon nesmí mířit příliš nahoru
