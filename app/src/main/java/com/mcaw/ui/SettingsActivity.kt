@@ -391,6 +391,36 @@ Typicky 3–10°. Příliš velký sklon může zkrátit dohled; příliš malý
         }
     }
 
+    private fun bindAlertVolumeSlider(slider: Slider?, valueView: TextView?, isRed: Boolean) {
+        if (slider == null) return
+
+        slider.valueFrom = 0f
+        slider.valueTo = 3f
+        slider.stepSize = 1f
+
+        fun labelFor(level: Int): String = when (level.coerceIn(0, 3)) {
+            0 -> "Normální"
+            1 -> "Silná"
+            2 -> "Velmi silná"
+            else -> "Max"
+        }
+
+        val currentLevel = if (isRed) AppPreferences.soundRedVolumeLevel else AppPreferences.soundOrangeVolumeLevel
+        slider.value = currentLevel.coerceIn(0, 3).toFloat()
+        valueView?.text = labelFor(currentLevel)
+
+        slider.addOnChangeListener { _, v, fromUser ->
+            if (!fromUser) return@addOnChangeListener
+            val level = v.toInt().coerceIn(0, 3)
+            if (isRed) {
+                AppPreferences.soundRedVolumeLevel = level
+            } else {
+                AppPreferences.soundOrangeVolumeLevel = level
+            }
+            valueView?.text = labelFor(level)
+        }
+    }
+
     private fun confirmResetRecommended() {
         AlertDialog.Builder(this)
             .setTitle("Reset na doporučené")
