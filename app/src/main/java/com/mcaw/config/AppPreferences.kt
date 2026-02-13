@@ -328,12 +328,14 @@ fun roiContainmentThreshold(): Float = if (roiStrictContainment) 0.80f else 0.65
     private const val ROI_TRAP_BOTTOM_Y = "roi_trap_bottom_y_n"
     private const val ROI_TRAP_TOP_HALFW = "roi_trap_top_halfw_n"
     private const val ROI_TRAP_BOTTOM_HALFW = "roi_trap_bottom_halfw_n"
+    private const val ROI_TRAP_CENTER_X = "roi_trap_center_x_n"
 
     // Default (rozumný jízdní pruh – upravitelné v Preview ROI editoru)
     private const val ROI_TRAP_DEFAULT_TOP_Y = 0.32f
     private const val ROI_TRAP_DEFAULT_BOTTOM_Y = 0.92f
     private const val ROI_TRAP_DEFAULT_TOP_HALFW = 0.18f
     private const val ROI_TRAP_DEFAULT_BOTTOM_HALFW = 0.46f
+    private const val ROI_TRAP_DEFAULT_CENTER_X = 0.50f
 
     private const val ROI_TRAP_MIN_HEIGHT_N = 0.10f
     private const val ROI_TRAP_MIN_TOP_HALFW_N = 0.06f
@@ -355,6 +357,10 @@ fun roiContainmentThreshold(): Float = if (roiStrictContainment) 0.80f else 0.65
         get() = prefs.getFloat(ROI_TRAP_BOTTOM_HALFW, ROI_TRAP_DEFAULT_BOTTOM_HALFW).coerceIn(0f, 0.5f)
         set(v) = prefs.edit().putFloat(ROI_TRAP_BOTTOM_HALFW, v.coerceIn(0f, 0.5f)).apply()
 
+    var roiTrapCenterX: Float
+        get() = prefs.getFloat(ROI_TRAP_CENTER_X, ROI_TRAP_DEFAULT_CENTER_X).coerceIn(0f, 1f)
+        set(v) = prefs.edit().putFloat(ROI_TRAP_CENTER_X, v.coerceIn(0f, 1f)).apply()
+
     data class RoiTrapN(
         val topY: Float,
         val bottomY: Float,
@@ -371,60 +377,83 @@ fun roiContainmentThreshold(): Float = if (roiStrictContainment) 0.80f else 0.65
         }
     }
 
-    fun getRoiTrapezoidNormalized(): RoiTrapN {
-        var topY = roiTrapTopY
-        var bottomY = roiTrapBottomY
-        var topHalfW = roiTrapTopHalfW
-        var bottomHalfW = roiTrapBottomHalfW
+    
+fun getRoiTrapezoidNormalized(): RoiTrapN {
+    var topY = roiTrapTopY
+    var bottomY = roiTrapBottomY
+    var topHalfW = roiTrapTopHalfW
+    var bottomHalfW = roiTrapBottomHalfW
+    var centerX = roiTrapCenterX
 
-        if (bottomY < topY) {
-            val tmp = bottomY; bottomY = topY; topY = tmp
-        }
-        if (bottomY - topY < ROI_TRAP_MIN_HEIGHT_N) {
-            val mid = (topY + bottomY) * 0.5f
-            topY = (mid - ROI_TRAP_MIN_HEIGHT_N * 0.5f).coerceIn(0f, 1f)
-            bottomY = (topY + ROI_TRAP_MIN_HEIGHT_N).coerceIn(0f, 1f)
-        }
-
-        if (topHalfW < ROI_TRAP_MIN_TOP_HALFW_N) topHalfW = ROI_TRAP_MIN_TOP_HALFW_N
-        if (bottomHalfW < ROI_TRAP_MIN_BOTTOM_HALFW_N) bottomHalfW = ROI_TRAP_MIN_BOTTOM_HALFW_N
-        if (bottomHalfW < topHalfW) bottomHalfW = topHalfW
-
-        topHalfW = topHalfW.coerceIn(0f, 0.5f)
-        bottomHalfW = bottomHalfW.coerceIn(0f, 0.5f)
-        topY = topY.coerceIn(0f, 1f)
-        bottomY = bottomY.coerceIn(0f, 1f)
-
-        return RoiTrapN(topY, bottomY, topHalfW, bottomHalfW, centerX = 0.5f)
+    if (bottomY < topY) {
+        val tmp = bottomY; bottomY = topY; topY = tmp
+    }
+    if (bottomY - topY < ROI_TRAP_MIN_HEIGHT_N) {
+        val mid = (topY + bottomY) * 0.5f
+        topY = (mid - ROI_TRAP_MIN_HEIGHT_N * 0.5f).coerceIn(0f, 1f)
+        bottomY = (topY + ROI_TRAP_MIN_HEIGHT_N).coerceIn(0f, 1f)
     }
 
-    fun setRoiTrapezoidNormalized(topY: Float, bottomY: Float, topHalfW: Float, bottomHalfW: Float) {
-        var ty = topY.coerceIn(0f, 1f)
-        var by = bottomY.coerceIn(0f, 1f)
-        var thw = topHalfW.coerceIn(0f, 0.5f)
-        var bhw = bottomHalfW.coerceIn(0f, 0.5f)
+    if (topHalfW < ROI_TRAP_MIN_TOP_HALFW_N) topHalfW = ROI_TRAP_MIN_TOP_HALFW_N
+    if (bottomHalfW < ROI_TRAP_MIN_BOTTOM_HALFW_N) bottomHalfW = ROI_TRAP_MIN_BOTTOM_HALFW_N
+    if (bottomHalfW < topHalfW) bottomHalfW = topHalfW
 
-        if (by < ty) { val tmp = by; by = ty; ty = tmp }
-        if (by - ty < ROI_TRAP_MIN_HEIGHT_N) by = (ty + ROI_TRAP_MIN_HEIGHT_N).coerceIn(0f, 1f)
+    topHalfW = topHalfW.coerceIn(0f, 0.5f)
+    bottomHalfW = bottomHalfW.coerceIn(0f, 0.5f)
+    topY = topY.coerceIn(0f, 1f)
+    bottomY = bottomY.coerceIn(0f, 1f)
 
-        if (thw < ROI_TRAP_MIN_TOP_HALFW_N) thw = ROI_TRAP_MIN_TOP_HALFW_N
-        if (bhw < ROI_TRAP_MIN_BOTTOM_HALFW_N) bhw = ROI_TRAP_MIN_BOTTOM_HALFW_N
-        if (bhw < thw) bhw = thw
+    // clamp centerX so trapezoid stays inside [0..1]
+    val maxHalfW = maxOf(topHalfW, bottomHalfW).coerceIn(0f, 0.5f)
+    centerX = centerX.coerceIn(maxHalfW, 1f - maxHalfW)
 
-        prefs.edit()
-            .putFloat(ROI_TRAP_TOP_Y, ty)
-            .putFloat(ROI_TRAP_BOTTOM_Y, by)
-            .putFloat(ROI_TRAP_TOP_HALFW, thw)
-            .putFloat(ROI_TRAP_BOTTOM_HALFW, bhw)
-            .apply()
-    }
+    return RoiTrapN(topY, bottomY, topHalfW, bottomHalfW, centerX = centerX)
+}
 
-    fun resetRoiToDefault() {
+fun setRoiTrapezoidNormalized(topY: Float, bottomY: Float, topHalfW: Float, bottomHalfW: Float) {
+    setRoiTrapezoidNormalized(topY, bottomY, topHalfW, bottomHalfW, centerX = roiTrapCenterX)
+}
+
+fun setRoiTrapezoidNormalized(
+    topY: Float,
+    bottomY: Float,
+    topHalfW: Float,
+    bottomHalfW: Float,
+    centerX: Float
+) {
+    var ty = topY.coerceIn(0f, 1f)
+    var by = bottomY.coerceIn(0f, 1f)
+    var thw = topHalfW.coerceIn(0f, 0.5f)
+    var bhw = bottomHalfW.coerceIn(0f, 0.5f)
+    var cx = centerX.coerceIn(0f, 1f)
+
+    if (by < ty) { val tmp = by; by = ty; ty = tmp }
+    if (by - ty < ROI_TRAP_MIN_HEIGHT_N) by = (ty + ROI_TRAP_MIN_HEIGHT_N).coerceIn(0f, 1f)
+
+    if (thw < ROI_TRAP_MIN_TOP_HALFW_N) thw = ROI_TRAP_MIN_TOP_HALFW_N
+    if (bhw < ROI_TRAP_MIN_BOTTOM_HALFW_N) bhw = ROI_TRAP_MIN_BOTTOM_HALFW_N
+    if (bhw < thw) bhw = thw
+
+    // clamp centerX so trapezoid stays inside [0..1]
+    val maxHalfW = maxOf(thw, bhw).coerceIn(0f, 0.5f)
+    cx = cx.coerceIn(maxHalfW, 1f - maxHalfW)
+
+    prefs.edit()
+        .putFloat(ROI_TRAP_TOP_Y, ty)
+        .putFloat(ROI_TRAP_BOTTOM_Y, by)
+        .putFloat(ROI_TRAP_TOP_HALFW, thw)
+        .putFloat(ROI_TRAP_BOTTOM_HALFW, bhw)
+        .putFloat(ROI_TRAP_CENTER_X, cx)
+        .apply()
+}
+
+fun resetRoiToDefault() {
         setRoiTrapezoidNormalized(
             ROI_TRAP_DEFAULT_TOP_Y,
             ROI_TRAP_DEFAULT_BOTTOM_Y,
             ROI_TRAP_DEFAULT_TOP_HALFW,
-            ROI_TRAP_DEFAULT_BOTTOM_HALFW
+            ROI_TRAP_DEFAULT_BOTTOM_HALFW,
+            centerX = ROI_TRAP_DEFAULT_CENTER_X
         )
     }
 
@@ -449,9 +478,9 @@ fun roiContainmentThreshold(): Float = if (roiStrictContainment) 0.80f else 0.65
         var b = bottom.coerceIn(0f, 1f)
         if (r < l) { val tmp = r; r = l; l = tmp }
         if (b < t) { val tmp = b; b = t; t = tmp }
-        val centerX = 0.5f
+        val centerX = ((l + r) * 0.5f).coerceIn(0f, 1f)
         val halfW = maxOf(abs(centerX - l), abs(r - centerX)).coerceIn(ROI_TRAP_MIN_TOP_HALFW_N, 0.5f)
-        setRoiTrapezoidNormalized(t, b, halfW, halfW)
+        setRoiTrapezoidNormalized(t, b, halfW, halfW, centerX = centerX)
     }
 
 }

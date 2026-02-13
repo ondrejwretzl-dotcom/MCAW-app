@@ -73,6 +73,7 @@ class PreviewActivity : ComponentActivity() {
                 overlay.roiBottomY = i.getFloatExtra("roi_trap_bottom_y_n", overlay.roiBottomY)
                 overlay.roiTopHalfW = i.getFloatExtra("roi_trap_top_halfw_n", overlay.roiTopHalfW)
                 overlay.roiBottomHalfW = i.getFloatExtra("roi_trap_bottom_halfw_n", overlay.roiBottomHalfW)
+                overlay.roiCenterX = i.getFloatExtra("roi_trap_center_x_n", overlay.roiCenterX)
             }
 
             if (i.getBooleanExtra("clear", false)) {
@@ -138,10 +139,10 @@ class PreviewActivity : ComponentActivity() {
         overlay.showTelemetry = AppPreferences.debugOverlay
 
         applyRoiFromPrefs()
-        overlay.onRoiChanged = { topY, bottomY, topHalfW, bottomHalfW, isFinal ->
+        overlay.onRoiChanged = { topY, bottomY, topHalfW, bottomHalfW, centerX, isFinal ->
             if (isFinal) {
-                AppPreferences.setRoiTrapezoidNormalized(topY, bottomY, topHalfW, bottomHalfW)
-                logActivity("roi_set topY=$topY bottomY=$bottomY topHalfW=$topHalfW bottomHalfW=$bottomHalfW")
+                AppPreferences.setRoiTrapezoidNormalized(topY, bottomY, topHalfW, bottomHalfW, centerX = centerX)
+                logActivity("roi_set topY=$topY bottomY=$bottomY topHalfW=$topHalfW bottomHalfW=$bottomHalfW centerX=$centerX")
             }
         }
 
@@ -245,6 +246,7 @@ class PreviewActivity : ComponentActivity() {
         overlay.roiBottomY = roi.bottomY
         overlay.roiTopHalfW = roi.topHalfW
         overlay.roiBottomHalfW = roi.bottomHalfW
+        overlay.roiCenterX = roi.centerX
     }
 
     override fun onRequestPermissionsResult(

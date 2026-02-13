@@ -147,6 +147,12 @@ var alertReason: String = ""
 
     // ---- ROI trapezoid (normalized 0..1) ----
     // Symetrický kolem centerX=0.5
+    var roiCenterX: Float = 0.5f
+        set(value) {
+            field = value.coerceIn(0f, 1f)
+            invalidate()
+        }
+
     var roiTopY: Float = 0.32f
         set(value) {
             field = value.coerceIn(0f, 1f)
@@ -181,7 +187,7 @@ var alertReason: String = ""
      * Callback při změně ROI v edit módu.
      * isFinal=true na ACTION_UP/CANCEL -> vhodné pro uložení do prefs.
      */
-    var onRoiChanged: ((topY: Float, bottomY: Float, topHalfW: Float, bottomHalfW: Float, isFinal: Boolean) -> Unit)? =
+    var onRoiChanged: ((topY: Float, bottomY: Float, topHalfW: Float, bottomHalfW: Float, centerX: Float, isFinal: Boolean) -> Unit)? =
         null
 
     private enum class DragHandle {
@@ -393,13 +399,13 @@ var alertReason: String = ""
                 lastTouchX = event.x
                 lastTouchY = event.y
                 applyDrag(dx, dy)
-                onRoiChanged?.invoke(roiTopY, roiBottomY, roiTopHalfW, roiBottomHalfW, false)
+                onRoiChanged?.invoke(roiTopY, roiBottomY, roiTopHalfW, roiBottomHalfW, roiCenterX, false)
                 return true
             }
 
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 if (activeHandle != DragHandle.NONE) {
-                    onRoiChanged?.invoke(roiTopY, roiBottomY, roiTopHalfW, roiBottomHalfW, true)
+                    onRoiChanged?.invoke(roiTopY, roiBottomY, roiTopHalfW, roiBottomHalfW, roiCenterX, true)
                 }
                 activeHandle = DragHandle.NONE
                 return true
@@ -447,6 +453,7 @@ var alertReason: String = ""
         var bottomY = roiBottomY
         var topHalfW = roiTopHalfW
         var bottomHalfW = roiBottomHalfW
+        var centerX = roiCenterX
 
         when (activeHandle) {
             DragHandle.MOVE -> {
@@ -492,6 +499,7 @@ var alertReason: String = ""
         roiBottomY = bottomY
         roiTopHalfW = topHalfW
         roiBottomHalfW = bottomHalfW
+        roiCenterX = centerX
     }
 
     private fun mapToView(box: Box): RectF? {
@@ -530,7 +538,7 @@ var alertReason: String = ""
         val dx = (viewW - scaledW) / 2f
         val dy = (viewH - scaledH) / 2f
 
-        val cx = 0.5f
+        val cx = roiCenterX
         val topY = roiTopY.coerceIn(0f, 1f)
         val bottomY = roiBottomY.coerceIn(0f, 1f)
         val topHalfW = roiTopHalfW.coerceIn(0f, 0.5f)

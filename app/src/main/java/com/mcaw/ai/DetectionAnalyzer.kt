@@ -809,6 +809,7 @@ private fun playAlertSound(resId: Int, critical: Boolean) {
         i.putExtra("roi_trap_bottom_y_n", roiN.bottomY)
         i.putExtra("roi_trap_top_halfw_n", roiN.topHalfW)
         i.putExtra("roi_trap_bottom_halfw_n", roiN.bottomHalfW)
+        i.putExtra("roi_trap_center_x_n", roiN.centerX)
 
         ctx.sendBroadcast(i)
     }
@@ -823,6 +824,7 @@ private fun playAlertSound(resId: Int, critical: Boolean) {
         i.putExtra("roi_trap_bottom_y_n", roiN.bottomY)
         i.putExtra("roi_trap_top_halfw_n", roiN.topHalfW)
         i.putExtra("roi_trap_bottom_halfw_n", roiN.bottomHalfW)
+        i.putExtra("roi_trap_center_x_n", roiN.centerX)
         ctx.sendBroadcast(i)
     }
 
