@@ -125,24 +125,20 @@ class SettingsActivity : ComponentActivity() {
         findViewById<View>(R.id.btnInfoCameraMountHeight)?.setOnClickListener {
             showInfo(
                 title = "Výška kamery (m)",
-                msg = "Výška čočky kamery nad zemí. Používá se pro přesnější odhad vzdálenosti.
+                msg = """Výška čočky kamery nad zemí. Používá se pro přesnější odhad vzdálenosti.
 
-" +
-                    "• Auto typicky 1.1–1.5 m
-" +
-                    "• Moto často 0.9–1.3 m (podle držáku)
+• Auto typicky 1.1–1.5 m
+• Moto často 0.9–1.3 m (podle držáku)
 
-" +
-                    "Pokud aplikace systematicky přeceňuje/podceňuje vzdálenost, zkontroluj i tento parametr."
+Pokud aplikace systematicky přeceňuje/podceňuje vzdálenost, zkontroluj i tento parametr.""".trimIndent()
             )
         }
         findViewById<View>(R.id.btnInfoCameraPitchDownDeg)?.setOnClickListener {
             showInfo(
                 title = "Sklon kamery dolů (°)",
-                msg = "Náklon kamery směrem k zemi. 0° = horizont, kladné hodnoty = dolů.
+                msg = """Náklon kamery směrem k zemi. 0° = horizont, kladné hodnoty = dolů.
 
-" +
-                    "Typicky 3–10°. Příliš velký sklon může zkrátit dohled; příliš malý může zkreslit odhad vzdálenosti."
+Typicky 3–10°. Příliš velký sklon může zkrátit dohled; příliš malý může zkreslit odhad vzdálenosti.""".trimIndent()
             )
         }
         findViewById<View>(R.id.btnInfoQualityGating)?.setOnClickListener {

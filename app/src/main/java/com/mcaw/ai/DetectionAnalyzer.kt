@@ -184,6 +184,8 @@ private fun assessFrameQuality(image: ImageProxy): FrameQuality {
     private var alertPlayer: MediaPlayer? = null
     private var audioFocusRequest: Any? = null // AudioFocusRequest on API 26+, kept as Any for source compat
     private var audioFocusGranted: Boolean = false
+    private var lastFocusGain: Int = gain
+    private var lastFocusUsage: Int = android.media.AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE
 
 // --- Cut-in detection (dynamic ego offset boost) ---
 private var cutInPrevAreaNorm: Float = Float.NaN
@@ -598,10 +600,12 @@ if (AppPreferences.debugOverlay) {
     }
 
     
-private fun playAlertSound(resId: Int) {
+private fun playAlertSound(resId: Int, critical: Boolean) {
     runCatching {
         val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        requestAlertAudioFocus(am)
+        val usage = android.media.AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE
+        val gain = if (critical) AudioManager.AUDIOFOCUS_GAIN_TRANSIENT else AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
+        requestAlertAudioFocus(am, gain = gain, usage = usage)
 
         // Stop previous
         alertPlayer?.setOnCompletionListener(null)
@@ -616,7 +620,7 @@ private fun playAlertSound(resId: Int) {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
             mp.setAudioAttributes(
                 android.media.AudioAttributes.Builder()
-                    .setUsage(android.media.AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+                    .setUsage(android.media.AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
                     .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
                     .build()
             )
@@ -653,25 +657,42 @@ private fun playAlertSound(resId: Int) {
 }
 
 
-    private fun requestAlertAudioFocus(am: AudioManager) {
-        if (audioFocusGranted) return
+    private fun requestAlertAudioFocus(am: AudioManager, gain: Int, usage: Int) {
+        if (audioFocusGranted && gain == lastFocusGain && usage == lastFocusUsage) return
+
+        // If focus is already held with different params, release first.
+        if (audioFocusGranted) abandonAlertAudioFocus(am)
 
         // API 26+ supports AudioFocusRequest, older uses legacy requestAudioFocus.
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
             val listener = AudioManager.OnAudioFocusChangeListener { /* ignore */ }
-            val req = android.media.AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+            val req = android.media.AudioFocusRequest.Builder(gain)
+                .setAudioAttributes(
+                    android.media.AudioAttributes.Builder()
+                        .setUsage(usage)
+                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build()
+                )
                 .setOnAudioFocusChangeListener(listener)
                 .setWillPauseWhenDucked(false)
                 .build()
             audioFocusRequest = req
             audioFocusGranted = (am.requestAudioFocus(req) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
+            if (audioFocusGranted) {
+                lastFocusGain = gain
+                lastFocusUsage = usage
+            }
         } else {
             @Suppress("DEPRECATION")
             audioFocusGranted = (am.requestAudioFocus(
                 null,
                 AudioManager.STREAM_MUSIC,
-                AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
+                gain
             ) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
+            if (audioFocusGranted) {
+                lastFocusGain = gain
+                lastFocusUsage = usage
+            }
         }
     }
 
@@ -700,7 +721,7 @@ private fun playAlertSound(resId: Int) {
         1 -> {
             // ORANGE (warning)
             if (AppPreferences.sound && AppPreferences.soundOrange) {
-                playAlertSound(R.raw.alert_beep)
+                playAlertSound(R.raw.alert_beep, critical = false)
             }
             if (AppPreferences.voice && AppPreferences.voiceOrange) {
                 val text = AppPreferences.ttsTextOrange.trim()
@@ -712,7 +733,7 @@ private fun playAlertSound(resId: Int) {
         2 -> {
             // RED (critical)
             if (AppPreferences.sound && AppPreferences.soundRed) {
-                playAlertSound(R.raw.red_alert)
+                playAlertSound(R.raw.red_alert, critical = true)
             }
             if (AppPreferences.vibration) {
                 val vib = ctx.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
