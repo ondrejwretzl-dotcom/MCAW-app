@@ -112,8 +112,8 @@ private fun assessFrameQuality(image: ImageProxy): FrameQuality {
     val meanG = (sumG / n).toFloat()
 
     // Thresholds tuned to be conservative on phones (Samsung A56).
-    val lowLight = meanL < 45f
-    val lowEdges = meanG < 6.0f
+    val lowLight = meanL < 35f
+    val lowEdges = meanG < 4.5f
     val poor = lowLight || lowEdges
     return FrameQuality(poor = poor, meanLuma = meanL, meanGrad = meanG)
 }
@@ -156,7 +156,7 @@ private fun assessFrameQuality(image: ImageProxy): FrameQuality {
 
     private var lastTtcHeight: Float = Float.POSITIVE_INFINITY
     private var lastTtcHeightTsMs: Long = -1L
-    private val ttcHeightHoldMs: Long = 800L
+    private val ttcHeightHoldMs: Long = 1200L
 
     private var distEma: Float = Float.NaN
     private var distEmaValid: Boolean = false
@@ -254,7 +254,7 @@ private fun updateCutInState(tsMs: Long, box: Box, frameW: Float, frameH: Float)
 
     // TTC hold: keep last finite TTC briefly when raw becomes invalid (prevents blinking)
     private var lastTtcFiniteTsMs: Long = -1L
-    private val ttcInvalidHoldMs: Long = 500L
+    private val ttcInvalidHoldMs: Long = 900L
 
 
     private fun flog(msg: String, force: Boolean = false) {
@@ -382,7 +382,7 @@ val distFromGround = DetectionPhysics.estimateDistanceGroundPlaneMeters(
 
 // Weight ground estimate more when bbox bottom is near the bottom of frame (likely on road).
 val yBottomN = (bestBox.y2 / frameH).coerceIn(0f, 1f)
-val wGround = ((yBottomN - 0.55f) / 0.35f).coerceIn(0f, 1f)
+val wGround = ((yBottomN - 0.65f) / 0.35f).coerceIn(0f, 1f)
 val distanceRaw = when {
     distFromHeight != null && distFromGround != null -> (distFromGround * wGround) + (distFromHeight * (1f - wGround))
     distFromGround != null -> distFromGround
@@ -436,7 +436,7 @@ val distanceScaled =
             val ttcRaw = when {
                 ttcFromHeightsHeld != null && ttcFromHeightsHeld.isFinite() && ttcFromDist.isFinite() -> {
                     // Prefer bbox TTC, but keep a bit of dist TTC as sanity
-                    (ttcFromHeightsHeld * 0.75f) + (ttcFromDist * 0.25f)
+                    (ttcFromHeightsHeld * 0.85f) + (ttcFromDist * 0.15f)
                 }
                 ttcFromHeightsHeld != null && ttcFromHeightsHeld.isFinite() -> ttcFromHeightsHeld
                 else -> ttcFromDist
@@ -459,7 +459,7 @@ val distanceScaled =
             }
             val thresholds = thresholdsForMode(modeRes.effectiveMode)
             val riderSpeedKnown = riderSpeedMps.isFinite()
-val riderStanding = riderSpeedKnown && riderSpeedMps <= (2.0f / 3.6f) // < 2 km/h
+val riderStanding = riderSpeedKnown && riderSpeedMps <= (6.0f / 3.6f) // < 6 km/h (město/kolony)
 
 val decision = if (riderStanding) {
     AlertDecision(
@@ -971,9 +971,9 @@ private fun ttcLevelWithHysteresis(ttc: Float, t: AlertThresholds): Int {
     }
 
     val redOn = t.ttcRed
-    val redOff = redOn + 0.4f // např. 1.2 -> 1.6
+    val redOff = redOn + 0.6f // např. 1.2 -> 1.8
     val orangeOn = t.ttcOrange
-    val orangeOff = maxOf(orangeOn + 0.6f, redOff + 0.2f)
+    val orangeOff = maxOf(orangeOn + 0.9f, redOff + 0.2f)
 
     lastTtcLevel = when (lastTtcLevel) {
         2 -> {
@@ -1148,7 +1148,7 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
             currH = currHPx,
             dtSec = dtSec,
             minDtSec = 0.05f,
-            minGrowthRatio = 1.01f,
+            minGrowthRatio = 1.02f,
             minDeltaHPx = 1.0f,
             maxTtcSec = 120f
         )
@@ -1246,7 +1246,7 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
         val lockedPrio = priority(locked)
         lockedPriority = lockedPrio
 
-        val switchMargin = 1.25f
+        val switchMargin = 1.45f
         if (bestNow.id != locked.id && bestNowPrio >= lockedPrio * switchMargin) {
             if (switchCandidateId == bestNow.id) {
                 switchCandidateCount += 1
@@ -1255,7 +1255,7 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
                 switchCandidateCount = 1
             }
 
-            if (switchCandidateCount >= 3) {
+            if (switchCandidateCount >= 5) {
                 lockedTrackId = bestNow.id
                 lockedPriority = bestNowPrio
                 switchCandidateId = null
@@ -1550,10 +1550,12 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
     )
 
     private fun brakeCueParams(): Pair<Float, Float> {
+        // NOTE: redRatio is usually small (tail lights are a small area). Keep thresholds realistic.
+        // deltaThr is normalized red intensity delta (0..1).
         return when (AppPreferences.brakeCueSensitivity) {
-            0 -> 0.75f to 0.10f // low sensitivity
-            2 -> 0.55f to 0.06f // high sensitivity
-            else -> 0.65f to 0.08f // standard
+            0 -> 0.35f to 0.030f // low sensitivity (fewer false positives)
+            2 -> 0.22f to 0.018f // high sensitivity (catch brief brake taps)
+            else -> 0.28f to 0.025f // standard
         }
     }
 
@@ -1567,7 +1569,7 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
         relSpeedSigned: Float
     ): BrakeCueResult {
         // Gate: stojíš => vypnout
-        val minRideMps = 2f / 3.6f
+        val minRideMps = 5f / 3.6f
         if (!riderSpeedMps.isFinite() || riderSpeedMps < minRideMps) {
             brakeCueActiveFrames = 0
             brakeCueActive = false
@@ -1610,9 +1612,11 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
         // Strength: kombinuje "kolik červené" a "jak rychle to vyrostlo"
         val ratioScore = ((brakeRedRatioEma - (thr - 0.15f)) / 0.25f).coerceIn(0f, 1f)
         val deltaScore = ((delta - (deltaThr * 0.5f)) / (deltaThr)).coerceIn(0f, 1f)
-        val strength = (ratioScore * 0.65f + deltaScore * 0.35f).coerceIn(0f, 1f)
+        val strength = (ratioScore * 0.45f + deltaScore * 0.55f).coerceIn(0f, 1f)
 
-        val isOn = brakeRedRatioEma >= thr && delta >= deltaThr && strength >= 0.6f
+        val isOn =
+            (brakeRedRatioEma >= thr && strength >= 0.55f) ||
+                (delta >= (deltaThr * 1.15f) && brakeRedRatioEma >= (thr - 0.05f))
 
         if (isOn) {
             brakeCueActiveFrames += 1
@@ -1641,7 +1645,7 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
 
     /**
      * Heuristika:
-     * - pracuje ve spodní části bbox (cca 30 % výšky)
+     * - pracuje ve spodní části bbox (cca 40 % výšky)
      * - měří poměr "červených" pixelů + průměrnou intenzitu červené složky.
      * Sampling stride drží výkon.
      */
@@ -1661,7 +1665,7 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
         val bw = (right - left).coerceAtLeast(2)
         val bh = (bottom - top).coerceAtLeast(2)
 
-        val roiTop = (bottom - (bh * 0.60f)).toInt().coerceIn(top, bottom - 1)
+        val roiTop = (bottom - (bh * 0.40f)).toInt().coerceIn(top, bottom - 1)
         val roiBottom = bottom
         val insetX = (bw * 0.12f).toInt().coerceAtLeast(0)
         val roiLeft = (left + insetX).coerceIn(0, frameWRot - 1)
@@ -1669,7 +1673,7 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
 
         val sampler = ImagePreprocessor.newSampler(image, rotationDegrees)
 
-        val step = 3 // performance
+        val step = 2 // sensitivity vs performance
         var redCount = 0
         var total = 0
         var sumRed = 0L
@@ -1683,7 +1687,7 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
                 val g = c.g
                 val b = c.b
 
-                val isRed = r > 80 && r > (g * 13 / 10) && r > (b * 13 / 10)
+                val isRed = r > 60 && r > (g * 12 / 10) && r > (b * 12 / 10)
                 if (isRed) redCount += 1
                 sumRed += r.toLong()
                 total += 1
