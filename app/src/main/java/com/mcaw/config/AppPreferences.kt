@@ -152,6 +152,18 @@ var soundRed: Boolean
     get() = prefs.getBoolean("sound_red", true)
     set(v) = prefs.edit().putBoolean("sound_red", v).apply()
 
+/**
+ * Hlasitost zvuku alertu v procentech (0..100).
+ * Pozn.: audio focus (priorita) zůstává beze změny – jen škálujeme hlasitost MediaPlayeru.
+ */
+var soundOrangeVolumePct: Int
+    get() = prefs.getInt("sound_orange_volume_pct", 75).coerceIn(0, 100)
+    set(v) = prefs.edit().putInt("sound_orange_volume_pct", v.coerceIn(0, 100)).apply()
+
+var soundRedVolumePct: Int
+    get() = prefs.getInt("sound_red_volume_pct", 100).coerceIn(0, 100)
+    set(v) = prefs.edit().putInt("sound_red_volume_pct", v.coerceIn(0, 100)).apply()
+
 var voiceOrange: Boolean
     get() = prefs.getBoolean("voice_orange", true)
     set(v) = prefs.edit().putBoolean("voice_orange", v).apply()

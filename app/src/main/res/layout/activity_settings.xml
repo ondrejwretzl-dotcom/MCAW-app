@@ -406,6 +406,75 @@
                     android:layout_height="wrap_content"
                     android:text="Zvuk pro červenou" />
 
+                <!-- Hlasitost alertů (škálování MediaPlayeru) -->
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Hlasitost zvuku"
+                    android:textColor="#0F172A"
+                    android:textStyle="bold"
+                    android:layout_marginTop="10dp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Oranžová (warning)"
+                    android:textColor="#475569"
+                    android:textSize="13sp"
+                    android:layout_marginTop="6dp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <TextView
+                        android:id="@+id/txtOrangeVolumeValue"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="75 %"
+                        android:textColor="#475569"
+                        android:layout_marginEnd="10dp" />
+
+                    <com.google.android.material.slider.Slider
+                        android:id="@+id/sliderOrangeVolume"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:layout_height="wrap_content"
+                        app:labelBehavior="gone" />
+                </LinearLayout>
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Červená (critical)"
+                    android:textColor="#475569"
+                    android:textSize="13sp"
+                    android:layout_marginTop="6dp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <TextView
+                        android:id="@+id/txtRedVolumeValue"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="100 %"
+                        android:textColor="#475569"
+                        android:layout_marginEnd="10dp" />
+
+                    <com.google.android.material.slider.Slider
+                        android:id="@+id/sliderRedVolume"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:layout_height="wrap_content"
+                        app:labelBehavior="gone" />
+                </LinearLayout>
+
                 <com.google.android.material.switchmaterial.SwitchMaterial
                     android:id="@+id/swVoiceOrange"
                     android:layout_width="wrap_content"
@@ -598,20 +667,20 @@
     android:layout_marginTop="8dp"
     android:orientation="horizontal"
     android:gravity="center_vertical">
-
+                        
     <TextView
         android:layout_width="0dp"
         android:layout_weight="1"
         android:layout_height="wrap_content"
-        android:text="Výška kamery (m)"
-        android:textColor="#E5E7EB" />
+        android:text="Výška kamery (m)" />
 
     <EditText
         android:id="@+id/etCameraMountHeight"
-        android:layout_width="90dp"
+        android:layout_width="80dp"
         android:layout_height="wrap_content"
         android:inputType="numberDecimal"
-        android:hint="1.20" />
+        android:hint="1.20"
+        android:gravity="center" />
 
     <ImageButton
         android:id="@+id/btnInfoCameraMountHeight"
@@ -633,15 +702,15 @@
         android:layout_width="0dp"
         android:layout_weight="1"
         android:layout_height="wrap_content"
-        android:text="Sklon kamery dolů (°)"
-        android:textColor="#E5E7EB" />
+        android:text="Sklon kamery dolů (°)" />
 
     <EditText
         android:id="@+id/etCameraPitchDownDeg"
-        android:layout_width="90dp"
+        android:layout_width="80dp"
         android:layout_height="wrap_content"
         android:inputType="numberDecimal|numberSigned"
-        android:hint="6" />
+        android:hint="6"
+        android:gravity="center" />
 
     <ImageButton
         android:id="@+id/btnInfoCameraPitchDownDeg"
@@ -651,6 +720,7 @@
         android:contentDescription="Info"
         android:src="@android:drawable/ic_menu_info_details" />
 </LinearLayout>
+
 
 <!-- Quality gating -->
 

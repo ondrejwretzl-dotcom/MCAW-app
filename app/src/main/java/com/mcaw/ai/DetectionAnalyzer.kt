@@ -624,6 +624,11 @@ private fun playAlertSound(resId: Int, critical: Boolean) {
         val mp = MediaPlayer()
         alertPlayer = mp
 
+        // User-configurable alert volumes (0..100 %). Priority stays via audio focus.
+        val volumePct = if (critical) AppPreferences.soundRedVolumePct else AppPreferences.soundOrangeVolumePct
+        val vol = (volumePct.coerceIn(0, 100) / 100f).coerceIn(0f, 1f)
+        mp.setVolume(vol, vol)
+
         // Prefer Media/sonification so it follows MEDIA volume (alarm volume is often 0).
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
             mp.setAudioAttributes(
