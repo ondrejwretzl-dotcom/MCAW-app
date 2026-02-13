@@ -156,13 +156,90 @@ var soundRed: Boolean
  * Hlasitost zvuku alertu v procentech (0..100).
  * Pozn.: audio focus (priorita) zůstává beze změny – jen škálujeme hlasitost MediaPlayeru.
  */
+/**
+ * Hlasitost zvuku alertu ve 4 úrovních (stejné jako „Šířka pruhu“ – diskrétní polohy).
+ *
+ * Level -> procenta (uživatel vidí jen label, procenta jsou interní):
+ * 0 = Normální (55 %)
+ * 1 = Silná (70 %)
+ * 2 = Velmi silná (85 %)
+ * 3 = Max (100 %)
+ *
+ * Default:
+ * - ORANGE = level 2 (Velmi silná)
+ * - RED = level 3 (Max)
+ *
+ * Pozn.: audio focus (priorita) zůstává beze změny – jen škálujeme hlasitost MediaPlayeru.
+ */
+private const val KEY_SOUND_ORANGE_VOLUME_LEVEL = "sound_orange_volume_level"
+private const val KEY_SOUND_RED_VOLUME_LEVEL = "sound_red_volume_level"
+
+// Backward compatibility: legacy percentage keys (původní slider v %)
+private const val KEY_SOUND_ORANGE_VOLUME_PCT = "sound_orange_volume_pct"
+private const val KEY_SOUND_RED_VOLUME_PCT = "sound_red_volume_pct"
+
+private val VOLUME_LEVEL_PCTS = intArrayOf(55, 70, 85, 100)
+
+private fun clampVolumeLevel(level: Int): Int = level.coerceIn(0, 3)
+
+private fun levelForLegacyPct(pct: Int): Int {
+    val p = pct.coerceIn(0, 100)
+    return when {
+        p <= 62 -> 0
+        p <= 77 -> 1
+        p <= 92 -> 2
+        else -> 3
+    }
+}
+
+/** Level -> % (0..100). */
+fun volumePctForLevel(level: Int): Int = VOLUME_LEVEL_PCTS[clampVolumeLevel(level)]
+
+/** Level -> scalar (0.0..1.0) pro MediaPlayer.setVolume(). */
+fun volumeScalarForLevel(level: Int): Float = volumePctForLevel(level) / 100f
+
+var soundOrangeVolumeLevel: Int
+    get() {
+        val stored = prefs.getInt(KEY_SOUND_ORANGE_VOLUME_LEVEL, Int.MIN_VALUE)
+        if (stored != Int.MIN_VALUE) return clampVolumeLevel(stored)
+
+        // migrate from legacy pct if present
+        if (prefs.contains(KEY_SOUND_ORANGE_VOLUME_PCT)) {
+            val legacyPct = prefs.getInt(KEY_SOUND_ORANGE_VOLUME_PCT, 75)
+            val lvl = levelForLegacyPct(legacyPct)
+            prefs.edit().putInt(KEY_SOUND_ORANGE_VOLUME_LEVEL, lvl).apply()
+            return lvl
+        }
+        return 2 // default = Velmi silná
+    }
+    set(v) = prefs.edit().putInt(KEY_SOUND_ORANGE_VOLUME_LEVEL, clampVolumeLevel(v)).apply()
+
+var soundRedVolumeLevel: Int
+    get() {
+        val stored = prefs.getInt(KEY_SOUND_RED_VOLUME_LEVEL, Int.MIN_VALUE)
+        if (stored != Int.MIN_VALUE) return clampVolumeLevel(stored)
+
+        if (prefs.contains(KEY_SOUND_RED_VOLUME_PCT)) {
+            val legacyPct = prefs.getInt(KEY_SOUND_RED_VOLUME_PCT, 100)
+            val lvl = levelForLegacyPct(legacyPct)
+            prefs.edit().putInt(KEY_SOUND_RED_VOLUME_LEVEL, lvl).apply()
+            return lvl
+        }
+        return 3 // default = Max
+    }
+    set(v) = prefs.edit().putInt(KEY_SOUND_RED_VOLUME_LEVEL, clampVolumeLevel(v)).apply()
+
+/**
+ * Legacy percent getters/setters kept for compatibility with older builds.
+ * Interně mapujeme na level.
+ */
 var soundOrangeVolumePct: Int
-    get() = prefs.getInt("sound_orange_volume_pct", 75).coerceIn(0, 100)
-    set(v) = prefs.edit().putInt("sound_orange_volume_pct", v.coerceIn(0, 100)).apply()
+    get() = volumePctForLevel(soundOrangeVolumeLevel)
+    set(v) { soundOrangeVolumeLevel = levelForLegacyPct(v) }
 
 var soundRedVolumePct: Int
-    get() = prefs.getInt("sound_red_volume_pct", 100).coerceIn(0, 100)
-    set(v) = prefs.edit().putInt("sound_red_volume_pct", v.coerceIn(0, 100)).apply()
+    get() = volumePctForLevel(soundRedVolumeLevel)
+    set(v) { soundRedVolumeLevel = levelForLegacyPct(v) }
 
 var voiceOrange: Boolean
     get() = prefs.getBoolean("voice_orange", true)
