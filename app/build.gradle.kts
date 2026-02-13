@@ -11,14 +11,33 @@ android {
         applicationId = "com.mcaw.app" // uprav dle svého (com.mcaw.app)
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        // Pro update APK musí versionCode růst. V CI používáme GITHUB_RUN_NUMBER.
+        // Lokálně zůstává default 1.
+        val vc = (System.getenv("VERSION_CODE")
+            ?: System.getenv("GITHUB_RUN_NUMBER")
+            ?: "1").toInt()
+        versionCode = vc
+        versionName = System.getenv("VERSION_NAME") ?: "1.0.$vc"
         buildConfigField("String", "BUILD_ID", "\"${System.currentTimeMillis()}\"")
+    }
+
+    // Release signing: nutné pro to, aby šla aplikace aktualizovat bez odinstalace.
+    // Keystore dodá CI (GitHub Secrets) a workflow ho před buildem uloží do app/mcaw-release.keystore.
+    signingConfigs {
+        create("release") {
+            val ksPath = System.getenv("MCAW_KEYSTORE_PATH") ?: "mcaw-release.keystore"
+            storeFile = file(ksPath)
+            storePassword = System.getenv("MCAW_KEYSTORE_PASSWORD")
+            keyAlias = System.getenv("MCAW_KEY_ALIAS")
+            keyPassword = System.getenv("MCAW_KEY_PASSWORD")
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            // Pokud CI neposkytne proměnné, release build spadne (správně).
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

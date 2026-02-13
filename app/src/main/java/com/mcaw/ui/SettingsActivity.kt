@@ -98,6 +98,11 @@ class SettingsActivity : ComponentActivity() {
         val etCameraMountHeight: EditText? = findViewById(R.id.etCameraMountHeight)
         val etCameraPitchDownDeg: EditText? = findViewById(R.id.etCameraPitchDownDeg)
 
+        // Smysluplné labely i bez úprav XML layoutu (hint přímo v inputu).
+        // (Uživatel pak chápe jednotky a význam i když vedle není TextView.)
+        etCameraMountHeight?.hint = "Výška kamery nad zemí (m)"
+        etCameraPitchDownDeg?.hint = "Sklon kamery dolů (°)"
+
         // Info icons (optional)
         findViewById<View>(R.id.btnInfoLaneFilter)?.setOnClickListener {
             showInfo(
