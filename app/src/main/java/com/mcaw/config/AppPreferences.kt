@@ -131,11 +131,11 @@ var voiceRed: Boolean
     set(v) = prefs.edit().putBoolean("voice_red", v).apply()
 
 var ttsTextOrange: String
-    get() = prefs.getString("tts_orange_text", "Pozor, blížíš se k objektu") ?: "Pozor, blížíš se k objektu"
+    get() = prefs.getString("tts_orange_text", "Varování") ?: "Varování"
     set(v) = prefs.edit().putString("tts_orange_text", v).apply()
 
 var ttsTextRed: String
-    get() = prefs.getString("tts_red_text", "Kritické, okamžitě brzdi") ?: "Kritické, okamžitě brzdi"
+    get() = prefs.getString("tts_red_text", "Brzdi") ?: "Brzdi"
     set(v) = prefs.edit().putString("tts_red_text", v).apply()
 
     var debugOverlay: Boolean

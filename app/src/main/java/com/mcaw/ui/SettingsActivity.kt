@@ -94,12 +94,17 @@ class SettingsActivity : ComponentActivity() {
         val txtLaneWidthValue = findViewById<TextView>(R.id.txtLaneWidthValue)
         val txtDistanceScaleValue = findViewById<TextView>(R.id.txtDistanceScaleValue)
 
+        // Camera calibration
+        val etCameraMountHeight: EditText? = findViewById(R.id.etCameraMountHeight)
+        val etCameraPitchDownDeg: EditText? = findViewById(R.id.etCameraPitchDownDeg)
+
         // Info icons (optional)
         findViewById<View>(R.id.btnInfoLaneFilter)?.setOnClickListener {
             showInfo(
-                title = "Filtrovat objekty v ROI",
-                msg = "Ignoruje objekty mimo směr jízdy (boky, protisměr, parkovaná auta). " +
-                    "Snižuje falešné poplachy, ale může krátce přehlédnout vozidlo rychle najíždějící ze strany."
+                title = "Omezit detekci na jízdní dráhu",
+                msg = "Omezuje detekci jen na objekty v jízdní dráze (trapezoid ROI). " +
+                    "Snižuje falešné poplachy (boky, protisměr, parkovaná auta). " +
+                    "Nevýhoda: může krátce přehlédnout vozidlo rychle najíždějící ze strany."
             )
         }
         findViewById<View>(R.id.btnInfoLaneWidth)?.setOnClickListener {
@@ -114,6 +119,30 @@ class SettingsActivity : ComponentActivity() {
                 title = "Kalibrace vzdálenosti",
                 msg = "Doladění odhadu vzdálenosti podle telefonu a uchycení. " +
                     "Pokud aplikace hlásí vzdálenost systematicky kratší/delší, uprav toto."
+            )
+        }
+
+        findViewById<View>(R.id.btnInfoCameraMountHeight)?.setOnClickListener {
+            showInfo(
+                title = "Výška kamery (m)",
+                msg = "Výška čočky kamery nad zemí. Používá se pro přesnější odhad vzdálenosti.
+
+" +
+                    "• Auto typicky 1.1–1.5 m
+" +
+                    "• Moto často 0.9–1.3 m (podle držáku)
+
+" +
+                    "Pokud aplikace systematicky přeceňuje/podceňuje vzdálenost, zkontroluj i tento parametr."
+            )
+        }
+        findViewById<View>(R.id.btnInfoCameraPitchDownDeg)?.setOnClickListener {
+            showInfo(
+                title = "Sklon kamery dolů (°)",
+                msg = "Náklon kamery směrem k zemi. 0° = horizont, kladné hodnoty = dolů.
+
+" +
+                    "Typicky 3–10°. Příliš velký sklon může zkrátit dohled; příliš malý může zkreslit odhad vzdálenosti."
             )
         }
         findViewById<View>(R.id.btnInfoQualityGating)?.setOnClickListener {
@@ -228,6 +257,10 @@ class SettingsActivity : ComponentActivity() {
             etTtsOrange.setText(AppPreferences.ttsTextOrange)
             etTtsRed.setText(AppPreferences.ttsTextRed)
 
+            // Camera calibration
+            etCameraMountHeight?.setText(AppPreferences.cameraMountHeightM.toString())
+            etCameraPitchDownDeg?.setText(AppPreferences.cameraPitchDownDeg.toString())
+
             // Advanced sliders
             bindLaneWidthSlider(sliderLaneWidth, txtLaneWidthValue)
             bindDistanceScaleSlider(sliderDistanceScale, txtDistanceScaleValue)
@@ -263,6 +296,22 @@ class SettingsActivity : ComponentActivity() {
         }
         etTtsOrange.addTextChangedListener(ttsWatcher)
         etTtsRed.addTextChangedListener(ttsWatcher)
+
+        // Camera calibration inputs
+        val cameraWatcher = object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+            override fun afterTextChanged(s: Editable?) {
+                // Store only when fields exist; AppPreferences clamps ranges.
+                AppPreferences.cameraMountHeightM =
+                    readFloatNullable(etCameraMountHeight, AppPreferences.cameraMountHeightM)
+                AppPreferences.cameraPitchDownDeg =
+                    readFloatNullable(etCameraPitchDownDeg, AppPreferences.cameraPitchDownDeg)
+            }
+        }
+        etCameraMountHeight?.addTextChangedListener(cameraWatcher)
+        etCameraPitchDownDeg?.addTextChangedListener(cameraWatcher)
+
     }
 
     private fun bindLaneWidthSlider(slider: Slider?, valueView: TextView?) {
@@ -339,7 +388,7 @@ class SettingsActivity : ComponentActivity() {
             .setMessage(
                 """Vrátí vybrané volby na doporučené hodnoty (nezmění zvuk/hlas, model ani režim).
 
-• Filtrovat objekty v ROI
+• Omezit detekci na jízdní dráhu
 • Šířka pruhu (tolerance)
 • Kalibrace vzdálenosti
 • Omezit falešné alarmy v noci/rozmazání
@@ -375,6 +424,12 @@ private fun resetRecommended() {
 
 
     private fun readFloat(editText: EditText, fallback: Float): Float {
+        val value = editText.text?.toString()?.trim()
+        return value?.toFloatOrNull() ?: fallback
+    }
+
+    private fun readFloatNullable(editText: EditText?, fallback: Float): Float {
+        if (editText == null) return fallback
         val value = editText.text?.toString()?.trim()
         return value?.toFloatOrNull() ?: fallback
     }

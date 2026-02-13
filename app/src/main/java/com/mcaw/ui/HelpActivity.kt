@@ -26,13 +26,13 @@ Hlavní ukazatel je TTC (Time To Collision) – čas do možné srážky.
 • Rychlost přibližování
 • TTC (čas do možné srážky)
 
-2) „Filtrovat objekty v ROI“
+2) „Omezit detekci na jízdní dráhu“
 Když je zapnuto:
-• ignoruje cíle mimo tvůj směr jízdy
-• méně falešných alarmů (hlavně ve městě)
+• bere jen objekty v jízdní dráze (trapezoid ROI)
+• méně falešných alarmů (boky, protisměr, parkovaná auta)
 
 Když je vypnuto:
-• reaguje na širší oblast
+• reaguje i na objekty mimo jízdní dráhu
 • může častěji varovat
 
 Doporučení:
@@ -55,6 +55,13 @@ Když aplikace:
 • hlásí systematicky větší vzdálenost → sniž kalibraci („Méně“)
 
 Záleží na telefonu, uchycení a výšce kamery.
+
+5a) Kalibrace kamery (výška + sklon)
+Tyto hodnoty pomáhají zpřesnit odhad vzdálenosti z obrazu:
+• Výška kamery (m): výška čočky nad zemí. Auto typicky 1.1–1.5 m, moto často 0.9–1.3 m.
+• Sklon kamery dolů (°): 0° = horizont, kladné hodnoty = dolů (typicky 3–10°).
+
+Pokud aplikace hlásí vzdálenost systematicky špatně i po „Kalibraci vzdálenosti“, doladit tyto parametry.
 
 6) Kvalita obrazu (tma / vibrace / rozmazání)
 Když je zapnuto, aplikace je méně agresivní v horších podmínkách a méně ruší.
