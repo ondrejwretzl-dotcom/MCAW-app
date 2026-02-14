@@ -4,10 +4,16 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.RectF
 import android.graphics.PointF
+import android.media.AudioManager
+import android.media.MediaPlayer
+import android.os.VibrationEffect
+import android.os.Vibrator
 import android.os.SystemClock
+import android.speech.tts.TextToSpeech
 import android.util.Log
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
+import com.mcaw.app.R
 import com.mcaw.config.AppPreferences
 import com.mcaw.config.DetectionModePolicy
 import com.mcaw.location.SpeedProvider
@@ -16,7 +22,7 @@ import com.mcaw.risk.RiskEngine
 import com.mcaw.model.Box
 import com.mcaw.model.Detection
 import com.mcaw.util.PublicLogWriter
-import com.mcaw.util.McawEventLog
+import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -182,6 +188,15 @@ private fun assessFrameQuality(image: ImageProxy): FrameQuality {
     private var lastAlertLevel = 0
     private var lastTtcLevel: Int = 0
 
+    private var tts: TextToSpeech? = null
+
+    // --- Alert audio (fix: keep strong ref, handle focus, stop on level change) ---
+    private var alertPlayer: MediaPlayer? = null
+    private var audioFocusRequest: Any? = null // AudioFocusRequest on API 26+, kept as Any for source compat
+    private var audioFocusGranted: Boolean = false
+    private var lastFocusGain: Int = android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
+    private var lastFocusUsage: Int = android.media.AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE
+
     // --- Cut-in detection (dynamic ego offset boost) ---
     private var cutInPrevAreaNorm: Float = Float.NaN
     private var cutInPrevOffset: Float = Float.NaN
@@ -254,6 +269,12 @@ private fun updateCutInState(tsMs: Long, box: Box, frameW: Float, frameH: Float)
         val ts = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", java.util.Locale.US).format(System.currentTimeMillis())
         PublicLogWriter.appendLogLine(ctx, analyzerLogFileName, "ts=$ts f=$frameIndex $msg")
     }
+
+    init {
+        if (AppPreferences.voice) {
+            tts = TextToSpeech(ctx) { status ->
+                if (status == TextToSpeech.SUCCESS) tts?.language = Locale.getDefault()
+            }
         }
     }
 
@@ -485,19 +506,6 @@ val level = risk.level
 val alertReason = risk.reason
 lastAlertLevel = level
 
-if (level != prevLevel) {
-    McawEventLog.alert(
-        ctx,
-        level = level,
-        riskScore = risk.riskScore,
-        reason = alertReason,
-        distanceM = dist,
-        approachSpeedMps = approachSpeed,
-        riderSpeedMps = riderSpeedMps,
-        ttcSec = ttc
-    )
-}
-
 if (riderStanding) {
     AlertNotifier.stopInApp(ctx)
 } else {
@@ -593,7 +601,7 @@ if (AppPreferences.debugOverlay) {
         }
     }
 
-    /** Release non-camera resources held by analyzer (IMU, AlertNotifier, etc.). */
+    /** Release non-camera resources held by analyzer (IMU, MediaPlayer/TTS, etc.). */
     fun shutdown() {
         runCatching { imuMonitor.stop() }
         runCatching { AlertNotifier.shutdown(ctx) }
@@ -624,18 +632,170 @@ if (AppPreferences.debugOverlay) {
     }
 
     private fun stopActiveAlerts() {
-        if (lastAlertLevel != 0) {
-            lastAlertLevel = 0
-            AlertNotifier.stopInApp(ctx)
-            McawEventLog.event(ctx, src = "ANALYZER", evt = "ALERT_STOP")
-        } else {
-            // Ensure audio/vibration is stopped even if state already says SAFE.
-            AlertNotifier.stopInApp(ctx)
-        }
+        lastAlertLevel = 0
+        val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        runCatching { alertPlayer?.stop() }
+        runCatching { alertPlayer?.release() }
+        alertPlayer = null
+        abandonAlertAudioFocus(am)
     }
 
     
-private fun sendOverlayUpdate(
+private fun playAlertSound(resId: Int, critical: Boolean) {
+    runCatching {
+        val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val usage = android.media.AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE
+        val gain = if (critical) AudioManager.AUDIOFOCUS_GAIN_TRANSIENT else AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
+        requestAlertAudioFocus(am, gain = gain, usage = usage)
+
+        // Stop previous
+        alertPlayer?.setOnCompletionListener(null)
+        runCatching { alertPlayer?.stop() }
+        runCatching { alertPlayer?.release() }
+        alertPlayer = null
+
+        val mp = MediaPlayer()
+        alertPlayer = mp
+
+        // User-configurable alert volumes (0..100 %). Priority stays via audio focus.
+        val vol = if (critical) AppPreferences.soundRedVolumeScalar else AppPreferences.soundOrangeVolumeScalar
+        mp.setVolume(vol, vol)
+
+        // Prefer Media/sonification so it follows MEDIA volume (alarm volume is often 0).
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+            mp.setAudioAttributes(
+                android.media.AudioAttributes.Builder()
+                    .setUsage(android.media.AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build()
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            mp.setAudioStreamType(AudioManager.STREAM_MUSIC)
+        }
+
+        val uri = android.net.Uri.parse("android.resource://${ctx.packageName}/$resId")
+        mp.setDataSource(ctx, uri)
+        mp.isLooping = false
+        mp.setOnCompletionListener { player ->
+            runCatching { player.release() }
+            if (alertPlayer === player) alertPlayer = null
+            abandonAlertAudioFocus(am)
+        }
+        mp.setOnErrorListener { player, what, extra ->
+            flog("alert sound error what=$what extra=$extra", force = true)
+            runCatching { player.release() }
+            if (alertPlayer === player) alertPlayer = null
+            abandonAlertAudioFocus(am)
+            true
+        }
+
+        mp.prepare()
+        mp.start()
+    }.onFailure {
+        val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        flog("alert sound fail: ${it.javaClass.simpleName} ${it.message}", force = true)
+        runCatching { alertPlayer?.release() }
+        alertPlayer = null
+        abandonAlertAudioFocus(am)
+    }
+}
+
+
+    private fun requestAlertAudioFocus(am: AudioManager, gain: Int, usage: Int) {
+        if (audioFocusGranted && gain == lastFocusGain && usage == lastFocusUsage) return
+
+        // If focus is already held with different params, release first.
+        if (audioFocusGranted) abandonAlertAudioFocus(am)
+
+        // API 26+ supports AudioFocusRequest, older uses legacy requestAudioFocus.
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            val listener = AudioManager.OnAudioFocusChangeListener { /* ignore */ }
+            val req = android.media.AudioFocusRequest.Builder(gain)
+                .setAudioAttributes(
+                    android.media.AudioAttributes.Builder()
+                        .setUsage(usage)
+                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build()
+                )
+                .setOnAudioFocusChangeListener(listener)
+                .setWillPauseWhenDucked(false)
+                .build()
+            audioFocusRequest = req
+            audioFocusGranted = (am.requestAudioFocus(req) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
+            if (audioFocusGranted) {
+                lastFocusGain = gain
+                lastFocusUsage = usage
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            audioFocusGranted = (am.requestAudioFocus(
+                null,
+                AudioManager.STREAM_MUSIC,
+                gain
+            ) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
+            if (audioFocusGranted) {
+                lastFocusGain = gain
+                lastFocusUsage = usage
+            }
+        }
+    }
+
+    private fun abandonAlertAudioFocus(am: AudioManager) {
+        if (!audioFocusGranted) return
+        audioFocusGranted = false
+
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            val req = audioFocusRequest as? android.media.AudioFocusRequest
+            if (req != null) {
+                am.abandonAudioFocusRequest(req)
+            } else {
+                am.abandonAudioFocus(null)
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            am.abandonAudioFocus(null)
+        }
+    }
+
+    private fun handleAlerts(level: Int) {
+    if (level <= 0 || level == lastAlertLevel) return
+    lastAlertLevel = level
+
+    when (level) {
+        1 -> {
+            // ORANGE (warning)
+            if (AppPreferences.sound && AppPreferences.soundOrange) {
+                playAlertSound(R.raw.alert_beep, critical = false)
+            }
+            if (AppPreferences.voice && AppPreferences.voiceOrange) {
+                val text = AppPreferences.ttsTextOrange.trim()
+                if (text.isNotEmpty()) {
+                    tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "tts_orange")
+                }
+            }
+        }
+        2 -> {
+            // RED (critical)
+            if (AppPreferences.sound && AppPreferences.soundRed) {
+                playAlertSound(R.raw.red_alert, critical = true)
+            }
+            if (AppPreferences.vibration) {
+                val vib = ctx.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+                if (vib.hasVibrator()) vib.vibrate(VibrationEffect.createOneShot(200, 150))
+            }
+            if (AppPreferences.voice && AppPreferences.voiceRed) {
+                val text = AppPreferences.ttsTextRed.trim()
+                if (text.isNotEmpty()) {
+                    tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "tts_red")
+                }
+            }
+        }
+    }
+}
+
+
+    private fun sendOverlayUpdate(
         box: Box,
         frameW: Float,
         frameH: Float,
