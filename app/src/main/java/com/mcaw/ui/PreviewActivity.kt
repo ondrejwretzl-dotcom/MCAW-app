@@ -48,8 +48,6 @@ class PreviewActivity : ComponentActivity() {
     private val searchHandler = Handler(Looper.getMainLooper())
     private var searching = true
     private var searchDots = 0
-    private var activityLogFileName: String = ""
-
     private var cameraProvider: ProcessCameraProvider? = null
     private var previewUseCase: Preview? = null
     private var analysisUseCase: ImageAnalysis? = null
@@ -135,8 +133,6 @@ class PreviewActivity : ComponentActivity() {
 
         speedProvider = SpeedProvider(this)
         speedMonitor = SpeedMonitor(speedProvider)
-        activityLogFileName = "mcaw_activity_${sessionStamp()}.txt"
-
         overlay.showTelemetry = AppPreferences.debugOverlay
 
         applyRoiFromPrefs()
@@ -405,7 +401,7 @@ class PreviewActivity : ComponentActivity() {
 
     private fun logActivity(msg: String) {
         try {
-            com.mcaw.util.PublicLogWriter.appendLogLine(this, activityLogFileName, msg)
+            android.util.Log.d("MCAW", msg)
         } catch (_: Exception) {
         }
     }

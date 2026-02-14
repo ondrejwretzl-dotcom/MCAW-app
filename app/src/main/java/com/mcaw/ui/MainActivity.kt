@@ -22,7 +22,6 @@ import com.mcaw.config.AppPreferences
 import com.mcaw.location.SpeedMonitor
 import com.mcaw.location.SpeedProvider
 import com.mcaw.service.McawService
-import com.mcaw.util.PublicLogWriter
 import com.mcaw.util.LabelMapper
 
 class MainActivity : ComponentActivity() {
@@ -52,8 +51,6 @@ class MainActivity : ComponentActivity() {
 
     private val logLines: ArrayDeque<String> = ArrayDeque()
     private val speedHandler = Handler(Looper.getMainLooper())
-    private var activityLogFileName: String = ""
-
     // --- Rider speed UX stabilization ---
     // Metrics from DetectionAnalyzer should be the primary source (when camera/service runs).
     // SpeedMonitor polling stays as a fallback only when metrics haven't arrived recently.
@@ -176,8 +173,6 @@ class MainActivity : ComponentActivity() {
 
         speedProvider = SpeedProvider(this)
         speedMonitor = SpeedMonitor(speedProvider)
-        activityLogFileName = "mcaw_activity_${sessionStamp()}.txt"
-
         txtBuildInfo.text =
             "MCAW ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) · ${BuildConfig.BUILD_ID}"
         addLog("Aplikace spuštěna")
@@ -199,22 +194,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun writeSessionLog(event: String) {
-        val timestamp = java.text.SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", java.util.Locale.US)
-            .format(System.currentTimeMillis())
-        val content = buildString {
-            append("event=")
-            append(event)
-            append('\n')
-            append("build_name=")
-            append(BuildConfig.VERSION_NAME)
-            append('\n')
-            append("build_code=")
-            append(BuildConfig.VERSION_CODE)
-            append('\n')
-            append("build_id=")
-            append(BuildConfig.BUILD_ID)
-            append('\n')
-        }
+        // One-file-per-session logging is handled by util.SessionEventLogger in DetectionAnalyzer.
+        // Keep UI events out of filesystem to avoid file churn.
+        android.util.Log.d("MCAW", "ui_event=$event")
+    }
         PublicLogWriter.writeTextFile(this, "mcaw_session_$timestamp.txt", content)
     }
 
@@ -513,16 +496,8 @@ private fun formatMetric(value: Float, unit: String): String {
     }
 
     private fun logActivity(message: String) {
-        val timestamp =
-            java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US)
-                .format(System.currentTimeMillis())
-        val content = "ts=$timestamp $message"
-        PublicLogWriter.appendLogLine(this, activityLogFileName, content)
-    }
-
-    private fun sessionStamp(): String {
-        return java.text.SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", java.util.Locale.US)
-            .format(System.currentTimeMillis())
+        // Avoid creating extra log files from UI; use Logcat only.
+        android.util.Log.d("MCAW", "ui=$message")
     }
 
     private enum class PendingAction {

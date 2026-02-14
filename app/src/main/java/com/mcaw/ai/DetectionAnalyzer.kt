@@ -19,6 +19,7 @@ import com.mcaw.config.DetectionModePolicy
 import com.mcaw.location.SpeedProvider
 import com.mcaw.location.RiderImuMonitor
 import com.mcaw.risk.RiskEngine
+import com.mcaw.util.SessionLogs
 import com.mcaw.model.Box
 import com.mcaw.model.Detection
 import java.util.Locale
@@ -115,16 +116,8 @@ class DetectionAnalyzer(
 
     // RiskEngine (predictive)
     private val riskEngine = RiskEngine()
-
-    // ALWAYS-ON event log (sampled + transitions) – written off the analyzer thread.
-    private val eventLogFileName: String = "mcaw_event_${sessionStamp()}.csv"
-    private val eventLogger = com.mcaw.util.SessionEventLogger(ctx, eventLogFileName).also { it.start() }
-
-    // DEBUG trace log (volitelně) – více detailů, stále throttled a mimo analyzer thread.
-    private val traceLogFileName: String = "mcaw_trace_${sessionStamp()}.csv"
-    private val traceLogger = if (AppPreferences.debugTrace) {
-        com.mcaw.util.SessionTraceLogger(ctx, traceLogFileName).also { it.start() }
-    } else null
+    // Centralized session logs (1 CSV per run, optional trace).
+    init { SessionLogs.init(ctx) }
 
     private var lastTraceSampleTsMs: Long = 0L
     private var lastTraceLockedId: Long = Long.MIN_VALUE
@@ -150,11 +143,6 @@ class DetectionAnalyzer(
         val motionBlur = false
         val poor = small || dark || motionBlur
         return Quality(poor = poor, dark = dark, motionBlur = motionBlur)
-    }
-
-    private fun sessionStamp(): String {
-        return java.text.SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US)
-            .format(System.currentTimeMillis())
     }
 
     private fun flog(msg: String, force: Boolean = false) {
@@ -200,21 +188,15 @@ class DetectionAnalyzer(
 
             // Get detections
             val detections = mutableListOf<Detection>()
-	            // Some detector wrappers expect a Bitmap; conversion may fail (return null) on rare devices.
-	            val bitmap = ImageUtils.imageProxyToBitmap(image, ctx)
-	                ?: run {
-	                    image.close()
-	                    return
-	                }
 
             if (AppPreferences.debugOverlay) perf.t1 = SystemClock.elapsedRealtimeNanos()
             yolo?.let {
-                detections += it.detect(bitmap)
+                detections += it.detect(image)
             }
             if (AppPreferences.debugOverlay) perf.t2 = SystemClock.elapsedRealtimeNanos()
 
             det?.let {
-                detections += it.detect(bitmap)
+                detections += it.detect(image)
             }
             if (AppPreferences.debugOverlay) perf.t3 = SystemClock.elapsedRealtimeNanos()
 
@@ -430,7 +412,7 @@ class DetectionAnalyzer(
                 }
                 if (sampleDue) lastSampleTsMs = tsMs
 
-                eventLogger.logEvent(
+                SessionLogs.logEvent(
                     tsMs = tsMs,
                     risk = risk.riskScore,
                     level = level,
@@ -488,9 +470,7 @@ class DetectionAnalyzer(
     }
 
     fun shutdown() {
-        runCatching { eventLogger.close() }
-        runCatching { traceLogger?.close() }
-        runCatching { imuMonitor.stop() }
+                        runCatching { imuMonitor.stop() }
         runCatching { AlertNotifier.shutdown(ctx) }
     }
 
