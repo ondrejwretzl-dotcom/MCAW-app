@@ -19,6 +19,7 @@ import com.google.android.material.switchmaterial.SwitchMaterial
 import com.mcaw.app.R
 import com.mcaw.config.AppPreferences
 import com.mcaw.util.PublicLogWriter
+import com.mcaw.util.SessionLogFile
 
 class SettingsActivity : ComponentActivity() {
 
@@ -43,15 +44,15 @@ class SettingsActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         AppPreferences.ensureInit(this)
         setContentView(R.layout.activity_settings)
-        writeSessionLog("Settings opened")
+        logSession("settings_opened")
 
         // Top actions
         findViewById<View>(R.id.btnOpenHelp)?.setOnClickListener {
-            writeSessionLog("Open help")
+            logSession("open_help")
             openActivitySafely(Intent(this, HelpActivity::class.java), title = "Návod")
         }
         findViewById<View>(R.id.btnOpenLegal)?.setOnClickListener {
-            writeSessionLog("Open legal")
+            logSession("open_legal")
             openActivitySafely(Intent(this, LegalActivity::class.java), title = "Upozornění a podmínky")
         }
         findViewById<View>(R.id.btnResetRecommended)?.setOnClickListener { confirmResetRecommended() }
@@ -436,7 +437,7 @@ Typicky 3–10°. Příliš velký sklon může zkrátit dohled; příliš malý
             .setNegativeButton("Zrušit", null)
             .setPositiveButton("Resetovat", DialogInterface.OnClickListener { _: DialogInterface, _: Int ->
                 resetRecommended()
-                writeSessionLog("Reset recommended")
+                logSession("reset_recommended")
             })
             .show()
     }
@@ -498,15 +499,11 @@ private fun resetRecommended() {
         if (count <= 0) return 0
         return value.coerceIn(0, count - 1)
     }
-
-    private fun writeSessionLog(event: String) {
-        val timestamp = java.text.SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", java.util.Locale.US)
-            .format(System.currentTimeMillis())
-        val content = buildString {
-            append("event=")
-            append(event)
-            append('\n')
-        }
-        PublicLogWriter.writeTextFile(this, "mcaw_settings_$timestamp.txt", content)
+    private fun logSession(message: String) {
+        // Unified session log line (no extra settings log file)
+        // S,<ts_ms>,<message>
+        val tsMs = System.currentTimeMillis()
+        SessionLogFile.init(this)
+        PublicLogWriter.appendLogLine(this, SessionLogFile.fileName, "S,$tsMs,$message")
     }
 }

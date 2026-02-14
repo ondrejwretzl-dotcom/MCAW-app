@@ -31,6 +31,8 @@ import com.mcaw.config.AppPreferences
 import com.mcaw.location.SpeedMonitor
 import com.mcaw.location.SpeedProvider
 import com.mcaw.util.LabelMapper
+import com.mcaw.util.PublicLogWriter
+import com.mcaw.util.SessionLogFile
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -48,7 +50,6 @@ class PreviewActivity : ComponentActivity() {
     private val searchHandler = Handler(Looper.getMainLooper())
     private var searching = true
     private var searchDots = 0
-    private var activityLogFileName: String = ""
 
     private var cameraProvider: ProcessCameraProvider? = null
     private var previewUseCase: Preview? = null
@@ -135,7 +136,7 @@ class PreviewActivity : ComponentActivity() {
 
         speedProvider = SpeedProvider(this)
         speedMonitor = SpeedMonitor(speedProvider)
-        activityLogFileName = "mcaw_activity_${sessionStamp()}.txt"
+        SessionLogFile.init(this)
 
         overlay.showTelemetry = AppPreferences.debugOverlay
 
@@ -403,12 +404,13 @@ class PreviewActivity : ComponentActivity() {
         searchHandler.removeCallbacksAndMessages(null)
     }
 
-    private fun logActivity(msg: String) {
-        try {
-            com.mcaw.util.PublicLogWriter.appendLogLine(this, activityLogFileName, msg)
-        } catch (_: Exception) {
+        private fun logActivity(msg: String) {
+        // Unified session log line (no extra preview/activity log file).
+        // S,<ts_ms>,<message>
+        val tsMs = System.currentTimeMillis()
+        SessionLogFile.init(this)
+        runCatching {
+            PublicLogWriter.appendLogLine(this, SessionLogFile.fileName, "S,$tsMs,$msg")
         }
     }
-
-    private fun sessionStamp(): String = System.currentTimeMillis().toString()
 }

@@ -23,6 +23,7 @@ import com.mcaw.location.SpeedMonitor
 import com.mcaw.location.SpeedProvider
 import com.mcaw.service.McawService
 import com.mcaw.util.PublicLogWriter
+import com.mcaw.util.SessionLogFile
 import com.mcaw.util.LabelMapper
 
 class MainActivity : ComponentActivity() {
@@ -52,7 +53,6 @@ class MainActivity : ComponentActivity() {
 
     private val logLines: ArrayDeque<String> = ArrayDeque()
     private val speedHandler = Handler(Looper.getMainLooper())
-    private var activityLogFileName: String = ""
 
     // --- Rider speed UX stabilization ---
     // Metrics from DetectionAnalyzer should be the primary source (when camera/service runs).
@@ -176,12 +176,11 @@ class MainActivity : ComponentActivity() {
 
         speedProvider = SpeedProvider(this)
         speedMonitor = SpeedMonitor(speedProvider)
-        activityLogFileName = "mcaw_activity_${sessionStamp()}.txt"
+        SessionLogFile.init(this)
 
         txtBuildInfo.text =
             "MCAW ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) · ${BuildConfig.BUILD_ID}"
         addLog("Aplikace spuštěna")
-        writeSessionLog("App start")
         logActivity("app_start build=${BuildConfig.VERSION_NAME}(${BuildConfig.VERSION_CODE})")
 
         findViewById<MaterialButton>(R.id.btnStart).setOnClickListener {
@@ -189,7 +188,6 @@ class MainActivity : ComponentActivity() {
         }
         findViewById<MaterialButton>(R.id.btnStop).setOnClickListener { stopEngine() }
         findViewById<MaterialButton>(R.id.btnSettings).setOnClickListener {
-            writeSessionLog("Open settings")
             logActivity("open_settings")
             startActivity(Intent(this, SettingsActivity::class.java))
         }
@@ -197,24 +195,6 @@ class MainActivity : ComponentActivity() {
             ensurePermissions(PendingAction.OPEN_CAMERA)
         }
     }
-
-    private fun writeSessionLog(event: String) {
-        val timestamp = java.text.SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", java.util.Locale.US)
-            .format(System.currentTimeMillis())
-        val content = buildString {
-            append("event=")
-            append(event)
-            append('\n')
-            append("build_name=")
-            append(BuildConfig.VERSION_NAME)
-            append('\n')
-            append("build_code=")
-            append(BuildConfig.VERSION_CODE)
-            append('\n')
-            append("build_id=")
-            append(BuildConfig.BUILD_ID)
-            append('\n')
-        }
         PublicLogWriter.writeTextFile(this, "mcaw_session_$timestamp.txt", content)
     }
 
@@ -513,17 +493,12 @@ private fun formatMetric(value: Float, unit: String): String {
     }
 
     private fun logActivity(message: String) {
-        val timestamp =
-            java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US)
-                .format(System.currentTimeMillis())
-        val content = "ts=$timestamp $message"
-        PublicLogWriter.appendLogLine(this, activityLogFileName, content)
-    }
-
-    private fun sessionStamp(): String {
-        return java.text.SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", java.util.Locale.US)
-            .format(System.currentTimeMillis())
-    }
+    // Unified session log line (no extra per-activity files).
+    // S,<ts_ms>,<message>
+    val tsMs = System.currentTimeMillis()
+    SessionLogFile.init(this)
+    PublicLogWriter.appendLogLine(this, SessionLogFile.fileName, "S,$tsMs,$message")
+}
 
     private enum class PendingAction {
         START_ENGINE,
