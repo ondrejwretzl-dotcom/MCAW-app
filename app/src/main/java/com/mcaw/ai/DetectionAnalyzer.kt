@@ -498,8 +498,8 @@ val risk = if (riderStanding) {
 
 val prevLevel = lastAlertLevel
 val level = risk.level
-val reasonBits = RiskEngine.formatReasonShort(risk.reasonBits)Bits
-	val alertReason = RiskEngine.formatReasonShort(reasonBits)
+val reasonBits = risk.reasonBits
+val alertReason = RiskEngine.formatReasonShort(reasonBits)
 lastAlertLevel = level
 
 if (riderStanding) {
