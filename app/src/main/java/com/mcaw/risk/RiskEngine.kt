@@ -17,14 +17,30 @@ class RiskEngine {
 
     enum class State { SAFE, CAUTION, CRITICAL }
 
-    data class Result(
-        val level: Int,            // 0 SAFE, 1 ORANGE, 2 RED
-        val riskScore: Float,       // 0..1
-        val reason: String,         // krátké WHY
-        val state: State
-    )
+    class Result(
+    var level: Int = 0,            // 0 SAFE, 1 ORANGE, 2 RED
+    var riskScore: Float = 0f,      // 0..1
+    var reasonBits: Int = 0,        // bitmask WHY (stable, parseable)
+    var state: State = State.SAFE
+)
 
-    data class Thresholds(
+class Thresholds(
+    val ttcOrange: Float,
+    val ttcRed: Float,
+    val distOrange: Float,
+    val distRed: Float,
+    val relOrange: Float,
+    val relRed: Float
+)
+
+// NOTE: Avoid per-frame allocations: re-use objects.
+private val out = Result()
+
+private val thrCity = Thresholds(ttcOrange = 3.0f, ttcRed = 1.2f, distOrange = 15f, distRed = 8f, relOrange = 3f, relRed = 5f)
+private val thrSport = Thresholds(ttcOrange = 4.0f, ttcRed = 1.5f, distOrange = 30f, distRed = 12f, relOrange = 5f, relRed = 9f)
+private val thrUser = Thresholds(ttcOrange = 3.0f, ttcRed = 1.2f, distOrange = 15f, distRed = 8f, relOrange = 3f, relRed = 5f) // updated each call
+
+(
         val ttcOrange: Float,
         val ttcRed: Float,
         val distOrange: Float,
@@ -114,7 +130,7 @@ class RiskEngine {
             else -> State.SAFE
         }
 
-        val reason = buildReason(
+        val reasonBits = buildReasonBits(
             level = level,
             risk = risk,
             ttc = ttcSec,
@@ -128,25 +144,33 @@ class RiskEngine {
             conservative = conservative
         )
 
-        return Result(level = level, riskScore = risk, reason = reason, state = state)
+out.level = level
+out.riskScore = risk
+out.reasonBits = reasonBits
+out.state = state
+return out
     }
 
     private fun thresholdsForMode(mode: Int): Thresholds {
-        // Mirror existing behavior (City default / Sport / User) but include dist+rel too.
-        // 1 = Město, 2 = Sport, 3 = Uživatel (Auto is resolved before calling)
-        return when (mode) {
-            2 -> Thresholds(ttcOrange = 4.0f, ttcRed = 1.5f, distOrange = 30f, distRed = 12f, relOrange = 5f, relRed = 9f)
-            3 -> Thresholds(
-                ttcOrange = com.mcaw.config.AppPreferences.userTtcOrange,
-                ttcRed = com.mcaw.config.AppPreferences.userTtcRed,
-                distOrange = com.mcaw.config.AppPreferences.userDistOrange,
-                distRed = com.mcaw.config.AppPreferences.userDistRed,
-                relOrange = com.mcaw.config.AppPreferences.userSpeedOrange,
-                relRed = com.mcaw.config.AppPreferences.userSpeedRed
-            )
-            else -> Thresholds(ttcOrange = 3.0f, ttcRed = 1.2f, distOrange = 15f, distRed = 8f, relOrange = 3f, relRed = 5f)
+    // 1 = Město, 2 = Sport, 3 = Uživatel (Auto is resolved before calling)
+    return when (mode) {
+        2 -> thrSport
+        3 -> {
+            // Refresh user thresholds (reads are cheap, avoids object alloc)
+            thrUser.ttcOrange = com.mcaw.config.AppPreferences.userTtcOrange
+            thrUser.ttcRed = com.mcaw.config.AppPreferences.userTtcRed
+            thrUser.distOrange = com.mcaw.config.AppPreferences.userDistOrange
+            thrUser.distRed = com.mcaw.config.AppPreferences.userDistRed
+            thrUser.relOrange = com.mcaw.config.AppPreferences.userSpeedOrange
+            thrUser.relRed = com.mcaw.config.AppPreferences.userSpeedRed
+            thrUser
         }
+        else -> thrCity
     }
+}
+
+}
+
 
     private fun scoreLowIsBad(value: Float, redThr: Float, orangeThr: Float): Float {
         if (!value.isFinite() || value <= 0f) return 0f
@@ -234,7 +258,42 @@ class RiskEngine {
         return lastLevel
     }
 
-    private fun buildReason(
+            // --- Reason contract (stable bitmask) ---
+    companion object {
+        const val BIT_TTC = 1 shl 0
+        const val BIT_DIST = 1 shl 1
+        const val BIT_REL = 1 shl 2
+        const val BIT_ROI_LOW = 1 shl 3
+        const val BIT_BRAKE_CUE = 1 shl 4
+        const val BIT_CUT_IN = 1 shl 5
+        const val BIT_EGO_BRAKE = 1 shl 6
+        const val BIT_QUALITY_CONSERV = 1 shl 7
+
+        /**
+         * Builds a short, human readable WHY string.
+         * Call only when needed (debug overlay / sampled logs) to avoid per-frame allocations.
+         */
+        fun formatReasonShort(reasonBits: Int): String {
+            val lvl = (reasonBits ushr 30) and 0x3
+            val sb = StringBuilder(32)
+            when (lvl) {
+                2 -> sb.append("CRIT")
+                1 -> sb.append("WARN")
+                else -> sb.append("SAFE")
+            }
+            if ((reasonBits and BIT_TTC) != 0) sb.append(" ttc")
+            if ((reasonBits and BIT_DIST) != 0) sb.append(" dist")
+            if ((reasonBits and BIT_REL) != 0) sb.append(" rel")
+            if ((reasonBits and BIT_ROI_LOW) != 0) sb.append(" roi")
+            if ((reasonBits and BIT_BRAKE_CUE) != 0) sb.append(" brakeCue")
+            if ((reasonBits and BIT_CUT_IN) != 0) sb.append(" cutIn")
+            if ((reasonBits and BIT_EGO_BRAKE) != 0) sb.append(" egoBrake")
+            if ((reasonBits and BIT_QUALITY_CONSERV) != 0) sb.append(" QCONSERV")
+            return sb.toString()
+        }
+    }
+
+    private fun buildReasonBits(
         level: Int,
         risk: Float,
         ttc: Float,
@@ -246,23 +305,21 @@ class RiskEngine {
         cutInActive: Boolean,
         egoBrake: Float,
         conservative: Boolean
-    ): String {
-        val main = when (level) {
-            2 -> "CRIT"
-            1 -> "WARN"
-            else -> "SAFE"
-        }
-        val parts = ArrayList<String>(6)
-        parts.add(main)
-        parts.add("r=%.2f".format(risk))
-        if (ttc.isFinite()) parts.add("ttc=%.2f".format(ttc))
-        if (dist.isFinite()) parts.add("d=%.1f".format(dist))
-        if (rel.isFinite()) parts.add("rel=%.1f".format(rel))
-        parts.add("roi=%.2f off=%.2f".format(roi, egoOff))
-        if (brakeCueActive) parts.add("brakeCue")
-        if (cutInActive) parts.add("cutIn")
-        if (egoBrake >= 0.65f) parts.add("egoBrake")
-        if (conservative) parts.add("QCONSERV")
-        return parts.joinToString(" ")
+    ): Int {
+        var bits = 0
+        // Primary factors: set bits when they are in "meaningful" zone.
+        if (ttc.isFinite() && ttc > 0f && ttc <= 4.5f) bits = bits or BIT_TTC
+        if (dist.isFinite() && dist > 0f && dist <= 30f) bits = bits or BIT_DIST
+        if (rel.isFinite() && rel >= 3f) bits = bits or BIT_REL
+        if (roi < 0.35f || egoOff >= 1.15f) bits = bits or BIT_ROI_LOW
+
+        if (brakeCueActive) bits = bits or BIT_BRAKE_CUE
+        if (cutInActive) bits = bits or BIT_CUT_IN
+        if (egoBrake >= 0.65f) bits = bits or BIT_EGO_BRAKE
+        if (conservative) bits = bits or BIT_QUALITY_CONSERV
+
+        // Encode level in top 2 bits for easy parsing (00/01/10).
+        bits = bits or ((level and 0x3) shl 30)
+        return bits
     }
 }
