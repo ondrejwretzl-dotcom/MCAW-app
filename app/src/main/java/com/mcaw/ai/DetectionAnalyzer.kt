@@ -923,8 +923,25 @@ private fun playAlertSound(resId: Int, critical: Boolean) {
 
     private fun thresholdsForMode(mode: Int): AlertThresholds {
         return when (mode) {
-            1 -> AlertThresholds(4.0f, 1.5f, 30f, 12f, 5f, 9f)
-            2 -> AlertThresholds(
+            AppPreferences.MODE_CITY -> AlertThresholds(
+                ttcOrange = 4.0f,
+                ttcRed = 1.5f,
+                distOrange = 25f,
+                distRed = 10f,
+                speedOrange = 4.5f,
+                speedRed = 8f
+            )
+
+            AppPreferences.MODE_SPORT -> AlertThresholds(
+                ttcOrange = 3.0f,
+                ttcRed = 1.2f,
+                distOrange = 35f,
+                distRed = 14f,
+                speedOrange = 5f,
+                speedRed = 9f
+            )
+
+            AppPreferences.MODE_USER -> AlertThresholds(
                 AppPreferences.userTtcOrange,
                 AppPreferences.userTtcRed,
                 AppPreferences.userDistOrange,
@@ -933,14 +950,10 @@ private fun playAlertSound(resId: Int, critical: Boolean) {
                 AppPreferences.userSpeedRed
             )
 
-            else -> AlertThresholds(3.0f, 1.2f, 15f, 8f, 3f, 5f)
+            // MODE_AUTO should be resolved to CITY/SPORT before calling this; fallback to CITY.
+            else -> AlertThresholds(4.0f, 1.5f, 25f, 10f, 4.5f, 8f)
         }
     }
-
-
-
-
-
 private data class AlertDecision(
     val level: Int,
     val reason: String
@@ -966,8 +979,13 @@ private fun computeAlertDecision(
 
     val ttcLevel = ttcLevelWithHysteresis(ttc, thresholds)
 
-    val distRed = distanceM.isFinite() && distanceM <= thresholds.distRed
-    val distOrange = distanceM.isFinite() && distanceM <= thresholds.distOrange
+    // Distance-only alerts are very noisy when approach speed is near zero.
+    // Gate DIST triggers by minimal approach speed; TTC/REL can still trigger.
+    val relForDistOrangeOk = approachSpeedMps.isFinite() && approachSpeedMps >= 0.8f
+    val relForDistRedOk = approachSpeedMps.isFinite() && approachSpeedMps >= 1.2f
+
+    val distRed = distanceM.isFinite() && distanceM <= thresholds.distRed && relForDistRedOk
+    val distOrange = distanceM.isFinite() && distanceM <= thresholds.distOrange && relForDistOrangeOk
 
     val spdRed = approachSpeedMps.isFinite() && approachSpeedMps >= thresholds.speedRed
     val spdOrange = approachSpeedMps.isFinite() && approachSpeedMps >= thresholds.speedOrange
