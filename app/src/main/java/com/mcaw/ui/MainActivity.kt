@@ -54,6 +54,7 @@ class MainActivity : ComponentActivity() {
     private val logLines: ArrayDeque<String> = ArrayDeque()
     private val speedHandler = Handler(Looper.getMainLooper())
     private var activityLogFileName: String = ""
+    private var sessionLogFileName: String = ""
 
     // --- Rider speed UX stabilization ---
     // Metrics from DetectionAnalyzer should be the primary source (when camera/service runs).
@@ -177,7 +178,9 @@ class MainActivity : ComponentActivity() {
 
         speedProvider = SpeedProvider(this)
         speedMonitor = SpeedMonitor(speedProvider)
-        activityLogFileName = "mcaw_session_${SessionStamp.value}.txt"
+        val stamp = SessionStamp.value
+        activityLogFileName = "mcaw_activity_${stamp}.txt"
+        sessionLogFileName = "mcaw_session_${stamp}.txt"
 
         txtBuildInfo.text =
             "MCAW ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) · ${BuildConfig.BUILD_ID}"
@@ -200,12 +203,19 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun writeSessionLog(event: String) {
-        // Single session file: do NOT create new timestamped files per event.
-        val safeEvent = event.replace('
-', ' ').take(160)
-        logActivity("session_event=${safeEvent} build=${BuildConfig.VERSION_NAME}(${BuildConfig.VERSION_CODE}) id=${BuildConfig.BUILD_ID}")
-    }
-        PublicLogWriter.writeTextFile(this, "mcaw_session_$timestamp.txt", content)
+        // Single session file: append, do NOT create a new timestamped file per call.
+        val safeEvent = event.replace("\\n", " ").replace("\\r", " ").take(160)
+        val line = buildString {
+            append("event=")
+            append(safeEvent)
+            append(" build_name=")
+            append(BuildConfig.VERSION_NAME)
+            append(" build_code=")
+            append(BuildConfig.VERSION_CODE)
+            append(" build_id=")
+            append(BuildConfig.BUILD_ID)
+        }
+        PublicLogWriter.appendLogLine(this, sessionLogFileName, line)
     }
 
     private fun ensurePermissions(action: PendingAction) {
@@ -511,7 +521,8 @@ private fun formatMetric(value: Float, unit: String): String {
     }
 
     private fun sessionStamp(): String {
-        return SessionStamp.value
+        return java.text.SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", java.util.Locale.US)
+            .format(System.currentTimeMillis())
     }
 
     private enum class PendingAction {
@@ -519,4 +530,3 @@ private fun formatMetric(value: Float, unit: String): String {
         OPEN_CAMERA
     }
 }
-

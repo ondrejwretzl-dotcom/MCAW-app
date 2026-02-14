@@ -4,12 +4,11 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 /**
- * Process-wide stable session stamp used for log filenames.
- * - one value per app process run
- * - avoids log file explosion caused by timestamp-per-event naming
+ * Stable per-process/session stamp used for naming log files.
+ * Lazy init to avoid eager work during class loading.
  */
 object SessionStamp {
-    val value: String by lazy(LazyThreadSafetyMode.PUBLICATION) {
+    val value: String by lazy {
         SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(System.currentTimeMillis())
     }
 }
