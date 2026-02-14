@@ -4,16 +4,10 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.RectF
 import android.graphics.PointF
-import android.media.AudioManager
-import android.media.MediaPlayer
-import android.os.VibrationEffect
-import android.os.Vibrator
 import android.os.SystemClock
-import android.speech.tts.TextToSpeech
 import android.util.Log
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
-import com.mcaw.app.R
 import com.mcaw.config.AppPreferences
 import com.mcaw.config.DetectionModePolicy
 import com.mcaw.location.SpeedProvider
@@ -122,7 +116,6 @@ private fun assessFrameQuality(image: ImageProxy): FrameQuality {
 }
 
 
-
     // Performance tuning (PACK1_THROTTLE_LOG_TRACK2)
     private var frameIndex: Long = 0L
     private var lastMetricsSentElapsedMs: Long = 0L
@@ -186,16 +179,6 @@ private fun assessFrameQuality(image: ImageProxy): FrameQuality {
     private var lastBoxHeightTimestampMs: Long = -1L
 
     private var lastAlertLevel = 0
-    private var lastTtcLevel: Int = 0
-
-    private var tts: TextToSpeech? = null
-
-    // --- Alert audio (fix: keep strong ref, handle focus, stop on level change) ---
-    private var alertPlayer: MediaPlayer? = null
-    private var audioFocusRequest: Any? = null // AudioFocusRequest on API 26+, kept as Any for source compat
-    private var audioFocusGranted: Boolean = false
-    private var lastFocusGain: Int = android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
-    private var lastFocusUsage: Int = android.media.AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE
 
     // --- Cut-in detection (dynamic ego offset boost) ---
     private var cutInPrevAreaNorm: Float = Float.NaN
@@ -269,12 +252,6 @@ private fun updateCutInState(tsMs: Long, box: Box, frameW: Float, frameH: Float)
         val ts = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", java.util.Locale.US).format(System.currentTimeMillis())
         PublicLogWriter.appendLogLine(ctx, analyzerLogFileName, "ts=$ts f=$frameIndex $msg")
     }
-
-    init {
-        if (AppPreferences.voice) {
-            tts = TextToSpeech(ctx) { status ->
-                if (status == TextToSpeech.SUCCESS) tts?.language = Locale.getDefault()
-            }
         }
     }
 
@@ -464,7 +441,6 @@ val distanceScaled =
             if (modeRes.changed) {
                 flog("auto_mode effective=${'$'}{modeName(modeRes.effectiveMode)} reason=${'$'}{modeRes.reason}", force = true)
             }
-            val thresholds = thresholdsForMode(modeRes.effectiveMode)
             val riderSpeedKnown = riderSpeedMps.isFinite()
 val riderStanding = riderSpeedKnown && riderSpeedMps <= (6.0f / 3.6f) // < 6 km/h (město/kolony)
 
@@ -607,6 +583,13 @@ if (AppPreferences.debugOverlay) {
         runCatching { AlertNotifier.shutdown(ctx) }
     }
 
+
+    private fun stopActiveAlerts() {
+        // MCAW 2.0: alert playback je centralizovaný v AlertNotifier (zvuk/TTS/vibrace).
+        lastAlertLevel = 0
+        AlertNotifier.stopInApp(ctx)
+    }
+
     private fun smoothDistance(distanceM: Float): Float {
         if (!distanceM.isFinite()) {
             distEmaValid = false
@@ -630,170 +613,6 @@ if (AppPreferences.debugOverlay) {
         val bottom = max(y1, y2)
         return Box(left, top, right, bottom)
     }
-
-    private fun stopActiveAlerts() {
-        lastAlertLevel = 0
-        val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        runCatching { alertPlayer?.stop() }
-        runCatching { alertPlayer?.release() }
-        alertPlayer = null
-        abandonAlertAudioFocus(am)
-    }
-
-    
-private fun playAlertSound(resId: Int, critical: Boolean) {
-    runCatching {
-        val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        val usage = android.media.AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE
-        val gain = if (critical) AudioManager.AUDIOFOCUS_GAIN_TRANSIENT else AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
-        requestAlertAudioFocus(am, gain = gain, usage = usage)
-
-        // Stop previous
-        alertPlayer?.setOnCompletionListener(null)
-        runCatching { alertPlayer?.stop() }
-        runCatching { alertPlayer?.release() }
-        alertPlayer = null
-
-        val mp = MediaPlayer()
-        alertPlayer = mp
-
-        // User-configurable alert volumes (0..100 %). Priority stays via audio focus.
-        val vol = if (critical) AppPreferences.soundRedVolumeScalar else AppPreferences.soundOrangeVolumeScalar
-        mp.setVolume(vol, vol)
-
-        // Prefer Media/sonification so it follows MEDIA volume (alarm volume is often 0).
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
-            mp.setAudioAttributes(
-                android.media.AudioAttributes.Builder()
-                    .setUsage(android.media.AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
-                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                    .build()
-            )
-        } else {
-            @Suppress("DEPRECATION")
-            mp.setAudioStreamType(AudioManager.STREAM_MUSIC)
-        }
-
-        val uri = android.net.Uri.parse("android.resource://${ctx.packageName}/$resId")
-        mp.setDataSource(ctx, uri)
-        mp.isLooping = false
-        mp.setOnCompletionListener { player ->
-            runCatching { player.release() }
-            if (alertPlayer === player) alertPlayer = null
-            abandonAlertAudioFocus(am)
-        }
-        mp.setOnErrorListener { player, what, extra ->
-            flog("alert sound error what=$what extra=$extra", force = true)
-            runCatching { player.release() }
-            if (alertPlayer === player) alertPlayer = null
-            abandonAlertAudioFocus(am)
-            true
-        }
-
-        mp.prepare()
-        mp.start()
-    }.onFailure {
-        val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        flog("alert sound fail: ${it.javaClass.simpleName} ${it.message}", force = true)
-        runCatching { alertPlayer?.release() }
-        alertPlayer = null
-        abandonAlertAudioFocus(am)
-    }
-}
-
-
-    private fun requestAlertAudioFocus(am: AudioManager, gain: Int, usage: Int) {
-        if (audioFocusGranted && gain == lastFocusGain && usage == lastFocusUsage) return
-
-        // If focus is already held with different params, release first.
-        if (audioFocusGranted) abandonAlertAudioFocus(am)
-
-        // API 26+ supports AudioFocusRequest, older uses legacy requestAudioFocus.
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-            val listener = AudioManager.OnAudioFocusChangeListener { /* ignore */ }
-            val req = android.media.AudioFocusRequest.Builder(gain)
-                .setAudioAttributes(
-                    android.media.AudioAttributes.Builder()
-                        .setUsage(usage)
-                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build()
-                )
-                .setOnAudioFocusChangeListener(listener)
-                .setWillPauseWhenDucked(false)
-                .build()
-            audioFocusRequest = req
-            audioFocusGranted = (am.requestAudioFocus(req) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
-            if (audioFocusGranted) {
-                lastFocusGain = gain
-                lastFocusUsage = usage
-            }
-        } else {
-            @Suppress("DEPRECATION")
-            audioFocusGranted = (am.requestAudioFocus(
-                null,
-                AudioManager.STREAM_MUSIC,
-                gain
-            ) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
-            if (audioFocusGranted) {
-                lastFocusGain = gain
-                lastFocusUsage = usage
-            }
-        }
-    }
-
-    private fun abandonAlertAudioFocus(am: AudioManager) {
-        if (!audioFocusGranted) return
-        audioFocusGranted = false
-
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-            val req = audioFocusRequest as? android.media.AudioFocusRequest
-            if (req != null) {
-                am.abandonAudioFocusRequest(req)
-            } else {
-                am.abandonAudioFocus(null)
-            }
-        } else {
-            @Suppress("DEPRECATION")
-            am.abandonAudioFocus(null)
-        }
-    }
-
-    private fun handleAlerts(level: Int) {
-    if (level <= 0 || level == lastAlertLevel) return
-    lastAlertLevel = level
-
-    when (level) {
-        1 -> {
-            // ORANGE (warning)
-            if (AppPreferences.sound && AppPreferences.soundOrange) {
-                playAlertSound(R.raw.alert_beep, critical = false)
-            }
-            if (AppPreferences.voice && AppPreferences.voiceOrange) {
-                val text = AppPreferences.ttsTextOrange.trim()
-                if (text.isNotEmpty()) {
-                    tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "tts_orange")
-                }
-            }
-        }
-        2 -> {
-            // RED (critical)
-            if (AppPreferences.sound && AppPreferences.soundRed) {
-                playAlertSound(R.raw.red_alert, critical = true)
-            }
-            if (AppPreferences.vibration) {
-                val vib = ctx.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-                if (vib.hasVibrator()) vib.vibrate(VibrationEffect.createOneShot(200, 150))
-            }
-            if (AppPreferences.voice && AppPreferences.voiceRed) {
-                val text = AppPreferences.ttsTextRed.trim()
-                if (text.isNotEmpty()) {
-                    tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "tts_red")
-                }
-            }
-        }
-    }
-}
-
 
     private fun sendOverlayUpdate(
         box: Box,
@@ -914,151 +733,6 @@ private fun playAlertSound(resId: Int, critical: Boolean) {
         )
     }
 
-    private fun thresholdsForMode(mode: Int): AlertThresholds {
-        return when (mode) {
-            1 -> AlertThresholds(4.0f, 1.5f, 30f, 12f, 5f, 9f)
-            2 -> AlertThresholds(
-                AppPreferences.userTtcOrange,
-                AppPreferences.userTtcRed,
-                AppPreferences.userDistOrange,
-                AppPreferences.userDistRed,
-                AppPreferences.userSpeedOrange,
-                AppPreferences.userSpeedRed
-            )
-
-            else -> AlertThresholds(3.0f, 1.2f, 15f, 8f, 3f, 5f)
-        }
-    }
-
-
-
-
-
-private data class AlertDecision(
-    val level: Int,
-    val reason: String
-)
-
-/**
- * Explain alert decision for debugging / tuning.
- * Keeps behavior consistent with [alertLevel] (same thresholds + hysteresis).
- */
-private fun computeAlertDecision(
-        distanceM: Float,
-        approachSpeedMps: Float,
-        ttc: Float,
-        thresholds: AlertThresholds,
-        qualityPoor: Boolean
-    ): AlertDecision {
-
-        // Quality gating: in low-light / blur, avoid noisy alerts (city lights, bumps).
-        // Conservative mode:
-        // - suppress ORANGE completely
-        // - allow RED only if clearly critical (stricter thresholds)
-        val conservative = AppPreferences.qualityGatingEnabled && qualityPoor
-
-    val ttcLevel = ttcLevelWithHysteresis(ttc, thresholds)
-
-    val distRed = distanceM.isFinite() && distanceM <= thresholds.distRed
-    val distOrange = distanceM.isFinite() && distanceM <= thresholds.distOrange
-
-    val spdRed = approachSpeedMps.isFinite() && approachSpeedMps >= thresholds.speedRed
-    val spdOrange = approachSpeedMps.isFinite() && approachSpeedMps >= thresholds.speedOrange
-
-    val level = when {
-        distRed || spdRed || ttcLevel == 2 -> 2
-        distOrange || spdOrange || ttcLevel == 1 -> 1
-        else -> 0
-    }
-
-val effectiveLevel = if (conservative) {
-    // Suppress ORANGE; RED only when truly critical (stricter by 20%).
-    val strongRed = (ttc.isFinite() && ttc <= (thresholds.ttcRed * 0.80f)) ||
-        (distanceM.isFinite() && distanceM <= (thresholds.distRed * 0.80f)) ||
-        (approachSpeedMps.isFinite() && approachSpeedMps >= (thresholds.speedRed * 1.10f))
-    if (strongRed) 2 else 0
-} else {
-    level
-}
-
-    // Reason (priority: TTC > DIST > REL), include current values + thresholds for quick tuning.
-    val reasonCore = when (effectiveLevel) {
-        2 -> when {
-            ttcLevel == 2 -> "TTC<=RED (ttc=%.2fs thr=%.2fs)".format(ttc, thresholds.ttcRed)
-            distRed -> "DIST<=RED (d=%.2fm thr=%.2fm)".format(distanceM, thresholds.distRed)
-            spdRed -> "REL>=RED (rel=%.2fm/s thr=%.2fm/s)".format(approachSpeedMps, thresholds.speedRed)
-            else -> "RED (unknown trigger)"
-        }
-        1 -> when {
-            ttcLevel == 1 -> "TTC<=ORANGE (ttc=%.2fs thr=%.2fs)".format(ttc, thresholds.ttcOrange)
-            distOrange -> "DIST<=ORANGE (d=%.2fm thr=%.2fm)".format(distanceM, thresholds.distOrange)
-            spdOrange -> "REL>=ORANGE (rel=%.2fm/s thr=%.2fm/s)".format(approachSpeedMps, thresholds.speedOrange)
-            else -> "ORANGE (unknown trigger)"
-        }
-        else -> "SAFE"
-    }
-
-    val summary = buildString {
-        append(reasonCore)
-        append(" | ")
-        append("ttc="); append(if (ttc.isFinite()) "%.2f".format(ttc) else "INF")
-        append(" d="); append(if (distanceM.isFinite()) "%.2f".format(distanceM) else "INF")
-        append(" rel="); append(if (approachSpeedMps.isFinite()) "%.2f".format(approachSpeedMps) else "INF")
-    }
-
-    return AlertDecision(level = effectiveLevel, reason = summary + if (conservative) " | QCONSERV" else "")
-}
-
-private fun ttcLevelWithHysteresis(ttc: Float, t: AlertThresholds): Int {
-    if (!ttc.isFinite()) {
-        lastTtcLevel = 0
-        return 0
-    }
-
-    val redOn = t.ttcRed
-    val redOff = redOn + 0.6f // např. 1.2 -> 1.8
-    val orangeOn = t.ttcOrange
-    val orangeOff = maxOf(orangeOn + 0.9f, redOff + 0.2f)
-
-    lastTtcLevel = when (lastTtcLevel) {
-        2 -> {
-            if (ttc >= redOff) {
-                if (ttc <= orangeOn) 1 else 0
-            } else 2
-        }
-        1 -> {
-            when {
-                ttc <= redOn -> 2
-                ttc >= orangeOff -> 0
-                else -> 1
-            }
-        }
-        else -> {
-            when {
-                ttc <= redOn -> 2
-                ttc <= orangeOn -> 1
-                else -> 0
-            }
-        }
-    }
-    return lastTtcLevel
-}
-
-private fun alertLevel(distance: Float, approachSpeedMps: Float, ttc: Float, t: AlertThresholds): Int {
-
-val ttcLevel = ttcLevelWithHysteresis(ttc, t)
-
-val redDs =
-    (distance.isFinite() && distance <= t.distRed) ||
-        (approachSpeedMps.isFinite() && approachSpeedMps >= t.speedRed)
-if (redDs || ttcLevel == 2) return 2
-
-val orangeDs =
-    (distance.isFinite() && distance <= t.distOrange) ||
-        (approachSpeedMps.isFinite() && approachSpeedMps >= t.speedOrange)
-
-return if (orangeDs || ttcLevel == 1) 1 else 0
-    }
 
     private fun resetMotionState(newTrackId: Long? = null) {
         // Per-track motion history (REL from distance)
@@ -1746,13 +1420,4 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
         val redIntensity = (sumRed.toFloat() / (total.toFloat() * 255f)).coerceIn(0f, 1f)
         return redRatio to redIntensity
     }
-
-private data class AlertThresholds(
-        val ttcOrange: Float,
-        val ttcRed: Float,
-        val distOrange: Float,
-        val distRed: Float,
-        val speedOrange: Float,
-        val speedRed: Float
-    )
 }
