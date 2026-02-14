@@ -20,7 +20,7 @@ class RiskEngine {
     data class Result(
         val level: Int,            // 0 SAFE, 1 ORANGE, 2 RED
         val riskScore: Float,       // 0..1
-        val reason: String,         // krátké WHY
+        val reason: String,         // stabilní WHY: key=...;k=v;...
         val state: State
     )
 
@@ -85,9 +85,12 @@ class RiskEngine {
             (cutInScore * 0.05f)
 
         // boost if strong ego braking (but don't make it dominant)
-        if (egoBrake >= 0.65f) {
-            risk += 0.08f * ((egoBrake - 0.65f) / 0.35f).coerceIn(0f, 1f)
+        val egoBrakeBoost = if (egoBrake >= 0.65f) {
+            0.08f * ((egoBrake - 0.65f) / 0.35f).coerceIn(0f, 1f)
+        } else {
+            0f
         }
+        risk += egoBrakeBoost
 
         // Quality gating: in poor frames suppress ORANGE; RED only when clearly critical.
         val conservative = qualityPoor
@@ -114,7 +117,7 @@ class RiskEngine {
             else -> State.SAFE
         }
 
-        val reason = buildReason(
+                val reason = buildReason(
             level = level,
             risk = risk,
             ttc = ttcSec,
@@ -125,7 +128,13 @@ class RiskEngine {
             brakeCueActive = brakeCueActive,
             cutInActive = cutInActive,
             egoBrake = egoBrake,
-            conservative = conservative
+            conservative = conservative,
+            ttcScore = ttcScore,
+            distScore = distScore,
+            relScore = relScore,
+            brakeScore = brakeScore,
+            cutInScore = cutInScore,
+            egoBrakeBoost = egoBrakeBoost
         )
 
         return Result(level = level, riskScore = risk, reason = reason, state = state)
@@ -234,6 +243,26 @@ class RiskEngine {
         return lastLevel
     }
 
+        private fun dominantFactorKey(
+        ttcScore: Float,
+        distScore: Float,
+        relScore: Float,
+        brakeScore: Float,
+        cutInScore: Float,
+        egoBrakeBoost: Float
+    ): String {
+        // Choose the single most influential factor (stable keys for logs + UI)
+        val items = listOf(
+            "TTC" to (ttcScore * 0.35f),
+            "DIST" to (distScore * 0.20f),
+            "REL" to (relScore * 0.20f),
+            "BRAKE_CUE" to (brakeScore * 0.10f),
+            "CUT_IN" to (cutInScore * 0.05f),
+            "EGO_BRAKE" to egoBrakeBoost
+        )
+        return items.maxByOrNull { it.second }?.first ?: "SAFE"
+    }
+
     private fun buildReason(
         level: Int,
         risk: Float,
@@ -245,24 +274,49 @@ class RiskEngine {
         brakeCueActive: Boolean,
         cutInActive: Boolean,
         egoBrake: Float,
-        conservative: Boolean
+        conservative: Boolean,
+        ttcScore: Float,
+        distScore: Float,
+        relScore: Float,
+        brakeScore: Float,
+        cutInScore: Float,
+        egoBrakeBoost: Float
     ): String {
         val main = when (level) {
             2 -> "CRIT"
             1 -> "WARN"
             else -> "SAFE"
         }
-        val parts = ArrayList<String>(6)
-        parts.add(main)
-        parts.add("r=%.2f".format(risk))
+
+        val baseKey = if (level == 0) "SAFE" else dominantFactorKey(
+            ttcScore = ttcScore,
+            distScore = distScore,
+            relScore = relScore,
+            brakeScore = brakeScore,
+            cutInScore = cutInScore,
+            egoBrakeBoost = egoBrakeBoost
+        )
+
+        val key = if (level == 0) "SAFE" else "${'$'}main_${'$'}baseKey"
+
+        val flags = ArrayList<String>(4)
+        if (brakeCueActive) flags.add("brakeCue")
+        if (cutInActive) flags.add("cutIn")
+        if (egoBrake >= 0.65f) flags.add("egoBrake")
+        if (conservative) flags.add("qConserv")
+
+        // Stable, parseable format: key=...;k=v;...
+        val parts = ArrayList<String>(10)
+        parts.add("key=${'$'}key")
+        parts.add("lvl=${'$'}level")
+        parts.add("r=%.3f".format(risk))
         if (ttc.isFinite()) parts.add("ttc=%.2f".format(ttc))
         if (dist.isFinite()) parts.add("d=%.1f".format(dist))
-        if (rel.isFinite()) parts.add("rel=%.1f".format(rel))
-        parts.add("roi=%.2f off=%.2f".format(roi, egoOff))
-        if (brakeCueActive) parts.add("brakeCue")
-        if (cutInActive) parts.add("cutIn")
-        if (egoBrake >= 0.65f) parts.add("egoBrake")
-        if (conservative) parts.add("QCONSERV")
-        return parts.joinToString(" ")
+        if (rel.isFinite()) parts.add("rel=%.2f".format(rel))
+        parts.add("roi=%.2f".format(roi))
+        parts.add("off=%.2f".format(egoOff))
+        if (flags.isNotEmpty()) parts.add("flags=${'$'}{flags.joinToString(\",\")}")
+
+        return parts.joinToString(";")
     }
 }

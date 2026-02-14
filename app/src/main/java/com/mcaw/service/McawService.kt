@@ -27,6 +27,7 @@ import com.mcaw.config.AppPreferences
 import com.mcaw.location.SpeedMonitor
 import com.mcaw.location.SpeedProvider
 import com.mcaw.util.PublicLogWriter
+import com.mcaw.util.McawEventLog
 import java.util.Locale
 import java.util.concurrent.Executors
 
@@ -65,6 +66,8 @@ class McawService : LifecycleService() {
         startForegroundNotification()
         isRunning = true
         logService("service_create")
+        McawEventLog.initSession(this)
+        McawEventLog.event(this, src = "SERVICE", evt = "SERVICE_CREATE")
     }
 
     private fun startForegroundNotification() {
@@ -101,6 +104,7 @@ class McawService : LifecycleService() {
     }
 
     override fun onDestroy() {
+        McawEventLog.event(this, src = "SERVICE", evt = "SERVICE_DESTROY")
         logService("service_destroy")
         stopCameraAnalysis()
         analysisExecutor.shutdown()
