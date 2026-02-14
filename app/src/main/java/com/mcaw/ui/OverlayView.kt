@@ -107,13 +107,17 @@ class OverlayView @JvmOverloads constructor(
             invalidate()
         }
 
-var alertReason: String = ""
-    var riskScore: Float = Float.NaN
-    set(value) {
-        field = value
-        invalidate()
-    }
+    var alertReason: String = ""
+        set(value) {
+            field = value
+            invalidate()
+        }
 
+    var riskScore: Float = Float.NaN
+        set(value) {
+            field = value
+            invalidate()
+        }
 
     /** Brake cue active (rozsvícená brzdová světla – heuristika). */
     var brakeCueActive: Boolean = false

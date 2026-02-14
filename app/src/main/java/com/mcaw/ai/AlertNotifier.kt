@@ -200,12 +200,15 @@ object AlertNotifier {
             if (tts != null) return tts
             if (!AppPreferences.voice) return null
             val appCtx = context.applicationContext
-            val inst = TextToSpeech(appCtx) { status ->
+            var created: TextToSpeech? = null
+            created = TextToSpeech(appCtx) { status ->
                 ttsReady = (status == TextToSpeech.SUCCESS)
                 if (ttsReady) {
-                    runCatching { inst.language = java.util.Locale.getDefault() }
+                    runCatching { created?.language = java.util.Locale.getDefault() }
                 }
             }
+            val inst = created
+            if (inst == null) return null
             tts = inst
             ownsTts = true
             return inst
