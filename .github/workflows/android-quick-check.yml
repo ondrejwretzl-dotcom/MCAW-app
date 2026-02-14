@@ -1,0 +1,42 @@
+name: Android quick check (compile)
+
+on:
+  push:
+    branches: [ "**" ]
+  pull_request:
+
+# Tip: když commituješ často do stejné branch, zrušíme běžící starší běh a ušetříme minuty
+concurrency:
+  group: quick-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quick-check:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: gradle
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: 8.7
+          cache-disabled: false
+
+      # Rychlé ověření "je to buildnutelné": sestaví Debug (bez testů)
+      # Pokud chceš ještě rychlejší, můžeš místo assembleDebug dát jen compileDebugKotlin
+      - name: Compile / Assemble Debug (no tests)
+        run: |
+          gradle --no-daemon :app:assembleDebug -x test
+
+      # Volitelné: rychlé lintnutí (zachytí hromadu věcí dřív než full build)
+      # - name: Lint Debug
+      #   run: gradle --no-daemon :app:lintDebug

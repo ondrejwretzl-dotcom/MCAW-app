@@ -1,0 +1,71 @@
+name: Android CI (signed release)
+
+on:
+  workflow_dispatch:
+    inputs:
+      variant:
+        description: "Build variant"
+        required: false
+        default: "release"
+        type: choice
+        options:
+          - release
+          - debug
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: gradle
+
+      # Provision Gradle (bez wrapperu) + cache
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: 8.7
+          cache-disabled: false
+
+      - name: Verify Gradle
+        run: gradle -v
+
+      # Keystore je potřeba jen pro release (ať secrets nemusí existovat pro debug build)
+      - name: Write release keystore
+        if: ${{ inputs.variant == 'release' }}
+        env:
+          MCAW_KEYSTORE_B64: ${{ secrets.MCAW_KEYSTORE_B64 }}
+        run: |
+          if [ -z "${MCAW_KEYSTORE_B64}" ]; then
+            echo "Missing secret MCAW_KEYSTORE_B64" >&2
+            exit 1
+          fi
+          echo "${MCAW_KEYSTORE_B64}" | base64 -d > app/mcaw-release.keystore
+
+      - name: Build APK
+        env:
+          MCAW_KEYSTORE_PATH: mcaw-release.keystore
+          MCAW_KEYSTORE_PASSWORD: ${{ secrets.MCAW_KEYSTORE_PASSWORD }}
+          MCAW_KEY_ALIAS: ${{ secrets.MCAW_KEY_ALIAS }}
+          MCAW_KEY_PASSWORD: ${{ secrets.MCAW_KEY_PASSWORD }}
+          VERSION_CODE: ${{ github.run_number }}
+          VERSION_NAME: ${{ format('1.0.{0}', github.run_number) }}
+        run: |
+          if [ "${{ inputs.variant }}" = "release" ]; then
+            gradle --no-daemon assembleRelease
+          else
+            gradle --no-daemon assembleDebug
+          fi
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MCAW-${{ inputs.variant }}-apk
+          path: app/build/outputs/apk/${{ inputs.variant }}/*.apk
