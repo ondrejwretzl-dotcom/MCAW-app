@@ -65,11 +65,7 @@ class SessionEventLogger(
         ht = thread
         h = Handler(thread.looper)
 
-        h?.post {
-            // One header per session file.
-            PublicLogWriter.appendLogLine(context, fileName, LogContract.HEADER.trimEnd())
         }
-    }
 
     fun close() {
         started = false

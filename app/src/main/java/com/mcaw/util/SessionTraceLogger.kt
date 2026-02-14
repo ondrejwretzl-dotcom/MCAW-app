@@ -54,10 +54,7 @@ class SessionTraceLogger(
         ht = thread
         h = Handler(thread.looper)
 
-        h?.post {
-            PublicLogWriter.appendLogLine(context, fileName, TraceContract.HEADER.trimEnd())
         }
-    }
 
     fun close() {
         started = false

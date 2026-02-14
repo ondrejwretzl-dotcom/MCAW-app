@@ -61,14 +61,20 @@ class McawService : LifecycleService() {
         super.onCreate()
         AppPreferences.init(this)
         initUnifiedSessionLog()
-                speedProvider = SpeedProvider(this)
+        speedProvider = SpeedProvider(this)
         speedMonitor = SpeedMonitor(speedProvider)
         startForegroundNotification()
         isRunning = true
         logService("service_create")
     }
 
-    private fun startForegroundNotification() {
+    
+    private fun initUnifiedSessionLog() {
+        // One unified session file per app use (process lifetime).
+        SessionLogFile.init(this)
+    }
+
+private fun startForegroundNotification() {
         val channelId = "mcaw_fg"
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
