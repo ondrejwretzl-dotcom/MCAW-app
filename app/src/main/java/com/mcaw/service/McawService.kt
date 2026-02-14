@@ -17,9 +17,9 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
+import androidx.lifecycle.LifecycleService
 import com.mcaw.ai.DetectionAnalyzer
 import com.mcaw.ai.EfficientDetTFLiteDetector
 import com.mcaw.ai.YoloOnnxDetector
@@ -47,8 +47,10 @@ class McawService : LifecycleService() {
     private var cameraProvider: ProcessCameraProvider? = null
     private var analysisExecutor = Executors.newSingleThreadExecutor()
     private var analysisRunning = false
+
     @Volatile
     private var analysisDesired = false
+
     private var serviceLogFileName: String = ""
     private val retryHandler = Handler(Looper.getMainLooper())
     private var retryAttempts = 0
@@ -110,24 +112,30 @@ class McawService : LifecycleService() {
         if (analysisRunning) return
         retryHandler.removeCallbacksAndMessages(null)
         analysisDesired = true
+
         if (AppPreferences.previewActive) {
             logService("analysis_start_skipped preview_active")
             return
         }
+
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
             != android.content.pm.PackageManager.PERMISSION_GRANTED
         ) {
             logService("analysis_start_denied missing_camera_permission")
             return
         }
+
         val yolo = runCatching { YoloOnnxDetector(this, "yolov8n.onnx") }.getOrNull()
         val eff = runCatching { EfficientDetTFLiteDetector(this, "efficientdet_lite0.tflite") }
             .getOrNull()
+
         if (yolo == null && eff == null) {
             logService("analysis_start_failed models_unavailable")
             return
         }
+
         analyzer = DetectionAnalyzer(this, yolo, eff, speedProvider)
+
         val providerFuture = ProcessCameraProvider.getInstance(this)
         providerFuture.addListener({
             runCatching {
@@ -136,23 +144,28 @@ class McawService : LifecycleService() {
                     logService("analysis_start_ignored stale_request")
                     return@addListener
                 }
+
                 cameraProvider = provider
                 provider.unbindAll()
+
                 val lifecycleOwner = ServiceCameraLifecycleOwner().also {
                     it.start()
                     cameraLifecycleOwner = it
                 }
+
                 val analysis = ImageAnalysis.Builder()
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                     .build()
                     .apply {
                         setAnalyzer(analysisExecutor, analyzer!!)
                     }
+
                 val camera = provider.bindToLifecycle(
                     lifecycleOwner,
                     CameraSelector.DEFAULT_BACK_CAMERA,
                     analysis
                 )
+
                 updateCameraCalibration(camera)
                 speedMonitor.start()
                 analysisRunning = true
@@ -167,16 +180,28 @@ class McawService : LifecycleService() {
     }
 
     private fun stopCameraAnalysis() {
-        if (!analysisRunning && cameraProvider == null) return
+        if (!analysisRunning && cameraProvider == null) {
+            // Still release analyzer resources if present (IMU, in-app alerting).
+            analyzer?.shutdown()
+            analyzer = null
+            return
+        }
+
         retryHandler.removeCallbacksAndMessages(null)
         analysisDesired = false
         analysisRunning = false
+
         cameraProvider?.unbindAll()
         cameraProvider = null
+
+        analyzer?.shutdown()
         analyzer = null
+
         speedMonitor.stop()
+
         cameraLifecycleOwner?.stop()
         cameraLifecycleOwner = null
+
         logService("analysis_stopped")
     }
 

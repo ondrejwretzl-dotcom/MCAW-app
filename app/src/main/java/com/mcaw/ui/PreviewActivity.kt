@@ -87,6 +87,7 @@ class PreviewActivity : ComponentActivity() {
                 overlay.alertLevel = 0
                 overlay.brakeCueActive = false
                 overlay.alertReason = ""
+                overlay.riskScore = Float.NaN
                 searching = true
                 updateSearchingLabel()
                 logActivity("detection_clear")
@@ -367,6 +368,7 @@ class PreviewActivity : ComponentActivity() {
         speedMonitor.stop()
         stopSearching()
         AppPreferences.previewActive = false
+        runCatching { analyzer?.shutdown() }
         runCatching { analysisExecutor.shutdown() }
         super.onDestroy()
     }

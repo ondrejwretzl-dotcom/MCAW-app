@@ -8,6 +8,13 @@ import android.net.Uri
 import androidx.core.app.NotificationCompat
 import com.mcaw.app.R
 import com.mcaw.config.AppPreferences
+import android.media.AudioManager
+import android.media.MediaPlayer
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.speech.tts.TextToSpeech
+import com.mcaw.app.MCAWApp
+import com.mcaw.risk.RiskEngine
 
 object AlertNotifier {
 
@@ -79,4 +86,224 @@ object AlertNotifier {
 
         manager.createNotificationChannel(channel)
     }
+
+
+    // ---------------- MCAW 2.0 In-app alerting (sound/vibration/TTS) ----------------
+
+    @Volatile private var lastInAppLevel: Int = 0
+    @Volatile private var lastInAppPlayMs: Long = 0L
+
+    // MediaPlayer is kept between plays for performance.
+    private var alertPlayer: MediaPlayer? = null
+
+    // Single TTS instance (avoid per-alert allocations). Optional.
+    @Volatile private var tts: TextToSpeech? = null
+    @Volatile private var ttsReady: Boolean = false
+    @Volatile private var ownsTts: Boolean = false
+
+    private var audioFocusGranted: Boolean = false
+    private var audioFocusRequest: Any? = null
+    private var lastFocusGain: Int = -1
+    private var lastFocusUsage: Int = -1
+
+    fun handleInApp(context: Context, level: Int, risk: RiskEngine.Result? = null) {
+        if (level <= 0) return
+
+        // Avoid spamming: only on level change or after short cooldown (e.g., persistent RED).
+        val now = android.os.SystemClock.elapsedRealtime()
+        val cooldownMs = if (level >= 2) 900L else 1400L
+        val changed = level != lastInAppLevel
+        if (!changed && (now - lastInAppPlayMs) < cooldownMs) return
+
+        lastInAppLevel = level
+        lastInAppPlayMs = now
+
+        when (level) {
+            1 -> {
+                // ORANGE
+                if (AppPreferences.sound && AppPreferences.soundOrange) {
+                    playAlertSound(context, com.mcaw.app.R.raw.alert_beep, critical = false)
+                }
+                if (AppPreferences.voice && AppPreferences.voiceOrange) {
+                    val text = AppPreferences.ttsTextOrange.trim()
+                    if (text.isNotEmpty()) speak(context, text, "tts_orange")
+                }
+            }
+            2 -> {
+                // RED
+                if (AppPreferences.sound && AppPreferences.soundRed) {
+                    playAlertSound(context, com.mcaw.app.R.raw.red_alert, critical = true)
+                }
+                if (AppPreferences.vibration) {
+                    val vib = context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+                    if (vib.hasVibrator()) {
+                        vib.vibrate(VibrationEffect.createOneShot(220, 150))
+                    }
+                }
+                if (AppPreferences.voice && AppPreferences.voiceRed) {
+                    val text = AppPreferences.ttsTextRed.trim()
+                    if (text.isNotEmpty()) speak(context, text, "tts_red")
+                }
+            }
+        }
+
+    }
+
+    fun stopInApp(context: Context) {
+        lastInAppLevel = 0
+        runCatching {
+            alertPlayer?.stop()
+            alertPlayer?.reset()
+        }
+        // Do not shutdown TTS here (user might get another alert soon). Released in shutdown().
+        val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        abandonAlertAudioFocus(am)
+    }
+
+    /** Release long-lived resources (call from Activity/Service onDestroy). */
+    fun shutdown(context: Context) {
+        stopInApp(context)
+        runCatching { alertPlayer?.release() }
+        alertPlayer = null
+        val inst = tts
+        if (inst != null && ownsTts) {
+            runCatching { inst.shutdown() }
+        }
+        tts = null
+        ttsReady = false
+        ownsTts = false
+    }
+
+    private fun speak(context: Context, text: String, utteranceId: String) {
+        try {
+            val inst = ensureTts(context)
+            if (inst != null && ttsReady) {
+                inst.speak(text, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
+            }
+        } catch (_: Exception) {
+            // ignore
+        }
+    }
+
+    private fun ensureTts(context: Context): TextToSpeech? {
+        // Prefer global app-managed TTS (single source of truth)
+        val appTts = runCatching { (context.applicationContext as? MCAWApp)?.getTts() }.getOrNull()
+        if (appTts != null) {
+            tts = appTts
+            ttsReady = true
+            ownsTts = false
+            return appTts
+        }
+
+        if (tts != null) return tts
+        synchronized(this) {
+            if (tts != null) return tts
+            if (!AppPreferences.voice) return null
+            val appCtx = context.applicationContext
+            val inst = TextToSpeech(appCtx) { status ->
+                ttsReady = (status == TextToSpeech.SUCCESS)
+                if (ttsReady) {
+                    runCatching { inst.language = java.util.Locale.getDefault() }
+                }
+            }
+            tts = inst
+            ownsTts = true
+            return inst
+        }
+    }
+
+    private fun playAlertSound(context: Context, resId: Int, critical: Boolean) {
+        val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+
+        // Strategy from previous discussion: NAVIGATION_GUIDANCE + gain transient for better BT routing.
+        val usage = android.media.AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE
+        val gain = if (critical) AudioManager.AUDIOFOCUS_GAIN_TRANSIENT else AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
+        requestAlertAudioFocus(am, gain = gain, usage = usage)
+
+        try {
+            val mp = alertPlayer ?: MediaPlayer().also { alertPlayer = it }
+            mp.reset()
+            val afd = context.resources.openRawResourceFd(resId)
+            mp.setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
+            afd.close()
+
+            mp.setAudioAttributes(
+                android.media.AudioAttributes.Builder()
+                    .setUsage(usage)
+                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build()
+            )
+
+            // Volume: user controls in Settings (0..1)
+            val vol = if (critical) AppPreferences.soundRedVolumeScalar else AppPreferences.soundOrangeVolumeScalar
+            mp.setVolume(vol, vol)
+
+            mp.setOnCompletionListener {
+                // release focus soon after playback
+                abandonAlertAudioFocus(am)
+            }
+            mp.prepare()
+            mp.start()
+        } catch (_: Exception) {
+            runCatching { alertPlayer?.release() }
+            alertPlayer = null
+            abandonAlertAudioFocus(am)
+        }
+    }
+
+    private fun requestAlertAudioFocus(am: AudioManager, gain: Int, usage: Int) {
+        if (audioFocusGranted && gain == lastFocusGain && usage == lastFocusUsage) return
+
+        // If focus is already held with different params, release first.
+        if (audioFocusGranted) abandonAlertAudioFocus(am)
+
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            val listener = AudioManager.OnAudioFocusChangeListener { /* ignore */ }
+            val req = android.media.AudioFocusRequest.Builder(gain)
+                .setAudioAttributes(
+                    android.media.AudioAttributes.Builder()
+                        .setUsage(usage)
+                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build()
+                )
+                .setOnAudioFocusChangeListener(listener)
+                .setWillPauseWhenDucked(false)
+                .build()
+            audioFocusRequest = req
+            audioFocusGranted = (am.requestAudioFocus(req) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
+            if (audioFocusGranted) {
+                lastFocusGain = gain
+                lastFocusUsage = usage
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            audioFocusGranted = (am.requestAudioFocus(
+                null,
+                AudioManager.STREAM_MUSIC,
+                gain
+            ) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
+            if (audioFocusGranted) {
+                lastFocusGain = gain
+                lastFocusUsage = usage
+            }
+        }
+    }
+
+    private fun abandonAlertAudioFocus(am: AudioManager) {
+        if (!audioFocusGranted) return
+        audioFocusGranted = false
+
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            val req = audioFocusRequest as? android.media.AudioFocusRequest
+            if (req != null) {
+                am.abandonAudioFocusRequest(req)
+            } else {
+                am.abandonAudioFocus(null)
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            am.abandonAudioFocus(null)
+        }
+    }
+
 }

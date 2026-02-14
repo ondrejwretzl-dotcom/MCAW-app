@@ -74,6 +74,8 @@ class MainActivity : ComponentActivity() {
                 intent.getFloatExtra(DetectionAnalyzer.EXTRA_RIDER_SPEED, Float.POSITIVE_INFINITY)
             val level = intent.getIntExtra(DetectionAnalyzer.EXTRA_LEVEL, 0)
             val alertReason = intent.getStringExtra(DetectionAnalyzer.EXTRA_ALERT_REASON) ?: ""
+            val riskScore = intent.getFloatExtra(DetectionAnalyzer.EXTRA_RISK_SCORE, Float.NaN)
+            val alertWhy = if (riskScore.isFinite()) "RISK %.2f · %s".format(riskScore, alertReason) else alertReason
             val label = intent.getStringExtra(DetectionAnalyzer.EXTRA_LABEL)
             val brakeCue =
                 intent.getBooleanExtra("brake_cue", false) || intent.getBooleanExtra("extra_brake_cue", false)
@@ -126,7 +128,7 @@ class MainActivity : ComponentActivity() {
             applyVisualAlert(level, ttcLevel, riderKmhForUi)
 
             updateBrakeLamp(brakeCue)
-            updateWhy(level, alertReason)
+            updateWhy(level, alertWhy)
 
             val relKmhLog = if (speed.isFinite()) speed * 3.6f else Float.POSITIVE_INFINITY
             val objKmhLog = if (objectSpeed.isFinite()) objectSpeed * 3.6f else Float.POSITIVE_INFINITY

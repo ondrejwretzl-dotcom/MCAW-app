@@ -17,6 +17,8 @@ import com.mcaw.app.R
 import com.mcaw.config.AppPreferences
 import com.mcaw.config.DetectionModePolicy
 import com.mcaw.location.SpeedProvider
+import com.mcaw.location.RiderImuMonitor
+import com.mcaw.risk.RiskEngine
 import com.mcaw.model.Box
 import com.mcaw.model.Detection
 import com.mcaw.util.PublicLogWriter
@@ -44,6 +46,7 @@ class DetectionAnalyzer(
         const val EXTRA_LABEL = "extra_label"
         const val EXTRA_BRAKE_CUE = "extra_brake_cue"
         const val EXTRA_ALERT_REASON = "extra_alert_reason"
+        const val EXTRA_RISK_SCORE = "extra_risk_score"
     }
 
     private val analyzerLogFileName: String = "mcaw_analyzer_${System.currentTimeMillis()}.txt"
@@ -139,6 +142,9 @@ private fun assessFrameQuality(image: ImageProxy): FrameQuality {
 
     // Auto mode state (single source of truth in DetectionModePolicy)
     private val autoModeSwitcher = DetectionModePolicy.AutoModeSwitcher()
+
+    private val imuMonitor = RiderImuMonitor(ctx)
+    private val riskEngine = RiskEngine()
 
     // Target lock to avoid switching between objects (stability for TTC/alerts)
     private var lockedTrackId: Long? = null
@@ -321,19 +327,20 @@ if (AppPreferences.debugOverlay) {
             }
             val tInferNs = SystemClock.elapsedRealtimeNanos()
 
-            // Hard gate: keep only detections that are at least 80% inside ROI.
-            val gatedDetections = rawDetections.filter { d ->
-                containmentRatioInTrapezoid(d.box, roiTrap.pts) >= AppPreferences.roiContainmentThreshold()
+            // ROI jako weight (MCAW 2.0): nehard-gate. Jen vyhoď úplně mimo ROI (0 area intersection),
+            // aby se nezvyšoval šum mimo jízdní prostor.
+            val softRoiFiltered = rawDetections.filter { d ->
+                containmentRatioInTrapezoid(d.box, roiTrap.pts) > 0.00f
             }
 
             val tPostNs = SystemClock.elapsedRealtimeNanos()
-            val post = postProcessor.process(gatedDetections, frameW, frameH)
-            flog("counts raw=${post.counts.raw} thr=${post.counts.threshold} nms=${post.counts.nms} accepted=${post.counts.filters}")
+            val post = postProcessor.process(softRoiFiltered, frameW, frameH)
+            flog("counts raw=${post.counts.raw} thr=${post.counts.threshold} nms=${post.counts.nms} accepted=${post.counts.filters} (roiSoft=${softRoiFiltered.size})")
 
             if (AppPreferences.debugOverlay) {
                 flog(
                     "roi trap n=${AppPreferences.getRoiTrapezoidNormalized()} boundsPx=[${roiTrap.bounds.left.toInt()},${roiTrap.bounds.top.toInt()},${roiTrap.bounds.right.toInt()},${roiTrap.bounds.bottom.toInt()}] " +
-                        "raw=${rawDetections.size} gated=${gatedDetections.size}"
+                        "raw=${rawDetections.size} roiSoft=${softRoiFiltered.size}"
                 )
             }
 
@@ -461,37 +468,55 @@ val distanceScaled =
             val riderSpeedKnown = riderSpeedMps.isFinite()
 val riderStanding = riderSpeedKnown && riderSpeedMps <= (6.0f / 3.6f) // < 6 km/h (město/kolony)
 
-val decision = if (riderStanding) {
-    AlertDecision(
+// IMU: ego brzdění + náklon (volitelně; když není validní -> NaN/0)
+val imu = imuMonitor.snapshot(tsMs)
+
+// ROI weight (0..1) pro RiskEngine
+val roiContainment = containmentRatioInTrapezoid(bestBox, roiTrap.pts).coerceIn(0f, 1f)
+val egoOffset = egoOffsetInRoiN(bestBox, frameW, frameH, 1.0f).coerceIn(0f, 2f)
+
+val risk = if (riderStanding) {
+    RiskEngine.Result(
         level = 0,
-        reason = "RID_STAND rider=%.1fkm/h".format(riderSpeedMps * 3.6f)
+        riskScore = 0f,
+        reason = "RID_STAND rider=%.1fkm/h".format(riderSpeedMps * 3.6f),
+        state = RiskEngine.State.SAFE
     )
 } else {
-    computeAlertDecision(
+    riskEngine.evaluate(
+        tsMs = tsMs,
+        effectiveMode = modeRes.effectiveMode,
         distanceM = distanceM,
         approachSpeedMps = approachSpeedMps,
-        ttc = ttc,
-        thresholds = thresholds,
-        qualityPoor = quality.poor
+        ttcSec = ttc,
+        roiContainment = roiContainment,
+        egoOffsetN = egoOffset,
+        cutInActive = (cutInBoostUntilMs > 0L && tsMs <= cutInBoostUntilMs),
+        brakeCueActive = brakeCue.active,
+        brakeCueStrength = brakeCue.strength,
+        qualityPoor = quality.poor,
+        riderSpeedMps = riderSpeedMps,
+        egoBrakingConfidence = imu.brakeConfidence,
+        leanDeg = imu.leanDeg
     )
 }
 
-val level = decision.level
-val alertReason = decision.reason
+val prevLevel = lastAlertLevel
+val level = risk.level
+val alertReason = risk.reason
+lastAlertLevel = level
 
 if (riderStanding) {
-    stopActiveAlerts()
+    AlertNotifier.stopInApp(ctx)
 } else {
-    // When speed is UNKNOWN, we still allow alerts (degraded mode) based on TTC/distance/approach speed.
-    handleAlerts(level)
+    AlertNotifier.handleInApp(ctx, level, risk)
 }
 
 // Log why alert level was decided (debugOverlay only; sampled)
-if (AppPreferences.debugOverlay && (level != lastAlertLevel || frameIndex % logEveryNFrames == 0L)) {
-    flog("alert decide level=$level reason=$alertReason", force = (level != lastAlertLevel))
+if (AppPreferences.debugOverlay && (level != prevLevel || frameIndex % logEveryNFrames == 0L)) {
+    flog("risk level=$level score=%.2f state=${'$'}{risk.state} reason=${'$'}alertReason".format(risk.riskScore), force = (level != prevLevel))
 }
-
-            sendOverlayUpdate(
+sendOverlayUpdate(
                 box = bestBox,
                 frameW = frameW,
                 frameH = frameH,
@@ -503,7 +528,8 @@ if (AppPreferences.debugOverlay && (level != lastAlertLevel || frameIndex % logE
                 label = label,
                 brakeCue = brakeCue.active,
                 alertLevel = lastAlertLevel,
-                alertReason = alertReason
+                alertReason = alertReason,
+                riskScore = risk.riskScore
             )
 
             flog(
@@ -524,7 +550,8 @@ if (AppPreferences.debugOverlay && (level != lastAlertLevel || frameIndex % logE
                 level = level,
                 label = label,
                 brakeCue = brakeCue.active,
-                alertReason = alertReason
+                alertReason = alertReason,
+                riskScore = risk.riskScore
             )
 
             
@@ -572,6 +599,12 @@ if (AppPreferences.debugOverlay) {
         } finally {
             image.close()
         }
+    }
+
+    /** Release non-camera resources held by analyzer (IMU, MediaPlayer/TTS, etc.). */
+    fun shutdown() {
+        runCatching { imuMonitor.stop() }
+        runCatching { AlertNotifier.shutdown(ctx) }
     }
 
     private fun smoothDistance(distanceM: Float): Float {
@@ -775,6 +808,7 @@ private fun playAlertSound(resId: Int, critical: Boolean) {
         brakeCue: Boolean,
         alertLevel: Int,
         alertReason: String = "",
+                riskScore: Float = Float.NaN,
         force: Boolean = false
     ) {
         if (!AppPreferences.debugOverlay) return
@@ -803,6 +837,7 @@ private fun playAlertSound(resId: Int, critical: Boolean) {
         i.putExtra("brake_cue", brakeCue)
         i.putExtra("alert_level", alertLevel)
         i.putExtra("alert_reason", alertReason)
+        i.putExtra("risk_score", riskScore)
 
         // keep ROI always in preview overlay
         i.putExtra("roi_trap_top_y_n", roiN.topY)
@@ -820,6 +855,7 @@ private fun playAlertSound(resId: Int, critical: Boolean) {
         val roiN = AppPreferences.getRoiTrapezoidNormalized()
         val i = Intent("MCAW_DEBUG_UPDATE").setPackage(ctx.packageName)
         i.putExtra("clear", true)
+        i.putExtra("risk_score", Float.NaN)
         i.putExtra("roi_trap_top_y_n", roiN.topY)
         i.putExtra("roi_trap_bottom_y_n", roiN.bottomY)
         i.putExtra("roi_trap_top_halfw_n", roiN.topHalfW)
@@ -838,6 +874,7 @@ private fun playAlertSound(resId: Int, critical: Boolean) {
         label: String,
         brakeCue: Boolean,
         alertReason: String = "",
+                riskScore: Float = Float.NaN,
         force: Boolean = false
     ) {
         val now = SystemClock.elapsedRealtime()
@@ -856,6 +893,7 @@ private fun playAlertSound(resId: Int, critical: Boolean) {
         i.putExtra(EXTRA_LABEL, label)
         i.putExtra(EXTRA_BRAKE_CUE, brakeCue)
         i.putExtra(EXTRA_ALERT_REASON, alertReason)
+        i.putExtra(EXTRA_RISK_SCORE, riskScore)
         ctx.sendBroadcast(i)
     }
 
@@ -871,6 +909,7 @@ private fun playAlertSound(resId: Int, critical: Boolean) {
             label = "",
             brakeCue = false,
             alertReason = "clear",
+            riskScore = Float.NaN,
             force = true
         )
     }
