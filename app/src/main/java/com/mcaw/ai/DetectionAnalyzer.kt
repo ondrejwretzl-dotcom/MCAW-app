@@ -120,6 +120,15 @@ class DetectionAnalyzer(
     private val eventLogFileName: String = "mcaw_event_${sessionStamp()}.csv"
     private val eventLogger = com.mcaw.util.SessionEventLogger(ctx, eventLogFileName).also { it.start() }
 
+    // DEBUG trace log (volitelně) – více detailů, stále throttled a mimo analyzer thread.
+    private val traceLogFileName: String = "mcaw_trace_${sessionStamp()}.csv"
+    private val traceLogger = if (AppPreferences.debugTrace) {
+        com.mcaw.util.SessionTraceLogger(ctx, traceLogFileName).also { it.start() }
+    } else null
+
+    private var lastTraceSampleTsMs: Long = 0L
+    private var lastTraceLockedId: Long = Long.MIN_VALUE
+
     // Event log sampling/tracking
     private var lastLoggedLevel: Int = -1
     private var lastLoggedState: RiskEngine.State = RiskEngine.State.SAFE
@@ -314,6 +323,33 @@ class DetectionAnalyzer(
 
             lastSelectedTrackId = lockedTrackId ?: bestId
 
+            // DEBUG trace: selection/lock switching (sampled + transitions)
+            traceLogger?.let { tl ->
+                val lockedId = lockedTrackId ?: -1L
+                val candId = switchCandidateId ?: -1L
+                val transitioned = lockedId != lastTraceLockedId
+                val activeCtx = (lockedId != -1L) || (lastAlertLevel > 0)
+                val sampleDue = activeCtx && (tsMs - lastTraceSampleTsMs >= 500L)
+
+                if (transitioned || sampleDue) {
+                    if (transitioned) lastTraceLockedId = lockedId
+                    if (sampleDue) lastTraceSampleTsMs = tsMs
+
+                    tl.logTarget(
+                        tsMs = tsMs,
+                        kind = if (transitioned) 1 else 0,
+                        lockedId = lockedId,
+                        bestId = bestId,
+                        bestPri = bestPriority,
+                        lockedPri = lockedPriority,
+                        candId = candId,
+                        candCount = switchCandidateCount,
+                        alertLevel = lastAlertLevel,
+                        mode = modeRes.effectiveMode
+                    )
+                }
+            }
+
             val bestBox = clampBox(bestTrack.detection.box, frameW, frameH)
             val label = bestTrack.detection.label
 
@@ -447,6 +483,7 @@ class DetectionAnalyzer(
 
     fun shutdown() {
         runCatching { eventLogger.close() }
+        runCatching { traceLogger?.close() }
         runCatching { imuMonitor.stop() }
         runCatching { AlertNotifier.shutdown(ctx) }
     }

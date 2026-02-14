@@ -806,6 +806,12 @@
                     android:layout_height="wrap_content"
                     android:text="Debug overlay" />
 
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/swDebugTrace"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Debug trace log" />
+
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
