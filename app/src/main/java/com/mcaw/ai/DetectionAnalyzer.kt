@@ -188,8 +188,8 @@ private fun assessFrameQuality(image: ImageProxy): FrameQuality {
     private var alertPlayer: MediaPlayer? = null
     private var audioFocusRequest: Any? = null // AudioFocusRequest on API 26+, kept as Any for source compat
     private var audioFocusGranted: Boolean = false
-    private var lastFocusGain: Int = android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE
-    private var lastFocusUsage: Int = android.media.AudioAttributes.USAGE_VOICE_COMMUNICATION
+    private var lastFocusGain: Int = android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
+    private var lastFocusUsage: Int = android.media.AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE
 
     // --- Cut-in detection (dynamic ego offset boost) ---
     private var cutInPrevAreaNorm: Float = Float.NaN
@@ -611,8 +611,8 @@ if (AppPreferences.debugOverlay) {
 private fun playAlertSound(resId: Int, critical: Boolean) {
     runCatching {
         val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        val usage = android.media.AudioAttributes.USAGE_VOICE_COMMUNICATION
-        val gain = AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE
+        val usage = android.media.AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE
+        val gain = if (critical) AudioManager.AUDIOFOCUS_GAIN_TRANSIENT else AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
         requestAlertAudioFocus(am, gain = gain, usage = usage)
 
         // Stop previous
@@ -632,7 +632,7 @@ private fun playAlertSound(resId: Int, critical: Boolean) {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
             mp.setAudioAttributes(
                 android.media.AudioAttributes.Builder()
-                    .setUsage(android.media.AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                    .setUsage(android.media.AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
                     .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
                     .build()
             )
@@ -809,6 +809,7 @@ private fun playAlertSound(resId: Int, critical: Boolean) {
         i.putExtra("roi_trap_bottom_y_n", roiN.bottomY)
         i.putExtra("roi_trap_top_halfw_n", roiN.topHalfW)
         i.putExtra("roi_trap_bottom_halfw_n", roiN.bottomHalfW)
+        i.putExtra("roi_trap_center_x_n", roiN.centerX)
 
         ctx.sendBroadcast(i)
     }
@@ -823,6 +824,7 @@ private fun playAlertSound(resId: Int, critical: Boolean) {
         i.putExtra("roi_trap_bottom_y_n", roiN.bottomY)
         i.putExtra("roi_trap_top_halfw_n", roiN.topHalfW)
         i.putExtra("roi_trap_bottom_halfw_n", roiN.bottomHalfW)
+        i.putExtra("roi_trap_center_x_n", roiN.centerX)
         ctx.sendBroadcast(i)
     }
 
