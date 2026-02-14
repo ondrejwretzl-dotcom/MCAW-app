@@ -200,7 +200,12 @@ class DetectionAnalyzer(
 
             // Get detections
             val detections = mutableListOf<Detection>()
-            val bitmap = ImageUtils.imageProxyToBitmap(image)
+	            // Some detector wrappers expect a Bitmap; conversion may fail (return null) on rare devices.
+	            val bitmap = ImageUtils.imageProxyToBitmap(image, ctx)
+	                ?: run {
+	                    image.close()
+	                    return
+	                }
 
             if (AppPreferences.debugOverlay) perf.t1 = SystemClock.elapsedRealtimeNanos()
             yolo?.let {
