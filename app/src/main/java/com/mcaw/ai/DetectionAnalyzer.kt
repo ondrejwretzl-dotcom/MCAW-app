@@ -46,7 +46,6 @@ class DetectionAnalyzer(
         const val EXTRA_LABEL = "extra_label"
         const val EXTRA_BRAKE_CUE = "extra_brake_cue"
         const val EXTRA_ALERT_REASON = "extra_alert_reason"
-        const val EXTRA_REASON_BITS = "extra_reason_bits"
         const val EXTRA_RISK_SCORE = "extra_risk_score"
     }
 
@@ -477,12 +476,7 @@ val roiContainment = containmentRatioInTrapezoid(bestBox, roiTrap.pts).coerceIn(
 val egoOffset = egoOffsetInRoiN(bestBox, frameW, frameH, 1.0f).coerceIn(0f, 2f)
 
 val risk = if (riderStanding) {
-    RiskEngine.Result(
-        level = 0,
-        riskScore = 0f,
-        reason = "RID_STAND rider=%.1fkm/h".format(riderSpeedMps * 3.6f),
-        state = RiskEngine.State.SAFE
-    )
+    riskEngine.standingResult(riderSpeedMps)
 } else {
     riskEngine.evaluate(
         tsMs = tsMs,
@@ -504,7 +498,8 @@ val risk = if (riderStanding) {
 
 val prevLevel = lastAlertLevel
 val level = risk.level
-val reasonBits = risk.reasonBits
+val reasonBits = RiskEngine.formatReasonShort(risk.reasonBits)Bits
+	val alertReason = RiskEngine.formatReasonShort(reasonBits)
 lastAlertLevel = level
 
 if (riderStanding) {
@@ -515,14 +510,8 @@ if (riderStanding) {
 
 // Log why alert level was decided (debugOverlay only; sampled)
 if (AppPreferences.debugOverlay && (level != prevLevel || frameIndex % logEveryNFrames == 0L)) {
-    val reasonShort = RiskEngine.formatReasonShort(reasonBits)
-    flog(
-        "risk level=$level score=%.2f state=${'$'}{risk.state} bits=${'$'}{reasonBits.toUInt().toString(16)} reason=${'$'}reasonShort"
-            .format(risk.riskScore),
-        force = (level != prevLevel)
-    )
+    flog("risk level=$level score=%.2f state=${'$'}{risk.state} bits=$reasonBits reason=$alertReason".format(risk.riskScore), force = (level != prevLevel))
 }
-
 sendOverlayUpdate(
                 box = bestBox,
                 frameW = frameW,
@@ -535,6 +524,7 @@ sendOverlayUpdate(
                 label = label,
                 brakeCue = brakeCue.active,
                 alertLevel = lastAlertLevel,
+                alertReason = alertReason,
                 reasonBits = reasonBits,
                 riskScore = risk.riskScore
             )
@@ -557,7 +547,7 @@ sendOverlayUpdate(
                 level = level,
                 label = label,
                 brakeCue = brakeCue.active,
-                reasonBits = reasonBits,
+                alertReason = alertReason,
                 riskScore = risk.riskScore
             )
 
@@ -814,6 +804,7 @@ private fun playAlertSound(resId: Int, critical: Boolean) {
         label: String,
         brakeCue: Boolean,
         alertLevel: Int,
+        alertReason: String = "",
         reasonBits: Int = 0,
         riskScore: Float = Float.NaN,
         force: Boolean = false
@@ -843,9 +834,8 @@ private fun playAlertSound(resId: Int, critical: Boolean) {
         i.putExtra("label", label)
         i.putExtra("brake_cue", brakeCue)
         i.putExtra("alert_level", alertLevel)
-i.putExtra("reason_bits", reasonBits)
-val alertReason = RiskEngine.formatReasonShort(reasonBits)
-i.putExtra("alert_reason", alertReason)
+        i.putExtra("alert_reason", alertReason)
+        i.putExtra("reason_bits", reasonBits)
         i.putExtra("risk_score", riskScore)
 
         // keep ROI always in preview overlay
@@ -882,8 +872,8 @@ i.putExtra("alert_reason", alertReason)
         level: Int,
         label: String,
         brakeCue: Boolean,
-        reasonBits: Int = 0,
-        riskScore: Float = Float.NaN,
+        alertReason: String = "",
+                riskScore: Float = Float.NaN,
         force: Boolean = false
     ) {
         val now = SystemClock.elapsedRealtime()
@@ -901,8 +891,6 @@ i.putExtra("alert_reason", alertReason)
         i.putExtra(EXTRA_LEVEL, level)
         i.putExtra(EXTRA_LABEL, label)
         i.putExtra(EXTRA_BRAKE_CUE, brakeCue)
-        i.putExtra(EXTRA_REASON_BITS, reasonBits)
-        val alertReason = RiskEngine.formatReasonShort(reasonBits)
         i.putExtra(EXTRA_ALERT_REASON, alertReason)
         i.putExtra(EXTRA_RISK_SCORE, riskScore)
         ctx.sendBroadcast(i)
@@ -919,8 +907,7 @@ i.putExtra("alert_reason", alertReason)
             level = 0,
             label = "",
             brakeCue = false,
-            reasonBits = 0,
-            reasonBits = 0,
+            alertReason = "clear",
             riskScore = Float.NaN,
             force = true
         )

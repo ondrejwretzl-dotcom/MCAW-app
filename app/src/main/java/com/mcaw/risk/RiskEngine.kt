@@ -5,42 +5,31 @@ import kotlin.math.max
 import kotlin.math.min
 
 /**
- * MCAW 2.0 – RiskEngine v1
+ * MCAW 2.0 – RiskEngine v2 (reasonBits contract)
  *
- * Cíl: jednotné místo pro prediktivní risk scoring a rozhodnutí levelu.
- * - TTC primárně z image trendu (posílá caller)
- * - ROI jako weight, ne hard gate
- * - IMU: ego brzdění + náklon (volitelné signály)
- * - Automat default (caller dodá effectiveMode z DetectionModePolicy)
+ * Zásady:
+ * - O(1) výpočet
+ * - Bez IO / bez UI závislostí
+ * - Bez per-frame alokací v hot path (evaluate)
+ *
+ * Pozn.: Textové WHY se generuje jen na vyžádání (debug overlay / sampled log).
  */
 class RiskEngine {
 
     enum class State { SAFE, CAUTION, CRITICAL }
 
+    /**
+     * Výsledek evaluace. Mutable kvůli re-use (minimalizace GC).
+     * Caller si NESMÍ instanci držet dlouhodobě – RiskEngine ji znovu přepíše.
+     */
     class Result(
-    var level: Int = 0,            // 0 SAFE, 1 ORANGE, 2 RED
-    var riskScore: Float = 0f,      // 0..1
-    var reasonBits: Int = 0,        // bitmask WHY (stable, parseable)
-    var state: State = State.SAFE
-)
+        var level: Int = 0,          // 0 SAFE, 1 ORANGE, 2 RED
+        var riskScore: Float = 0f,    // 0..1
+        var reasonBits: Int = 0,      // stabilní WHY kontrakt
+        var state: State = State.SAFE
+    )
 
-class Thresholds(
-    val ttcOrange: Float,
-    val ttcRed: Float,
-    val distOrange: Float,
-    val distRed: Float,
-    val relOrange: Float,
-    val relRed: Float
-)
-
-// NOTE: Avoid per-frame allocations: re-use objects.
-private val out = Result()
-
-private val thrCity = Thresholds(ttcOrange = 3.0f, ttcRed = 1.2f, distOrange = 15f, distRed = 8f, relOrange = 3f, relRed = 5f)
-private val thrSport = Thresholds(ttcOrange = 4.0f, ttcRed = 1.5f, distOrange = 30f, distRed = 12f, relOrange = 5f, relRed = 9f)
-private val thrUser = Thresholds(ttcOrange = 3.0f, ttcRed = 1.2f, distOrange = 15f, distRed = 8f, relOrange = 3f, relRed = 5f) // updated each call
-
-(
+    data class Thresholds(
         val ttcOrange: Float,
         val ttcRed: Float,
         val distOrange: Float,
@@ -49,11 +38,44 @@ private val thrUser = Thresholds(ttcOrange = 3.0f, ttcRed = 1.2f, distOrange = 1
         val relRed: Float
     )
 
+    companion object {
+        // --- Reason bits (stabilní kontrakt pro logy/overlay) ---
+        const val BIT_TTC = 1 shl 0
+        const val BIT_DIST = 1 shl 1
+        const val BIT_REL = 1 shl 2
+        const val BIT_ROI_LOW = 1 shl 3
+        const val BIT_BRAKE_CUE = 1 shl 4
+        const val BIT_CUT_IN = 1 shl 5
+        const val BIT_EGO_BRAKE = 1 shl 6
+        const val BIT_QUALITY_CONSERV = 1 shl 7
+        const val BIT_RIDER_STAND = 1 shl 8
+
+        fun formatReasonShort(bits: Int): String {
+            if (bits == 0) return "SAFE"
+            val sb = StringBuilder(48)
+            if ((bits and BIT_RIDER_STAND) != 0) sb.append("RID_STAND ")
+            if ((bits and BIT_TTC) != 0) sb.append("TTC ")
+            if ((bits and BIT_DIST) != 0) sb.append("DIST ")
+            if ((bits and BIT_REL) != 0) sb.append("REL ")
+            if ((bits and BIT_ROI_LOW) != 0) sb.append("ROI_LOW ")
+            if ((bits and BIT_BRAKE_CUE) != 0) sb.append("BRAKE_CUE ")
+            if ((bits and BIT_CUT_IN) != 0) sb.append("CUT_IN ")
+            if ((bits and BIT_EGO_BRAKE) != 0) sb.append("EGO_BRAKE ")
+            if ((bits and BIT_QUALITY_CONSERV) != 0) sb.append("QCONSERV ")
+            // trim trailing space
+            if (sb.isNotEmpty() && sb[sb.length - 1] == ' ') sb.setLength(sb.length - 1)
+            return sb.toString()
+        }
+    }
+
     // Hysteresis on riskScore (prevents blinking)
     private var lastLevel: Int = 0
 
     // Separate hysteresis for TTC (kept inside engine; not fallback)
     private var lastTtcLevel: Int = 0
+
+    // Single reusable result instance (avoid per-frame allocations)
+    private val out = Result()
 
     fun evaluate(
         tsMs: Long,
@@ -75,7 +97,19 @@ private val thrUser = Thresholds(ttcOrange = 3.0f, ttcRed = 1.2f, distOrange = 1
         val thr = thresholdsForMode(effectiveMode)
 
         // --- Core scores (0..1) ---
-        val ttcScore = scoreTtc(ttcSec, thr)
+        val ttcLevel = ttcLevelWithHysteresis(ttcSec, thr.ttcOrange, thr.ttcRed)
+        val ttcScore = when (ttcLevel) {
+            2 -> 1f
+            1 -> 0.70f
+            else -> {
+                if (!ttcSec.isFinite() || ttcSec <= 0f) 0f
+                else {
+                    val t = (min(ttcSec, 10f) / 10f).coerceIn(0f, 1f)
+                    (0.35f * (1f - t)).coerceIn(0f, 0.35f)
+                }
+            }
+        }
+
         val distScore = scoreLowIsBad(distanceM, thr.distRed, thr.distOrange)
         val relScore = scoreHighIsBad(approachSpeedMps, thr.relOrange, thr.relRed)
 
@@ -130,57 +164,60 @@ private val thrUser = Thresholds(ttcOrange = 3.0f, ttcRed = 1.2f, distOrange = 1
             else -> State.SAFE
         }
 
-        val reasonBits = buildReasonBits(
-            level = level,
-            risk = risk,
-            ttc = ttcSec,
-            dist = distanceM,
-            rel = approachSpeedMps,
-            roi = roiC,
-            egoOff = off,
-            brakeCueActive = brakeCueActive,
-            cutInActive = cutInActive,
-            egoBrake = egoBrake,
-            conservative = conservative
-        )
+        // --- Build reason bits (stable contract; cheap) ---
+        var bits = 0
+        if (level > 0) {
+            if (ttcLevel > 0 || ttcScore >= 0.55f) bits = bits or BIT_TTC
+            if (distScore >= 0.55f) bits = bits or BIT_DIST
+            if (relScore >= 0.60f) bits = bits or BIT_REL
+            if (roiScore <= 0.40f) bits = bits or BIT_ROI_LOW
+            if (brakeCueActive) bits = bits or BIT_BRAKE_CUE
+            if (cutInActive) bits = bits or BIT_CUT_IN
+            if (egoBrake >= 0.65f) bits = bits or BIT_EGO_BRAKE
+            if (conservative) bits = bits or BIT_QUALITY_CONSERV
+        } else {
+            if (conservative) bits = bits or BIT_QUALITY_CONSERV
+        }
 
-out.level = level
-out.riskScore = risk
-out.reasonBits = reasonBits
-out.state = state
-return out
+        // Fill reusable result
+        out.level = level
+        out.riskScore = risk
+        out.reasonBits = bits
+        out.state = state
+        return out
+    }
+
+    fun standingResult(riderSpeedMps: Float): Result {
+        out.level = 0
+        out.riskScore = 0f
+        out.reasonBits = BIT_RIDER_STAND
+        out.state = State.SAFE
+        return out
     }
 
     private fun thresholdsForMode(mode: Int): Thresholds {
-    // 1 = Město, 2 = Sport, 3 = Uživatel (Auto is resolved before calling)
-    return when (mode) {
-        2 -> thrSport
-        3 -> {
-            // Refresh user thresholds (reads are cheap, avoids object alloc)
-            thrUser.ttcOrange = com.mcaw.config.AppPreferences.userTtcOrange
-            thrUser.ttcRed = com.mcaw.config.AppPreferences.userTtcRed
-            thrUser.distOrange = com.mcaw.config.AppPreferences.userDistOrange
-            thrUser.distRed = com.mcaw.config.AppPreferences.userDistRed
-            thrUser.relOrange = com.mcaw.config.AppPreferences.userSpeedOrange
-            thrUser.relRed = com.mcaw.config.AppPreferences.userSpeedRed
-            thrUser
+        // 1 = Město, 2 = Sport, 3 = Uživatel (Auto is resolved before calling)
+        return when (mode) {
+            2 -> Thresholds(ttcOrange = 4.0f, ttcRed = 1.5f, distOrange = 30f, distRed = 12f, relOrange = 5f, relRed = 9f)
+            3 -> Thresholds(
+                ttcOrange = com.mcaw.config.AppPreferences.userTtcOrange,
+                ttcRed = com.mcaw.config.AppPreferences.userTtcRed,
+                distOrange = com.mcaw.config.AppPreferences.userDistOrange,
+                distRed = com.mcaw.config.AppPreferences.userDistRed,
+                relOrange = com.mcaw.config.AppPreferences.userSpeedOrange,
+                relRed = com.mcaw.config.AppPreferences.userSpeedRed
+            )
+            else -> Thresholds(ttcOrange = 3.0f, ttcRed = 1.2f, distOrange = 15f, distRed = 8f, relOrange = 3f, relRed = 5f)
         }
-        else -> thrCity
     }
-}
-
-}
-
 
     private fun scoreLowIsBad(value: Float, redThr: Float, orangeThr: Float): Float {
         if (!value.isFinite() || value <= 0f) return 0f
         if (value <= redThr) return 1f
         if (value <= orangeThr) {
-            // linear 1..0 between redThr..orangeThr
             val t = ((value - redThr) / max(0.001f, (orangeThr - redThr))).coerceIn(0f, 1f)
-            return 1f - t * 0.55f // keep still high in orange zone
+            return 1f - t * 0.55f
         }
-        // beyond orange -> decay
         val t = ((value - orangeThr) / max(0.001f, orangeThr)).coerceIn(0f, 1f)
         return (0.45f * (1f - t)).coerceIn(0f, 0.45f)
     }
@@ -194,20 +231,6 @@ return out
         }
         val t = (value / max(0.001f, orangeThr)).coerceIn(0f, 1f)
         return 0.55f * t
-    }
-
-    private fun scoreTtc(ttc: Float, thr: Thresholds): Float {
-        val lvl = ttcLevelWithHysteresis(ttc, thr.ttcOrange, thr.ttcRed)
-        return when (lvl) {
-            2 -> 1f
-            1 -> 0.70f
-            else -> {
-                if (!ttc.isFinite() || ttc <= 0f) return 0f
-                // smooth: large TTC -> small score
-                val t = (min(ttc, 10f) / 10f).coerceIn(0f, 1f)
-                (0.35f * (1f - t)).coerceIn(0f, 0.35f)
-            }
-        }
     }
 
     private fun ttcLevelWithHysteresis(ttc: Float, orangeOn: Float, redOn: Float): Int {
@@ -235,7 +258,6 @@ return out
     }
 
     private fun riskToLevelWithHysteresis(risk: Float, conservative: Boolean): Int {
-        // Thresholds tuned for v1; conservative suppresses ORANGE
         val orangeOn = if (conservative) 0.62f else 0.45f
         val redOn = if (conservative) 0.82f else 0.75f
 
@@ -256,70 +278,5 @@ return out
             }
         }
         return lastLevel
-    }
-
-            // --- Reason contract (stable bitmask) ---
-    companion object {
-        const val BIT_TTC = 1 shl 0
-        const val BIT_DIST = 1 shl 1
-        const val BIT_REL = 1 shl 2
-        const val BIT_ROI_LOW = 1 shl 3
-        const val BIT_BRAKE_CUE = 1 shl 4
-        const val BIT_CUT_IN = 1 shl 5
-        const val BIT_EGO_BRAKE = 1 shl 6
-        const val BIT_QUALITY_CONSERV = 1 shl 7
-
-        /**
-         * Builds a short, human readable WHY string.
-         * Call only when needed (debug overlay / sampled logs) to avoid per-frame allocations.
-         */
-        fun formatReasonShort(reasonBits: Int): String {
-            val lvl = (reasonBits ushr 30) and 0x3
-            val sb = StringBuilder(32)
-            when (lvl) {
-                2 -> sb.append("CRIT")
-                1 -> sb.append("WARN")
-                else -> sb.append("SAFE")
-            }
-            if ((reasonBits and BIT_TTC) != 0) sb.append(" ttc")
-            if ((reasonBits and BIT_DIST) != 0) sb.append(" dist")
-            if ((reasonBits and BIT_REL) != 0) sb.append(" rel")
-            if ((reasonBits and BIT_ROI_LOW) != 0) sb.append(" roi")
-            if ((reasonBits and BIT_BRAKE_CUE) != 0) sb.append(" brakeCue")
-            if ((reasonBits and BIT_CUT_IN) != 0) sb.append(" cutIn")
-            if ((reasonBits and BIT_EGO_BRAKE) != 0) sb.append(" egoBrake")
-            if ((reasonBits and BIT_QUALITY_CONSERV) != 0) sb.append(" QCONSERV")
-            return sb.toString()
-        }
-    }
-
-    private fun buildReasonBits(
-        level: Int,
-        risk: Float,
-        ttc: Float,
-        dist: Float,
-        rel: Float,
-        roi: Float,
-        egoOff: Float,
-        brakeCueActive: Boolean,
-        cutInActive: Boolean,
-        egoBrake: Float,
-        conservative: Boolean
-    ): Int {
-        var bits = 0
-        // Primary factors: set bits when they are in "meaningful" zone.
-        if (ttc.isFinite() && ttc > 0f && ttc <= 4.5f) bits = bits or BIT_TTC
-        if (dist.isFinite() && dist > 0f && dist <= 30f) bits = bits or BIT_DIST
-        if (rel.isFinite() && rel >= 3f) bits = bits or BIT_REL
-        if (roi < 0.35f || egoOff >= 1.15f) bits = bits or BIT_ROI_LOW
-
-        if (brakeCueActive) bits = bits or BIT_BRAKE_CUE
-        if (cutInActive) bits = bits or BIT_CUT_IN
-        if (egoBrake >= 0.65f) bits = bits or BIT_EGO_BRAKE
-        if (conservative) bits = bits or BIT_QUALITY_CONSERV
-
-        // Encode level in top 2 bits for easy parsing (00/01/10).
-        bits = bits or ((level and 0x3) shl 30)
-        return bits
     }
 }
