@@ -254,11 +254,6 @@ var ttsTextRed: String
         get() = prefs.getBoolean("debugOverlay", false)
         set(v) = prefs.edit().putBoolean("debugOverlay", v).apply()
 
-
-    var debugTrace: Boolean
-        get() = prefs.getBoolean("debugTrace", false)
-        set(v) = prefs.edit().putBoolean("debugTrace", v).apply()
-
     var laneFilter: Boolean
         get() = prefs.getBoolean("laneFilter", false)
         set(v) = prefs.edit().putBoolean("laneFilter", v).apply()

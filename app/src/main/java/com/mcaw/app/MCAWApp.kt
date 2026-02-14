@@ -4,7 +4,6 @@ import android.app.Application
 import android.speech.tts.TextToSpeech
 import android.util.Log
 import com.mcaw.util.PublicLogWriter
-import com.mcaw.util.SessionLogs
 import com.mcaw.config.AppPreferences
 import java.io.File
 import java.io.PrintWriter
@@ -15,12 +14,11 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 /**
- * Plnohodnotná App třída:
+ * Plnohodnotná App tøída:
  * - Init AppPreferences
  * - Globální IO executor
- * - TTS (volitelně dle nastavení)
+ * - TTS (volitelnì dle nastavení)
  * - Uncaught crash handler (log do files/logs/)
- * - Centralized session logs (1 CSV per run)
  */
 class MCAWApp : Application(), TextToSpeech.OnInitListener {
 
@@ -31,7 +29,7 @@ class MCAWApp : Application(), TextToSpeech.OnInitListener {
         lateinit var ioExecutor: ExecutorService
             private set
 
-        /** Spusť úlohu na IO vlákně. */
+        /** Spus úlohu na IO vláknì. */
         fun runIO(task: Runnable) = ioExecutor.execute(task)
     }
 
@@ -49,9 +47,6 @@ class MCAWApp : Application(), TextToSpeech.OnInitListener {
         ioExecutor = Executors.newSingleThreadExecutor { r ->
             Thread(r, "mcaw-io").apply { isDaemon = true }
         }
-
-        // Central session logs (single file per run)
-        SessionLogs.init(this)
 
         // Crash handler
         previousHandler = Thread.getDefaultUncaughtExceptionHandler()
@@ -74,7 +69,6 @@ class MCAWApp : Application(), TextToSpeech.OnInitListener {
         try {
             tts?.shutdown()
             ioExecutor.shutdown()
-            SessionLogs.close()
         } catch (_: Exception) {
         }
         super.onTerminate()
@@ -86,10 +80,11 @@ class MCAWApp : Application(), TextToSpeech.OnInitListener {
     }
 
     override fun onInit(status: Int) {
-        // Můžeš nastavit jazyk, rychlost atd. dle potřeby.
+        // Mùe nastavit jazyk, rychlost atd. Dle potøeby.
+        // tts?.language = Locale.getDefault()
     }
 
-    /** Bezpečné použití TTS z app vrstvy. */
+    /** Bezpeèné pouití TTS z app vrstvy. */
     fun speakNow(text: String) {
         try {
             tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "app_say")

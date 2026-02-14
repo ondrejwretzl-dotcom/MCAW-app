@@ -23,7 +23,6 @@ import com.mcaw.location.SpeedMonitor
 import com.mcaw.location.SpeedProvider
 import com.mcaw.service.McawService
 import com.mcaw.util.PublicLogWriter
-import com.mcaw.util.SessionStamp
 import com.mcaw.util.LabelMapper
 
 class MainActivity : ComponentActivity() {
@@ -54,7 +53,6 @@ class MainActivity : ComponentActivity() {
     private val logLines: ArrayDeque<String> = ArrayDeque()
     private val speedHandler = Handler(Looper.getMainLooper())
     private var activityLogFileName: String = ""
-    private var sessionLogFileName: String = ""
 
     // --- Rider speed UX stabilization ---
     // Metrics from DetectionAnalyzer should be the primary source (when camera/service runs).
@@ -178,9 +176,7 @@ class MainActivity : ComponentActivity() {
 
         speedProvider = SpeedProvider(this)
         speedMonitor = SpeedMonitor(speedProvider)
-        val stamp = SessionStamp.value
-        activityLogFileName = "mcaw_activity_${stamp}.txt"
-        sessionLogFileName = "mcaw_session_${stamp}.txt"
+        activityLogFileName = "mcaw_activity_${sessionStamp()}.txt"
 
         txtBuildInfo.text =
             "MCAW ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) · ${BuildConfig.BUILD_ID}"
@@ -203,19 +199,23 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun writeSessionLog(event: String) {
-        // Single session file: append, do NOT create a new timestamped file per call.
-        val safeEvent = event.replace("\\n", " ").replace("\\r", " ").take(160)
-        val line = buildString {
+        val timestamp = java.text.SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", java.util.Locale.US)
+            .format(System.currentTimeMillis())
+        val content = buildString {
             append("event=")
-            append(safeEvent)
-            append(" build_name=")
+            append(event)
+            append('\n')
+            append("build_name=")
             append(BuildConfig.VERSION_NAME)
-            append(" build_code=")
+            append('\n')
+            append("build_code=")
             append(BuildConfig.VERSION_CODE)
-            append(" build_id=")
+            append('\n')
+            append("build_id=")
             append(BuildConfig.BUILD_ID)
+            append('\n')
         }
-        PublicLogWriter.appendLogLine(this, sessionLogFileName, line)
+        PublicLogWriter.writeTextFile(this, "mcaw_session_$timestamp.txt", content)
     }
 
     private fun ensurePermissions(action: PendingAction) {
@@ -530,3 +530,4 @@ private fun formatMetric(value: Float, unit: String): String {
         OPEN_CAMERA
     }
 }
+
