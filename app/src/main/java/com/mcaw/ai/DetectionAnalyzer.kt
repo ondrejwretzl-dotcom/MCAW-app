@@ -185,30 +185,31 @@ class DetectionAnalyzer(
             }
 
             // Get rider speed (m/s) – may be NaN if unknown
-            val riderSpeedMps = speedProvider.speedMps
+            val riderSpeedMps = speedProvider.getCurrent().speedMps
 
             // Detection mode resolution (auto switcher) – avoid toggling during alert
             val modeRes = autoModeSwitcher.resolve(
-                selectedMode = AppPreferences.mode,
+                selectedMode = AppPreferences.detectionMode,
                 riderSpeedMps = riderSpeedMps,
                 lastAlertLevel = lastAlertLevel,
                 nowMs = tsMs
             )
 
             // IMU snapshot (lean/brake)
-            val riderStanding = imuMonitor.isRiderStanding()
+            val riderStanding = riderSpeedMps.isFinite() && riderSpeedMps <= (6.0f / 3.6f)
 
             // Get detections
             val detections = mutableListOf<Detection>()
+            val bitmap = ImageUtils.imageProxyToBitmap(image)
 
             if (AppPreferences.debugOverlay) perf.t1 = SystemClock.elapsedRealtimeNanos()
             yolo?.let {
-                detections += it.detect(image)
+                detections += it.detect(bitmap)
             }
             if (AppPreferences.debugOverlay) perf.t2 = SystemClock.elapsedRealtimeNanos()
 
             det?.let {
-                detections += it.detect(image)
+                detections += it.detect(bitmap)
             }
             if (AppPreferences.debugOverlay) perf.t3 = SystemClock.elapsedRealtimeNanos()
 
@@ -351,7 +352,7 @@ class DetectionAnalyzer(
             }
 
             val bestBox = clampBox(bestTrack.detection.box, frameW, frameH)
-            val label = bestTrack.detection.label
+            val label = bestTrack.detection.label ?: ""
 
             // Estimate distance (mono heuristics)
             val rawDistanceM = estimateDistanceMeters(bestBox, frameH)
@@ -543,7 +544,7 @@ class DetectionAnalyzer(
         if (!AppPreferences.sound) return
         val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         if (!requestAlertAudioFocus(am)) return
-        val resId = if (level >= 2) R.raw.beep_red else R.raw.beep_orange
+        val resId = if (level >= 2) R.raw.red_alert else R.raw.alert_beep
         runCatching {
             alertPlayer?.stop()
             alertPlayer?.release()
@@ -732,4 +733,3 @@ class DetectionAnalyzer(
         return norm * scale
     }
 }
-

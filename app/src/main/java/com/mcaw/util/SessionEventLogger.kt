@@ -5,17 +5,16 @@ import android.os.Handler
 import android.os.HandlerThread
 import com.mcaw.risk.RiskEngine
 import java.util.ArrayDeque
+import kotlin.math.round
 
 /**
- * ALWAYS-ON event logger for MCAW 2.0.
+ * ALWAYS-ON session event logger (CSV).
  *
- * Cíle:
- * - žádné IO v analyzer loop
- * - žádné string formátování ve frame loop
- * - sampled + transitions (writer thread drainuje frontu)
- *
- * Pozn.: PublicLogWriter aktuálnì otevírá stream na append per line. Vzhledem k nízké frekvenci
- * (2 Hz + transitions) je to zatím OK. Pokud bude potøeba, navážeme A2.x persistent stream writerem.
+ * Design goals (MCAW 2.0):
+ * - no IO in analyzer loop
+ * - no string formatting in analyzer loop
+ * - sampled logging + level/state transitions
+ * - object pool + queue to avoid GC spikes
  */
 class SessionEventLogger(
     private val context: Context,
@@ -23,7 +22,7 @@ class SessionEventLogger(
     prealloc: Int = 64
 ) {
 
-    private class Event {
+    internal class Event {
         var tsMs: Long = 0L
         var risk: Float = 0f
         var level: Int = 0
@@ -51,7 +50,7 @@ class SessionEventLogger(
     private var ht: HandlerThread? = null
     private var h: Handler? = null
 
-    // Reusable formatter buffer on writer thread
+    // Writer-thread reusable buffer
     private val sb = StringBuilder(256)
 
     init {
@@ -66,8 +65,8 @@ class SessionEventLogger(
         ht = thread
         h = Handler(thread.looper)
 
-        // Write CSV header once (session files are unique; safe to append).
         h?.post {
+            // One header per session file.
             PublicLogWriter.appendLogLine(context, fileName, LogContract.HEADER.trimEnd())
         }
     }
@@ -84,8 +83,7 @@ class SessionEventLogger(
     }
 
     /**
-     * Enqueue one event. If queue is saturated (pool empty), drop silently.
-     * Prefer stability (no GC spikes) over perfect logging under load.
+     * Enqueue one event. If pool empty => drop silently (prefer stability).
      */
     fun logEvent(
         tsMs: Long,
@@ -107,7 +105,8 @@ class SessionEventLogger(
         if (!started) return
 
         val ev: Event = synchronized(lock) {
-            pool.removeFirstOrNull() ?: return
+            if (pool.isEmpty()) return
+            pool.removeFirst()
         }
 
         ev.tsMs = tsMs
@@ -132,42 +131,45 @@ class SessionEventLogger(
             wasEmpty
         }
 
-        // Post one drain runnable when queue transitions from empty -> non-empty.
         if (shouldPostDrain) {
             h?.post { drainOnce() }
         }
     }
 
     private fun drainOnce() {
-        // Writer thread
         while (true) {
-            val ev: Event = synchronized(lock) { queue.removeFirstOrNull() } ?: break
+            val ev: Event = synchronized(lock) {
+                if (queue.isEmpty()) null else queue.removeFirst()
+            } ?: break
 
+            // Format CSV line on writer thread.
             sb.setLength(0)
-            LogContract.appendEventLine(
-                sb = sb,
-                tsMs = ev.tsMs,
-                risk = ev.risk,
-                level = ev.level,
-                state = ev.state.name,
-                reasonBits = ev.reasonBits,
-                ttcSec = ev.ttcSec,
-                distM = ev.distM,
-                relV = ev.relV,
-                roi = ev.roi,
-                qualityPoor = ev.qualityPoor,
-                cutIn = ev.cutIn,
-                brake = ev.brake,
-                egoBrake = ev.egoBrake,
-                mode = ev.mode,
-                lockedId = ev.lockedId
-            )
+            sb.append(ev.tsMs).append(',')
+                .append(float2(ev.risk)).append(',')
+                .append(ev.level).append(',')
+                .append(ev.state.name).append(',')
+                .append(ev.reasonBits).append(',')
+                .append(float2(ev.ttcSec)).append(',')
+                .append(float2(ev.distM)).append(',')
+                .append(float2(ev.relV)).append(',')
+                .append(float2(ev.roi)).append(',')
+                .append(if (ev.qualityPoor) 1 else 0).append(',')
+                .append(if (ev.cutIn) 1 else 0).append(',')
+                .append(if (ev.brake) 1 else 0).append(',')
+                .append(float2(ev.egoBrake)).append(',')
+                .append(ev.mode).append(',')
+                .append(ev.lockedId)
 
-            // IO happens here (off analyzer thread)
-            PublicLogWriter.appendLogLine(context, fileName, sb.toString().trimEnd())
+            PublicLogWriter.appendLogLine(context, fileName, sb.toString())
 
+            // Return to pool
             synchronized(lock) { pool.addLast(ev) }
         }
     }
-}
 
+    private fun float2(v: Float): String {
+        // keep compact; avoid Locale issues by manual formatting
+        return if (!v.isFinite()) "" else ((round(v * 100f) / 100f).toString())
+    }
+
+}

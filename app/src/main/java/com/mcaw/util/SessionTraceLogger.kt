@@ -85,7 +85,7 @@ class SessionTraceLogger(
         if (!started) return
 
         val ev: TargetEvent = synchronized(lock) {
-            pool.removeFirstOrNull() ?: return
+            if (pool.isEmpty()) return else pool.removeFirst()
         }
 
         ev.tsMs = tsMs
@@ -112,7 +112,7 @@ class SessionTraceLogger(
 
     private fun drainOnce() {
         while (true) {
-            val ev: TargetEvent = synchronized(lock) { queue.removeFirstOrNull() } ?: break
+            val ev: TargetEvent = synchronized(lock) { if (queue.isEmpty()) null else queue.removeFirst() } ?: break
 
             sb.setLength(0)
             TraceContract.appendTargetLine(
