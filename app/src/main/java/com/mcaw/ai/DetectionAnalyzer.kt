@@ -25,6 +25,9 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
+
 class DetectionAnalyzer(
     private val ctx: Context,
     private val yolo: YoloOnnxDetector?,
@@ -185,12 +188,50 @@ private fun assessFrameQuality(image: ImageProxy): FrameQuality {
 
     // --- Alert audio (fix: keep strong ref, handle focus, stop on level change) ---
 
+// --- Communication route (BT HFP / voice channel) ---
+// Some car head units (e.g., Škoda MIB) switch from FM to Bluetooth only for "call-like" audio.
+// We attempt to temporarily enable MODE_IN_COMMUNICATION + Bluetooth SCO when available.
+private var commRouteActive: Boolean = false
+private var prevAudioMode: Int = AudioManager.MODE_NORMAL
+private var prevBtScoOn: Boolean = false
 
+private fun canUseBluetoothSco(am: AudioManager): Boolean {
+    if (!am.isBluetoothScoAvailableOffCall) return false
+    return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+        ContextCompat.checkSelfPermission(ctx, android.Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+    } else {
+        true
+    }
+}
+
+private fun beginCommunicationRoute(am: AudioManager) {
+    if (commRouteActive) return
+    commRouteActive = true
+    prevAudioMode = am.mode
+    prevBtScoOn = am.isBluetoothScoOn
+    runCatching { am.mode = AudioManager.MODE_IN_COMMUNICATION }
+
+    if (canUseBluetoothSco(am)) {
+        // Engage SCO (HFP). If it fails, we still keep voice usage + exclusive focus.
+        runCatching { am.startBluetoothSco() }
+        runCatching { am.isBluetoothScoOn = true }
+    }
+}
+
+private fun endCommunicationRoute(am: AudioManager) {
+    if (!commRouteActive) return
+    commRouteActive = false
+    if (canUseBluetoothSco(am)) {
+        runCatching { am.isBluetoothScoOn = prevBtScoOn }
+        runCatching { am.stopBluetoothSco() }
+    }
+    runCatching { am.mode = prevAudioMode }
+}
     private var alertPlayer: MediaPlayer? = null
     private var audioFocusRequest: Any? = null // AudioFocusRequest on API 26+, kept as Any for source compat
     private var audioFocusGranted: Boolean = false
     private var lastFocusGain: Int = android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
-    private var lastFocusUsage: Int = android.media.AudioAttributes.USAGE_NOTIFICATION_RINGTONE
+    private var lastFocusUsage: Int = android.media.AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE
 
     // --- Cut-in detection (dynamic ego offset boost) ---
     private var cutInPrevAreaNorm: Float = Float.NaN
@@ -605,6 +646,7 @@ if (AppPreferences.debugOverlay) {
         runCatching { alertPlayer?.stop() }
         runCatching { alertPlayer?.release() }
         alertPlayer = null
+        endCommunicationRoute(am)
         abandonAlertAudioFocus(am)
     }
 
@@ -612,9 +654,10 @@ if (AppPreferences.debugOverlay) {
 private fun playAlertSound(resId: Int, critical: Boolean) {
     runCatching {
         val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        val usage = android.media.AudioAttributes.USAGE_NOTIFICATION_RINGTONE
+        val usage = android.media.AudioAttributes.USAGE_VOICE_COMMUNICATION
         val gain = AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE
         requestAlertAudioFocus(am, gain = gain, usage = usage)
+        beginCommunicationRoute(am)
 
         // Stop previous
         alertPlayer?.setOnCompletionListener(null)
@@ -633,13 +676,13 @@ private fun playAlertSound(resId: Int, critical: Boolean) {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
             mp.setAudioAttributes(
                 android.media.AudioAttributes.Builder()
-                    .setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                    .setUsage(android.media.AudioAttributes.USAGE_VOICE_COMMUNICATION)
                     .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
                     .build()
             )
         } else {
             @Suppress("DEPRECATION")
-            mp.setAudioStreamType(AudioManager.STREAM_RING)
+            mp.setAudioStreamType(AudioManager.STREAM_VOICE_CALL)
         }
 
         val uri = android.net.Uri.parse("android.resource://${ctx.packageName}/$resId")
@@ -648,13 +691,15 @@ private fun playAlertSound(resId: Int, critical: Boolean) {
         mp.setOnCompletionListener { player ->
             runCatching { player.release() }
             if (alertPlayer === player) alertPlayer = null
-            abandonAlertAudioFocus(am)
+            endCommunicationRoute(am)
+        abandonAlertAudioFocus(am)
         }
         mp.setOnErrorListener { player, what, extra ->
             flog("alert sound error what=$what extra=$extra", force = true)
             runCatching { player.release() }
             if (alertPlayer === player) alertPlayer = null
-            abandonAlertAudioFocus(am)
+            endCommunicationRoute(am)
+        abandonAlertAudioFocus(am)
             true
         }
 
@@ -665,6 +710,7 @@ private fun playAlertSound(resId: Int, critical: Boolean) {
         flog("alert sound fail: ${it.javaClass.simpleName} ${it.message}", force = true)
         runCatching { alertPlayer?.release() }
         alertPlayer = null
+        endCommunicationRoute(am)
         abandonAlertAudioFocus(am)
     }
 }
@@ -674,6 +720,7 @@ private fun playAlertSound(resId: Int, critical: Boolean) {
         if (audioFocusGranted && gain == lastFocusGain && usage == lastFocusUsage) return
 
         // If focus is already held with different params, release first.
+        if (audioFocusGranted) endCommunicationRoute(am)
         abandonAlertAudioFocus(am)
 
         // API 26+ supports AudioFocusRequest, older uses legacy requestAudioFocus.
@@ -699,7 +746,7 @@ private fun playAlertSound(resId: Int, critical: Boolean) {
             @Suppress("DEPRECATION")
             audioFocusGranted = (am.requestAudioFocus(
                 null,
-                AudioManager.STREAM_RING,
+                AudioManager.STREAM_VOICE_CALL,
                 gain
             ) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
             if (audioFocusGranted) {
@@ -907,11 +954,6 @@ private fun playAlertSound(resId: Int, critical: Boolean) {
             else -> AlertThresholds(4.0f, 1.5f, 25f, 10f, 4.5f, 8f)
         }
     }
-
-
-
-
-
 private data class AlertDecision(
     val level: Int,
     val reason: String
