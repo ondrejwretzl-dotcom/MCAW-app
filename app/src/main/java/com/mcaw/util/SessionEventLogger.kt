@@ -144,32 +144,29 @@ class SessionEventLogger(
 
             // Format CSV line on writer thread.
             sb.setLength(0)
-            sb.append(ev.tsMs).append(',')
-                .append(float2(ev.risk)).append(',')
-                .append(ev.level).append(',')
-                .append(ev.state.name).append(',')
-                .append(ev.reasonBits).append(',')
-                .append(float2(ev.ttcSec)).append(',')
-                .append(float2(ev.distM)).append(',')
-                .append(float2(ev.relV)).append(',')
-                .append(float2(ev.roi)).append(',')
-                .append(if (ev.qualityPoor) 1 else 0).append(',')
-                .append(if (ev.cutIn) 1 else 0).append(',')
-                .append(if (ev.brake) 1 else 0).append(',')
-                .append(float2(ev.egoBrake)).append(',')
-                .append(ev.mode).append(',')
-                .append(ev.lockedId)
+            sb.append('E').append(',')
+            LogContract.appendEventLine(
+                sb = sb,
+                tsMs = ev.tsMs,
+                risk = ev.risk,
+                level = ev.level,
+                state = ev.state.name,
+                reasonBits = ev.reasonBits,
+                ttcSec = ev.ttcSec,
+                distM = ev.distM,
+                relV = ev.relV,
+                roi = ev.roi,
+                qualityPoor = ev.qualityPoor,
+                cutIn = ev.cutIn,
+                brake = ev.brake,
+                egoBrake = ev.egoBrake,
+                mode = ev.mode,
+                lockedId = ev.lockedId
+            )
 
-            PublicLogWriter.appendLogLine(context, fileName, sb.toString())
-
+            PublicLogWriter.appendLogLine(context, fileName, sb.toString().trimEnd())
             // Return to pool
             synchronized(lock) { pool.addLast(ev) }
         }
     }
-
-    private fun float2(v: Float): String {
-        // keep compact; avoid Locale issues by manual formatting
-        return if (!v.isFinite()) "" else ((round(v * 100f) / 100f).toString())
-    }
-
 }

@@ -118,6 +118,7 @@ class SessionTraceLogger(
             } ?: break
 
             sb.setLength(0)
+            sb.append('T').append(',')
             TraceContract.appendTargetLine(
                 sb = sb,
                 tsMs = ev.tsMs,

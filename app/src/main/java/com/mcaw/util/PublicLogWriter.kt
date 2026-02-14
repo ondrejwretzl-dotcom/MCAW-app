@@ -9,6 +9,25 @@ import android.provider.MediaStore
 object PublicLogWriter {
     private val RELATIVE_DIR = "${Environment.DIRECTORY_DOWNLOADS}/MCAW"
 
+    // Cache last known Uri per file to avoid querying MediaStore on every append.
+    // Accessed from multiple threads (service + writer threads), so keep it synchronized.
+    private val uriCache = LinkedHashMap<String, Uri>(8, 0.75f, true)
+    private const val URI_CACHE_MAX = 8
+
+    private fun getCachedUri(fileName: String): Uri? = synchronized(uriCache) { uriCache[fileName] }
+
+    private fun putCachedUri(fileName: String, uri: Uri) = synchronized(uriCache) {
+        uriCache[fileName] = uri
+        if (uriCache.size > URI_CACHE_MAX) {
+            val it = uriCache.entries.iterator()
+            if (it.hasNext()) {
+                it.next()
+                it.remove()
+            }
+        }
+    }
+
+
     fun writeTextFile(
         context: Context,
         fileName: String,
@@ -41,8 +60,12 @@ object PublicLogWriter {
         val lineWithBreak = if (line.endsWith('\n')) line else "$line\n"
         runCatching {
             val resolver = context.contentResolver
-            val uri = findExistingUri(context, fileName) ?: createLogFile(context, fileName)
+
+            val cached = getCachedUri(fileName)
+            val uri = cached ?: (findExistingUri(context, fileName) ?: createLogFile(context, fileName))
             if (uri != null) {
+                if (cached == null) putCachedUri(fileName, uri)
+
                 val output = runCatching { resolver.openOutputStream(uri, "wa") }.getOrNull()
                     ?: resolver.openOutputStream(uri, "w")
                 output?.use { out ->

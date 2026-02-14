@@ -22,6 +22,9 @@ import com.mcaw.risk.RiskEngine
 import com.mcaw.model.Box
 import com.mcaw.model.Detection
 import com.mcaw.util.PublicLogWriter
+import com.mcaw.util.SessionLogFile
+import com.mcaw.util.SessionEventLogger
+import com.mcaw.util.SessionTraceLogger
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.max
@@ -49,7 +52,15 @@ class DetectionAnalyzer(
         const val EXTRA_RISK_SCORE = "extra_risk_score"
     }
 
-    private val analyzerLogFileName: String = "mcaw_analyzer_${System.currentTimeMillis()}.txt"
+    private val analyzerLogFileName: String = SessionLogFile.fileName
+
+    // Single-session loggers (one file per app use).
+    // Event logger is ALWAYS-ON; trace logger follows debugOverlay.
+    private val eventLogger = SessionEventLogger(ctx, SessionLogFile.fileName)
+    private var traceLogger: SessionTraceLogger? = null
+
+    // Event sampling: keep low overhead.
+    private val eventEveryNFrames: Long = 10L
 
     // Performance: stage timing (debugOverlay only)
     private data class PerfAgg(
@@ -275,6 +286,11 @@ private fun updateCutInState(tsMs: Long, box: Box, frameW: Float, frameH: Float)
     }
 
     init {
+        eventLogger.start()
+        if (AppPreferences.debugOverlay) {
+            traceLogger = SessionTraceLogger(ctx, SessionLogFile.fileName).also { it.start() }
+        }
+
         if (AppPreferences.voice) {
             tts = TextToSpeech(ctx) { status ->
                 if (status == TextToSpeech.SUCCESS) tts?.language = Locale.getDefault()
@@ -357,6 +373,21 @@ if (AppPreferences.debugOverlay) {
                 switchCandidateId = null
                 switchCandidateCount = 0
                 stopActiveAlerts()
+
+                // DEBUG trace: lock cleared
+                traceLogger?.logTarget(
+                    tsMs = tsMs,
+                    kind = 1,
+                    lockedId = -1L,
+                    bestId = -1L,
+                    bestPri = 0f,
+                    lockedPri = 0f,
+                    candId = -1L,
+                    candCount = 0,
+                    alertLevel = lastAlertLevel,
+                    mode = AppPreferences.detectionMode
+                )
+
                 resetMotionState()
                 sendOverlayClear()
                 sendMetricsClear()
@@ -513,6 +544,28 @@ if (riderStanding) {
     AlertNotifier.handleInApp(ctx, level, risk)
 }
 
+// ALWAYS-ON event log (sampled + transitions), written off-thread.
+if (level != prevLevel || frameIndex % eventEveryNFrames == 0L) {
+    val lockedId = lockedTrackId ?: -1L
+    eventLogger.logEvent(
+        tsMs = tsMs,
+        risk = risk.riskScore,
+        level = level,
+        state = risk.state,
+        reasonBits = reasonBits,
+        ttcSec = ttc,
+        distM = distanceM,
+        relV = approachSpeedMps,
+        roi = roiContainment,
+        qualityPoor = quality.poor,
+        cutIn = (cutInBoostUntilMs > 0L && tsMs <= cutInBoostUntilMs),
+        brake = brakeCue.active,
+        egoBrake = imu.brakeConfidence,
+        mode = modeRes.effectiveMode,
+        lockedId = lockedId
+    )
+}
+
 // Log why alert level was decided (debugOverlay only; sampled)
 if (AppPreferences.debugOverlay && (level != prevLevel || frameIndex % logEveryNFrames == 0L)) {
     flog("risk level=$level score=%.2f state=${'$'}{risk.state} bits=$reasonBits reason=$alertReason".format(risk.riskScore), force = (level != prevLevel))
@@ -607,6 +660,8 @@ if (AppPreferences.debugOverlay) {
     fun shutdown() {
         runCatching { imuMonitor.stop() }
         runCatching { AlertNotifier.shutdown(ctx) }
+        runCatching { traceLogger?.close() }
+        runCatching { eventLogger.close() }
     }
 
     private fun smoothDistance(distanceM: Float): Float {
@@ -1290,6 +1345,19 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
             lockedSinceMs = tsMs
             switchCandidateId = null
             switchCandidateCount = 0
+            // DEBUG trace: lock changed
+            traceLogger?.logTarget(
+                tsMs = tsMs,
+                kind = 1,
+                lockedId = bestNow.id,
+                bestId = bestNow.id,
+                bestPri = bestNowPrio,
+                lockedPri = bestNowPrio,
+                candId = (switchCandidateId ?: -1L),
+                candCount = switchCandidateCount,
+                alertLevel = lastAlertLevel,
+                mode = AppPreferences.detectionMode
+            )
             return bestNow
         }
 
@@ -1325,6 +1393,19 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
                 lockedSinceMs = tsMs
                 switchCandidateId = null
                 switchCandidateCount = 0
+            // DEBUG trace: lock changed
+            traceLogger?.logTarget(
+                tsMs = tsMs,
+                kind = 1,
+                lockedId = bestNow.id,
+                bestId = bestNow.id,
+                bestPri = bestNowPrio,
+                lockedPri = bestNowPrio,
+                candId = (switchCandidateId ?: -1L),
+                candCount = switchCandidateCount,
+                alertLevel = lastAlertLevel,
+                mode = AppPreferences.detectionMode
+            )
                 return bestNow
             }
         } else {

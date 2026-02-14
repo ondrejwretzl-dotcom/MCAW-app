@@ -27,6 +27,9 @@ import com.mcaw.config.AppPreferences
 import com.mcaw.location.SpeedMonitor
 import com.mcaw.location.SpeedProvider
 import com.mcaw.util.PublicLogWriter
+import com.mcaw.util.SessionLogFile
+import com.mcaw.util.LogContract
+import com.mcaw.util.TraceContract
 import java.util.Locale
 import java.util.concurrent.Executors
 
@@ -50,8 +53,6 @@ class McawService : LifecycleService() {
 
     @Volatile
     private var analysisDesired = false
-
-    private var serviceLogFileName: String = ""
     private val retryHandler = Handler(Looper.getMainLooper())
     private var retryAttempts = 0
     private var cameraLifecycleOwner: ServiceCameraLifecycleOwner? = null
@@ -59,8 +60,8 @@ class McawService : LifecycleService() {
     override fun onCreate() {
         super.onCreate()
         AppPreferences.init(this)
-        serviceLogFileName = "mcaw_service_${sessionStamp()}.txt"
-        speedProvider = SpeedProvider(this)
+        initUnifiedSessionLog()
+                speedProvider = SpeedProvider(this)
         speedMonitor = SpeedMonitor(speedProvider)
         startForegroundNotification()
         isRunning = true
@@ -221,16 +222,9 @@ class McawService : LifecycleService() {
     }
 
     private fun logService(message: String) {
-        val timestamp =
-            java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
-                .format(System.currentTimeMillis())
-        val content = "ts=$timestamp $message"
-        PublicLogWriter.appendLogLine(this, serviceLogFileName, content)
-    }
-
-    private fun sessionStamp(): String {
-        return java.text.SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US)
-            .format(System.currentTimeMillis())
+        val tsMs = System.currentTimeMillis()
+        // Service events in unified session log: S,<ts_ms>,<message>
+        PublicLogWriter.appendLogLine(this, SessionLogFile.fileName, "S,$tsMs,$message")
     }
 
     private fun scheduleRetry() {
