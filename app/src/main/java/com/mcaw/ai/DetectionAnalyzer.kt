@@ -153,6 +153,10 @@ private fun assessFrameQuality(image: ImageProxy): FrameQuality {
     private var switchCandidateCount: Int = 0
     private var lastSelectedTrackId: Long = -1L
 
+    // Lock timing (prevents rapid target switching / UI blinking)
+    private var lockedSinceMs: Long = 0L
+
+
     // Distance history for sliding-window relative speed
     private data class DistSample(val tsMs: Long, val distM: Float)
     // TTC smoothing/hold (prevents blinking when switching TTC source)
@@ -349,6 +353,7 @@ if (AppPreferences.debugOverlay) {
 
             if (bestTrack == null) {
                 lockedTrackId = null
+                lockedSinceMs = 0L
                 switchCandidateId = null
                 switchCandidateCount = 0
                 stopActiveAlerts()
@@ -1282,6 +1287,7 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
         if (locked == null) {
             lockedTrackId = bestNow.id
             lockedPriority = bestNowPrio
+            lockedSinceMs = tsMs
             switchCandidateId = null
             switchCandidateCount = 0
             return bestNow
@@ -1290,8 +1296,22 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
         val lockedPrio = priority(locked)
         lockedPriority = lockedPrio
 
-        val switchMargin = 1.45f
-        if (bestNow.id != locked.id && bestNowPrio >= lockedPrio * switchMargin) {
+        // Hard stickiness: keep current lock for a short time to avoid rapid switching.
+        val minLockMs = if (lastAlertLevel > 0) 900L else 600L
+        if (lockedSinceMs > 0L && (tsMs - lockedSinceMs) < minLockMs) {
+            return locked
+        }
+
+        // Switching is harder during active alerts to keep TTC/WHY stable.
+        val switchMargin = if (lastAlertLevel > 0) 1.85f else 1.45f
+        val minAbsGain = if (lastAlertLevel > 0) 0.14f else 0.10f
+        val framesNeeded = if (lastAlertLevel > 0) 8 else 5
+
+        val eligibleSwitch =
+            bestNow.id != locked.id &&
+                (bestNowPrio >= lockedPrio * switchMargin || (bestNowPrio - lockedPrio) >= minAbsGain)
+
+        if (eligibleSwitch) {
             if (switchCandidateId == bestNow.id) {
                 switchCandidateCount += 1
             } else {
@@ -1299,9 +1319,10 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
                 switchCandidateCount = 1
             }
 
-            if (switchCandidateCount >= 5) {
+            if (switchCandidateCount >= framesNeeded) {
                 lockedTrackId = bestNow.id
                 lockedPriority = bestNowPrio
+                lockedSinceMs = tsMs
                 switchCandidateId = null
                 switchCandidateCount = 0
                 return bestNow
