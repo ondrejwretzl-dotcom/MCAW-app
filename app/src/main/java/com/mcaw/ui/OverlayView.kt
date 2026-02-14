@@ -147,6 +147,12 @@ var alertReason: String = ""
 
     // ---- ROI trapezoid (normalized 0..1) ----
     // Symetrický kolem centerX=0.5
+    var roiCenterX: Float = 0.5f
+        set(value) {
+            field = value.coerceIn(0f, 1f)
+            invalidate()
+        }
+
     var roiTopY: Float = 0.32f
         set(value) {
             field = value.coerceIn(0f, 1f)
@@ -181,7 +187,7 @@ var alertReason: String = ""
      * Callback při změně ROI v edit módu.
      * isFinal=true na ACTION_UP/CANCEL -> vhodné pro uložení do prefs.
      */
-    var onRoiChanged: ((topY: Float, bottomY: Float, topHalfW: Float, bottomHalfW: Float, isFinal: Boolean) -> Unit)? =
+    var onRoiChanged: ((topY: Float, bottomY: Float, topHalfW: Float, bottomHalfW: Float, centerX: Float, isFinal: Boolean) -> Unit)? =
         null
 
     private enum class DragHandle {
@@ -206,6 +212,15 @@ var alertReason: String = ""
     private val minTopHalfWN = 0.06f
     private val minBottomHalfWN = 0.12f
 
+
+    private fun clampCenterX(centerX: Float, topHalfW: Float, bottomHalfW: Float): Float {
+        val maxHalfW = max(topHalfW, bottomHalfW).coerceIn(0f, 0.5f)
+        val minCx = maxHalfW
+        val maxCx = 1f - maxHalfW
+        // If widths are extreme and min > max, fall back to 0.5 (shouldn't happen due to width clamps).
+        return if (minCx <= maxCx) centerX.coerceIn(minCx, maxCx) else 0.5f
+    }
+
     private fun colorForAlert(level: Int): Int {
         return when (level.coerceIn(0, 2)) {
             2 -> Color.RED
@@ -229,14 +244,7 @@ var alertReason: String = ""
         } else {
             roiPaint.color = c
             roiPaint.strokeWidth = 4f
-            roiFillPaint.color = run {
-                val a = when (alertLevel) {
-                    2 -> 70
-                    1 -> 55
-                    else -> 35
-                }
-                Color.argb(a, Color.red(c), Color.green(c), Color.blue(c))
-            }
+            roiFillPaint.color = Color.argb(60, 255, 0, 0)
         }
 
         val roiPath = mapRoiToViewPath() ?: return
@@ -400,13 +408,13 @@ var alertReason: String = ""
                 lastTouchX = event.x
                 lastTouchY = event.y
                 applyDrag(dx, dy)
-                onRoiChanged?.invoke(roiTopY, roiBottomY, roiTopHalfW, roiBottomHalfW, false)
+                onRoiChanged?.invoke(roiTopY, roiBottomY, roiTopHalfW, roiBottomHalfW, roiCenterX, false)
                 return true
             }
 
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 if (activeHandle != DragHandle.NONE) {
-                    onRoiChanged?.invoke(roiTopY, roiBottomY, roiTopHalfW, roiBottomHalfW, true)
+                    onRoiChanged?.invoke(roiTopY, roiBottomY, roiTopHalfW, roiBottomHalfW, roiCenterX, true)
                 }
                 activeHandle = DragHandle.NONE
                 return true
@@ -454,6 +462,7 @@ var alertReason: String = ""
         var bottomY = roiBottomY
         var topHalfW = roiTopHalfW
         var bottomHalfW = roiBottomHalfW
+        var centerX = roiCenterX
 
         when (activeHandle) {
             DragHandle.MOVE -> {
@@ -462,6 +471,7 @@ var alertReason: String = ""
                 val by = ty + h
                 topY = ty
                 bottomY = by
+                centerX = centerX + dxN
             }
 
             DragHandle.TOP_Y -> {
@@ -495,10 +505,13 @@ var alertReason: String = ""
         // enforce trapezoid constraint (bottom >= top)
         if (bottomHalfW < topHalfW) bottomHalfW = topHalfW
 
+        centerX = clampCenterX(centerX, topHalfW, bottomHalfW)
+
         roiTopY = topY
         roiBottomY = bottomY
         roiTopHalfW = topHalfW
         roiBottomHalfW = bottomHalfW
+        roiCenterX = centerX
     }
 
     private fun mapToView(box: Box): RectF? {
@@ -537,7 +550,7 @@ var alertReason: String = ""
         val dx = (viewW - scaledW) / 2f
         val dy = (viewH - scaledH) / 2f
 
-        val cx = 0.5f
+        val cx = roiCenterX
         val topY = roiTopY.coerceIn(0f, 1f)
         val bottomY = roiBottomY.coerceIn(0f, 1f)
         val topHalfW = roiTopHalfW.coerceIn(0f, 0.5f)
