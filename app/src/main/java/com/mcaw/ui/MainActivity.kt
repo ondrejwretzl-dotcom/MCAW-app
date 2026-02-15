@@ -25,6 +25,7 @@ import com.mcaw.service.McawService
 import com.mcaw.util.PublicLogWriter
 import com.mcaw.util.SessionLogFile
 import com.mcaw.util.LabelMapper
+import com.mcaw.util.ReasonTextMapper
 
 class MainActivity : ComponentActivity() {
 
@@ -75,8 +76,10 @@ class MainActivity : ComponentActivity() {
                 intent.getFloatExtra(DetectionAnalyzer.EXTRA_RIDER_SPEED, Float.POSITIVE_INFINITY)
             val level = intent.getIntExtra(DetectionAnalyzer.EXTRA_LEVEL, 0)
             val alertReason = intent.getStringExtra(DetectionAnalyzer.EXTRA_ALERT_REASON) ?: ""
+            val reasonBits = intent.getIntExtra(DetectionAnalyzer.EXTRA_REASON_BITS, 0)
             val riskScore = intent.getFloatExtra(DetectionAnalyzer.EXTRA_RISK_SCORE, Float.NaN)
-            val alertWhy = if (riskScore.isFinite()) "RISK %.2f · %s".format(riskScore, alertReason) else alertReason
+            val reasonText = ReasonTextMapper.shortOrFallback(reasonBits, alertReason)
+            val alertWhy = if (riskScore.isFinite()) "RISK %.2f · %s".format(riskScore, reasonText) else reasonText
             val disp = alertSmoother.update(level, alertWhy, SystemClock.elapsedRealtime())
             val label = intent.getStringExtra(DetectionAnalyzer.EXTRA_LABEL)
             val brakeCue =

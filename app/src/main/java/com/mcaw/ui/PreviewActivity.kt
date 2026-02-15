@@ -31,6 +31,7 @@ import com.mcaw.config.AppPreferences
 import com.mcaw.location.SpeedMonitor
 import com.mcaw.location.SpeedProvider
 import com.mcaw.util.LabelMapper
+import com.mcaw.util.ReasonTextMapper
 import com.mcaw.util.PublicLogWriter
 import com.mcaw.util.SessionLogFile
 import java.util.concurrent.ExecutorService
@@ -110,7 +111,9 @@ class PreviewActivity : ComponentActivity() {
             overlay.riderSpeed = i.getFloatExtra("rider_speed", -1f) // RID
             overlay.ttc = i.getFloatExtra("ttc", -1f)
             overlay.alertLevel = i.getIntExtra("alert_level", 0)
-            overlay.alertReason = i.getStringExtra("alert_reason") ?: ""
+            val legacyReason = i.getStringExtra("alert_reason") ?: ""
+            val reasonBits = i.getIntExtra("reason_bits", 0)
+            overlay.alertReason = ReasonTextMapper.shortOrFallback(reasonBits, legacyReason)
             overlay.riskScore = i.getFloatExtra("risk_score", Float.NaN)
             overlay.brakeCueActive = i.getBooleanExtra("brake_cue", false)
             val mapped = LabelMapper.mapLabel(i.getStringExtra("label"))

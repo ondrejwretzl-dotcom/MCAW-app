@@ -49,6 +49,7 @@ class DetectionAnalyzer(
         const val EXTRA_LABEL = "extra_label"
         const val EXTRA_BRAKE_CUE = "extra_brake_cue"
         const val EXTRA_ALERT_REASON = "extra_alert_reason"
+        const val EXTRA_REASON_BITS = "extra_reason_bits"
         const val EXTRA_RISK_SCORE = "extra_risk_score"
     }
 
@@ -615,6 +616,7 @@ sendOverlayUpdate(
                 label = label,
                 brakeCue = brakeCue.active,
                 alertReason = alertReason,
+                reasonBits = reasonBits,
                 riskScore = risk.riskScore
             )
 
@@ -942,7 +944,8 @@ private fun playAlertSound(resId: Int, critical: Boolean) {
         label: String,
         brakeCue: Boolean,
         alertReason: String = "",
-                riskScore: Float = Float.NaN,
+        reasonBits: Int = 0,
+        riskScore: Float = Float.NaN,
         force: Boolean = false
     ) {
         val now = SystemClock.elapsedRealtime()
@@ -961,6 +964,7 @@ private fun playAlertSound(resId: Int, critical: Boolean) {
         i.putExtra(EXTRA_LABEL, label)
         i.putExtra(EXTRA_BRAKE_CUE, brakeCue)
         i.putExtra(EXTRA_ALERT_REASON, alertReason)
+        i.putExtra(EXTRA_REASON_BITS, reasonBits)
         i.putExtra(EXTRA_RISK_SCORE, riskScore)
         ctx.sendBroadcast(i)
     }
@@ -977,6 +981,7 @@ private fun playAlertSound(resId: Int, critical: Boolean) {
             label = "",
             brakeCue = false,
             alertReason = "clear",
+            reasonBits = 0,
             riskScore = Float.NaN,
             force = true
         )
