@@ -282,7 +282,13 @@ private fun updateCutInState(tsMs: Long, box: Box, frameW: Float, frameH: Float)
         if (!AppPreferences.debugOverlay) return
         if (!force && (frameIndex % logEveryNFrames != 0L)) return
         val ts = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", java.util.Locale.US).format(System.currentTimeMillis())
-        PublicLogWriter.appendLogLine(ctx, analyzerLogFileName, "ts=$ts f=$frameIndex $msg")
+        run {
+            val tsMs = System.currentTimeMillis()
+            val clean = msg.replace("
+", " ").replace("", " ").trim()
+            val escaped = "\""+ clean.replace("\"", "\"\"") +"\""
+            PublicLogWriter.appendLogLine(ctx, SessionLogFile.fileName, "S,$tsMs,$escaped")
+        }
     }
 
     init {

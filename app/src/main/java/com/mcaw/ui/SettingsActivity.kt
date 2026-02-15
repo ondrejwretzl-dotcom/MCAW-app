@@ -44,6 +44,7 @@ class SettingsActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         AppPreferences.ensureInit(this)
         setContentView(R.layout.activity_settings)
+        SessionLogFile.init(this)
         logSession("settings_opened")
 
         // Top actions
@@ -503,7 +504,7 @@ private fun resetRecommended() {
         // Unified session log line (no extra settings log file)
         // S,<ts_ms>,<message>
         val tsMs = System.currentTimeMillis()
-        SessionLogFile.init(this)
-        PublicLogWriter.appendLogLine(this, SessionLogFile.fileName, "S,$tsMs,$message")
+        val clean = message.replace("\n", " ").replace("\r", " ").trim()
+        val escaped = "\"" + clean.replace("\"", "\"\"") + "\""
+        PublicLogWriter.appendLogLine(this, SessionLogFile.fileName, "S,$tsMs,$escaped")
     }
-}
