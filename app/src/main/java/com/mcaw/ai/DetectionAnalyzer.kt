@@ -284,7 +284,6 @@ private fun updateCutInState(tsMs: Long, box: Box, frameW: Float, frameH: Float)
         if (AppPreferences.debugOverlay) {
             traceLogger = SessionTraceLogger(ctx, SessionLogFile.fileName).also { it.start() }
         }
-        }
     }
 
     override fun analyze(image: ImageProxy) {
@@ -649,7 +648,7 @@ if (AppPreferences.debugOverlay) {
         }
     }
 
-    /** Release non-camera resources held by analyzer (IMU, MediaPlayer/TTS, etc.). */
+    /** Release non-camera resources held by analyzer (IMU, loggers, etc.). */
     fun shutdown() {
         runCatching { imuMonitor.stop() }
         runCatching { AlertNotifier.shutdown(ctx) }
