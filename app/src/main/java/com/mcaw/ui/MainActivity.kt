@@ -435,8 +435,10 @@ class MainActivity : ComponentActivity() {
     private fun updateWhy(level: Int, alertReason: String) {
         // MCAW UX: varování dominantní; WHY (reason) musí být srozumitelné a krátké.
         // Zobrazuj pouze při alertu, aby UI nebylo zahlcené.
-        val why = alertReason.trim().replace("
-", " ").replace("", " ").take(90)
+        val why = alertReason.trim()
+            .replace("\n", " ")
+            .replace("\r", " ")
+            .take(90)
 
         val show = level > 0 && why.isNotBlank()
         txtWhy.text = if (show) why else ""

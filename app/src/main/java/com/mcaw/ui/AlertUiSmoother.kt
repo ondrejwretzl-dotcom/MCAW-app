@@ -45,7 +45,8 @@ class AlertUiSmoother(
         val cleanWhy = rawWhyIn.trim()
             .replace("\n", " ")
             .replace("\r", " ")
-            .replace(Regex("\s+"), " ")
+            // Kotlin string literals need escaping for regex backslashes.
+            .replace(Regex("\\s+"), " ")
             .take(90)
 
         // Level smoothing (hold + stability on downgrade)
