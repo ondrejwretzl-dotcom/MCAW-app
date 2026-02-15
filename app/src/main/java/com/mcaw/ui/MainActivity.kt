@@ -47,6 +47,7 @@ class MainActivity : ComponentActivity() {
 
     private var pulseAnimator: ValueAnimator? = null
     private var pendingAction: PendingAction? = null
+    private val alertSmoother = AlertUiSmoother()
     private lateinit var speedProvider: SpeedProvider
     private lateinit var speedMonitor: SpeedMonitor
     private var speedMonitorStarted: Boolean = false
@@ -76,6 +77,7 @@ class MainActivity : ComponentActivity() {
             val alertReason = intent.getStringExtra(DetectionAnalyzer.EXTRA_ALERT_REASON) ?: ""
             val riskScore = intent.getFloatExtra(DetectionAnalyzer.EXTRA_RISK_SCORE, Float.NaN)
             val alertWhy = if (riskScore.isFinite()) "RISK %.2f · %s".format(riskScore, alertReason) else alertReason
+            val disp = alertSmoother.update(level, alertWhy, SystemClock.elapsedRealtime())
             val label = intent.getStringExtra(DetectionAnalyzer.EXTRA_LABEL)
             val brakeCue =
                 intent.getBooleanExtra("brake_cue", false) || intent.getBooleanExtra("extra_brake_cue", false)
@@ -106,7 +108,7 @@ class MainActivity : ComponentActivity() {
                 "Detekovaný objekt: --"
             }
 
-            val overallColor = when (level) {
+            val overallColor = when (disp.level) {
                 2 -> android.graphics.Color.parseColor("#FF3B30")
                 1 -> android.graphics.Color.parseColor("#FF9F0A")
                 else -> android.graphics.Color.parseColor("#00E5A8")
@@ -125,10 +127,10 @@ class MainActivity : ComponentActivity() {
             txtStatus.setTextColor(overallColor)
 
             val riderKmhForUi = if (riderSpeed.isFinite()) riderSpeed * 3.6f else Float.POSITIVE_INFINITY
-            applyVisualAlert(level, ttcLevel, riderKmhForUi)
+            applyVisualAlert(disp.level, ttcLevel, riderKmhForUi)
 
             updateBrakeLamp(brakeCue)
-            updateWhy(level, alertWhy)
+            updateWhy(disp.level, disp.why)
 
             val relKmhLog = if (speed.isFinite()) speed * 3.6f else Float.POSITIVE_INFINITY
             val objKmhLog = if (objectSpeed.isFinite()) objectSpeed * 3.6f else Float.POSITIVE_INFINITY
@@ -430,14 +432,16 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    
     private fun updateWhy(level: Int, alertReason: String) {
-        // WHY should be visible mainly for debugging/tuning. Keep short and non-intrusive.
-        val why = alertReason.trim().replace("\n", " ").take(80)
-        txtWhy.text = if (why.isNotBlank()) "WHY: $why" else ""
-        txtWhy.visibility = if (why.isNotBlank()) View.VISIBLE else View.GONE
+        // MCAW UX: varování dominantní; WHY (reason) musí být srozumitelné a krátké.
+        // Zobrazuj pouze při alertu, aby UI nebylo zahlcené.
+        val why = alertReason.trim().replace("
+", " ").replace("", " ").take(90)
 
-        // Optional: tint WHY by level for quick scan (subtle).
+        val show = level > 0 && why.isNotBlank()
+        txtWhy.text = if (show) why else ""
+        txtWhy.visibility = if (show) View.VISIBLE else View.GONE
+
         val c = when (level) {
             2 -> android.graphics.Color.parseColor("#FF3B30")
             1 -> android.graphics.Color.parseColor("#FF9F0A")

@@ -111,6 +111,7 @@ class PreviewActivity : ComponentActivity() {
             overlay.ttc = i.getFloatExtra("ttc", -1f)
             overlay.alertLevel = i.getIntExtra("alert_level", 0)
             overlay.alertReason = i.getStringExtra("alert_reason") ?: ""
+            overlay.riskScore = i.getFloatExtra("risk_score", Float.NaN)
             overlay.brakeCueActive = i.getBooleanExtra("brake_cue", false)
             val mapped = LabelMapper.mapLabel(i.getStringExtra("label"))
             overlay.label = mapped

@@ -55,6 +55,75 @@ class OverlayView @JvmOverloads constructor(
         typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
     }
 
+    // Dominant alert banner (MCAW UI philosophy: warning first, numbers second).
+    private val bannerBgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+    }
+    private val bannerTitlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE
+        textSize = 54f
+        typeface = Typeface.create(Typeface.DEFAULT_BOLD, Typeface.BOLD)
+    }
+    private val bannerSubPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE
+        textSize = 30f
+        typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+        alpha = 210
+    }
+
+    private var bannerTitle: String = ""
+    private var bannerSubtitle: String = ""
+
+    private fun updateBannerCache() {
+        if (alertLevel <= 0) {
+            bannerTitle = ""
+            bannerSubtitle = ""
+            return
+        }
+        bannerTitle = if (alertLevel >= 2) "KRITICKÉ" else "VAROVÁNÍ"
+
+        val why = alertReason.trim().replace("\n", " ").replace("\r", " ").take(70)
+        val riskTxt = if (riskScore.isFinite()) {
+            val v = ((riskScore * 100f).toInt() / 100f)
+            "RISK %.2f".format(v)
+        } else ""
+
+        bannerSubtitle = when {
+            riskTxt.isNotBlank() && why.isNotBlank() -> (riskTxt + " · " + why).take(90)
+            riskTxt.isNotBlank() -> riskTxt
+            else -> why
+        }
+    }
+
+    private fun drawAlertBanner(canvas: Canvas) {
+        if (alertLevel <= 0) return
+
+        val pad = 14f
+        val titleFm = bannerTitlePaint.fontMetrics
+        val subFm = bannerSubPaint.fontMetrics
+        val titleH = titleFm.bottom - titleFm.top
+        val subH = subFm.bottom - subFm.top
+        val bannerH = pad + titleH + 6f + subH + pad
+
+        // background by level (semi-transparent)
+        bannerBgPaint.color = when (alertLevel) {
+            2 -> Color.argb(210, 255, 59, 48)   // red
+            1 -> Color.argb(210, 255, 159, 10)  // orange
+            else -> Color.argb(180, 0, 229, 168)
+        }
+
+        canvas.drawRect(0f, 0f, width.toFloat(), bannerH, bannerBgPaint)
+
+        val x = pad
+        var y = pad - titleFm.top
+        canvas.drawText(bannerTitle, x, y, bannerTitlePaint)
+
+        if (bannerSubtitle.isNotBlank()) {
+            y += titleH + 6f
+            canvas.drawText(bannerSubtitle, x, y - subFm.top, bannerSubPaint)
+        }
+    }
+
     var box: Box? = null
         set(value) {
             field = value
@@ -104,18 +173,21 @@ class OverlayView @JvmOverloads constructor(
     var alertLevel: Int = 0
         set(value) {
             field = value.coerceIn(0, 2)
+            updateBannerCache()
             invalidate()
         }
 
     var alertReason: String = ""
         set(value) {
             field = value
+            updateBannerCache()
             invalidate()
         }
 
     var riskScore: Float = Float.NaN
         set(value) {
             field = value
+            updateBannerCache()
             invalidate()
         }
 
@@ -236,6 +308,9 @@ class OverlayView @JvmOverloads constructor(
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
+
+        // Dominant alert first.
+        drawAlertBanner(canvas)
 
         val c = colorForAlert(alertLevel)
         boxPaint.color = c
