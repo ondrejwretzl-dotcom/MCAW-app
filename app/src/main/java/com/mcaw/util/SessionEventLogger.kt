@@ -5,7 +5,6 @@ import android.os.Handler
 import android.os.HandlerThread
 import com.mcaw.risk.RiskEngine
 import java.util.ArrayDeque
-import kotlin.math.round
 
 /**
  * ALWAYS-ON session event logger (CSV).
@@ -38,6 +37,8 @@ class SessionEventLogger(
         var egoBrake: Float = 0f
         var mode: Int = 0
         var lockedId: Long = -1L
+        var label: String = ""
+        var detScore: Float = Float.NaN
     }
 
     @Volatile
@@ -65,7 +66,11 @@ class SessionEventLogger(
         ht = thread
         h = Handler(thread.looper)
 
+        h?.post {
+            // One header per session file.
+            PublicLogWriter.appendLogLine(context, fileName, LogContract.HEADER.trimEnd())
         }
+    }
 
     fun close() {
         started = false
@@ -96,7 +101,9 @@ class SessionEventLogger(
         brake: Boolean,
         egoBrake: Float,
         mode: Int,
-        lockedId: Long
+        lockedId: Long,
+        label: String,
+        detScore: Float
     ) {
         if (!started) return
 
@@ -120,6 +127,8 @@ class SessionEventLogger(
         ev.egoBrake = egoBrake
         ev.mode = mode
         ev.lockedId = lockedId
+        ev.label = label
+        ev.detScore = detScore
 
         val shouldPostDrain: Boolean = synchronized(lock) {
             val wasEmpty = queue.isEmpty()
@@ -140,7 +149,6 @@ class SessionEventLogger(
 
             // Format CSV line on writer thread.
             sb.setLength(0)
-            sb.append('E').append(',')
             LogContract.appendEventLine(
                 sb = sb,
                 tsMs = ev.tsMs,
@@ -157,12 +165,15 @@ class SessionEventLogger(
                 brake = ev.brake,
                 egoBrake = ev.egoBrake,
                 mode = ev.mode,
-                lockedId = ev.lockedId
+                lockedId = ev.lockedId,
+                label = ev.label,
+                detScore = ev.detScore
             )
-
             PublicLogWriter.appendLogLine(context, fileName, sb.toString().trimEnd())
+
             // Return to pool
             synchronized(lock) { pool.addLast(ev) }
         }
     }
+
 }

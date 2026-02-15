@@ -5,15 +5,15 @@ import kotlin.math.pow
 import kotlin.math.roundToInt
 
 /**
- * MCAW 2.0 ñ LogContract (stable CSV schema)
+ * MCAW 2.0 ‚Äì LogContract (stable CSV schema)
  *
- * Z·sady:
- * - reason_bits je prim·rnÌ auditovateln˝ kontrakt (stabilnÌ nap¯ÌË verzemi)
- * - textovÈ WHY je odvozenina (typicky p¯i ËtenÌ logu / debug overlay)
- * - CSV je "flat" pro snadnou anal˝zu a spojenÌ s videem
+ * Z√°sady:
+ * - reason_bits je prim√°rn√≠ auditovateln√Ω kontrakt (stabiln√≠ nap≈ô√≠ƒç verzemi)
+ * - textov√© WHY je odvozenina (typicky p≈ôi ƒçten√≠ logu / debug overlay)
+ * - CSV je "flat" pro snadnou anal√Ωzu a spojen√≠ s videem
  *
- * Pozn.: Commit A1 zav·dÌ pouze kontrakt + helpery.
- * V commitu A2 se napojÌ sampled+transitions "event log" s buffered z·pisem mimo frame loop.
+ * Pozn.: Commit A1 zav√°d√≠ pouze kontrakt + helpery.
+ * V commitu A2 se napoj√≠ sampled+transitions "event log" s buffered z√°pisem mimo frame loop.
  */
 object LogContract {
 
@@ -37,8 +37,13 @@ object LogContract {
     const val COL_MODE = "mode"              // effective mode (Auto resolved before log)
     const val COL_LOCKED_ID = "locked_id"    // stable trackId / lock id
 
+    // Optional but very useful for audit & sync with video: what object was actually used for risk.
+    // Kept at the end to keep backward CSV compatibility for existing parsers.
+    const val COL_LABEL = "label"            // canonical label of locked target (quoted CSV)
+    const val COL_DET_SCORE = "det_score"    // detector confidence 0..1
+
     /**
-     * StabilnÌ hlaviËka CSV ñ vûdy prvnÌ ¯·dek souboru.
+     * Stabiln√≠ hlaviƒçka CSV ‚Äì v≈ædy prvn√≠ ≈ô√°dek souboru.
      */
     val HEADER: String = buildString(256) {
         append(COL_TS_MS).append(',')
@@ -55,15 +60,17 @@ object LogContract {
         append(COL_BRAKE).append(',')
         append(COL_EGO_BRAKE).append(',')
         append(COL_MODE).append(',')
-        append(COL_LOCKED_ID)
+        append(COL_LOCKED_ID).append(',')
+        append(COL_LABEL).append(',')
+        append(COL_DET_SCORE)
         append('\n')
     }
 
     /**
-     * Append jednoho CSV ¯·dku do existujÌcÌho StringBuilderu (pro re-use mimo frame loop).
+     * Append jednoho CSV ≈ô√°dku do existuj√≠c√≠ho StringBuilderu (pro re-use mimo frame loop).
      *
-     * Form·t:
-     * - floaty: fixnÌ desetinn· mÌsta (default 3), NaN/INF => pr·zdnÈ pole
+     * Form√°t:
+     * - floaty: fixn√≠ desetinn√° m√≠sta (default 3), NaN/INF => pr√°zdn√© pole
      * - bool: 0/1
      * - state: bez uvozovek (SAFE/CAUTION/CRITICAL)
      */
@@ -83,7 +90,9 @@ object LogContract {
         brake: Boolean,
         egoBrake: Float,
         mode: Int,
-        lockedId: Long
+        lockedId: Long,
+        label: String,
+        detScore: Float
     ) {
         sb.append(tsMs).append(',')
         appendFloat(sb, risk, 3); sb.append(',')
@@ -102,15 +111,31 @@ object LogContract {
 
         appendFloat(sb, egoBrake, 3); sb.append(',')
         sb.append(mode).append(',')
-        sb.append(lockedId)
+        sb.append(lockedId).append(',')
+        appendCsvString(sb, label); sb.append(',')
+        appendFloat(sb, detScore, 3)
 
         sb.append('\n')
     }
 
+    private fun appendCsvString(sb: StringBuilder, value: String) {
+        // Always quote. Escape quotes by doubling them. Replace CR/LF with spaces.
+        sb.append('"')
+        for (i in value.indices) {
+            val c = value[i]
+            when (c) {
+                '"' -> sb.append("\"\"")
+                '\n', '\r' -> sb.append(' ')
+                else -> sb.append(c)
+            }
+        }
+        sb.append('"')
+    }
+
     /**
-     * MinimalistickÈ, alokaËnÏ ˙spornÈ float formatov·nÌ bez String.format().
-     * - NaN/INF => pr·zdnÈ pole
-     * - jinak fixnÌ decimals (0..6)
+     * Minimalistick√©, alokaƒçnƒõ √∫sporn√© float formatov√°n√≠ bez String.format().
+     * - NaN/INF => pr√°zdn√© pole
+     * - jinak fixn√≠ decimals (0..6)
      */
     private fun appendFloat(sb: StringBuilder, v: Float, decimals: Int) {
         if (!v.isFinite()) return
