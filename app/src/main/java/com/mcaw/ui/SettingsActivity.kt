@@ -341,7 +341,7 @@ Typicky 3–10°. Příliš velký sklon může zkrátit dohled; příliš malý
             else -> "Široký"
         }
 
-        slider.addOnChangeListener { s, v, fromUser ->
+        slider.addOnChangeListener { _, v, fromUser ->
             if (!fromUser) return@addOnChangeListener
             val mapped = when (v.toInt()) {
                 0 -> 0.45f

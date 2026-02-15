@@ -15,7 +15,7 @@ object LabelMapper {
             "bicycle" -> "kolo"
             "person", "pedestrian", "chodec" -> "chodec"
             "unknown" -> "neznámý objekt"
-            else -> label ?: "neznámý objekt"
+            else -> label
         }
     }
 }

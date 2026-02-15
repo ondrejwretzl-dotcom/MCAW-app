@@ -53,13 +53,17 @@ class BluetoothSpeedSource(private val context: Context) {
             gatt.setCharacteristicNotification(c, true)
             val descriptor: BluetoothGattDescriptor? = c.getDescriptor(cccdUuid)
             descriptor?.let {
+                @Suppress("DEPRECATION")
                 it.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                @Suppress("DEPRECATION")
                 gatt.writeDescriptor(it)
             }
         }
 
+        @Suppress("DEPRECATION")
         override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
             if (characteristic.uuid == speedCharacteristicUuid) {
+                @Suppress("DEPRECATION")
                 val value = parseSpeed(characteristic.value)
                 latestSample = Sample(value, SystemClock.elapsedRealtime())
             }

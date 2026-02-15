@@ -82,7 +82,7 @@ class RiskEngine {
     private val out = Result()
 
     fun evaluate(
-        tsMs: Long,
+        _tsMs: Long,
         effectiveMode: Int,
         distanceM: Float,
         approachSpeedMps: Float,
@@ -94,7 +94,7 @@ class RiskEngine {
         brakeCueActive: Boolean,
         brakeCueStrength: Float, // 0..1
         qualityPoor: Boolean,
-        riderSpeedMps: Float,
+        _riderSpeedMps: Float,
         egoBrakingConfidence: Float, // 0..1
         leanDeg: Float              // deg, NaN if unknown
     ): Result {
@@ -220,7 +220,7 @@ class RiskEngine {
         return out
     }
 
-    fun standingResult(riderSpeedMps: Float): Result {
+    fun standingResult(_riderSpeedMps: Float): Result {
         out.level = 0
         out.riskScore = 0f
         out.reasonBits = BIT_RIDER_STAND

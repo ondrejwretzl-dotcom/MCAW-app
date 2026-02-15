@@ -106,7 +106,7 @@ object AlertNotifier {
     private var lastFocusGain: Int = -1
     private var lastFocusUsage: Int = -1
 
-    fun handleInApp(context: Context, level: Int, risk: RiskEngine.Result? = null) {
+    fun handleInApp(context: Context, level: Int, _risk: RiskEngine.Result? = null) {
         if (level <= 0) return
 
         // Avoid spamming: only on level change or after short cooldown (e.g., persistent RED).
@@ -135,8 +135,8 @@ object AlertNotifier {
                     playAlertSound(context, com.mcaw.app.R.raw.red_alert, critical = true)
                 }
                 if (AppPreferences.vibration) {
-                    val vib = context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-                    if (vib.hasVibrator()) {
+                    val vib = getVibratorCompat(context)
+                    if (vib?.hasVibrator() == true) {
                         vib.vibrate(VibrationEffect.createOneShot(220, 150))
                     }
                 }
@@ -207,11 +207,9 @@ object AlertNotifier {
                     runCatching { created?.language = java.util.Locale.getDefault() }
                 }
             }
-            val inst = created
-            if (inst == null) return null
-            tts = inst
+            tts = created
             ownsTts = true
-            return inst
+            return created
         }
     }
 
@@ -291,7 +289,6 @@ object AlertNotifier {
             }
         }
     }
-
     private fun abandonAlertAudioFocus(am: AudioManager) {
         if (!audioFocusGranted) return
         audioFocusGranted = false
@@ -300,13 +297,10 @@ object AlertNotifier {
             val req = audioFocusRequest as? android.media.AudioFocusRequest
             if (req != null) {
                 am.abandonAudioFocusRequest(req)
-            } else {
-                am.abandonAudioFocus(null)
             }
         } else {
             @Suppress("DEPRECATION")
             am.abandonAudioFocus(null)
         }
     }
-
 }

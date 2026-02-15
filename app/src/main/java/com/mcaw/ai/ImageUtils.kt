@@ -12,7 +12,7 @@ import java.io.ByteArrayOutputStream
 
 object ImageUtils {
 
-    fun imageProxyToBitmap(image: ImageProxy, context: Context): Bitmap? {
+    fun imageProxyToBitmap(image: ImageProxy, _context: Context): Bitmap? {
         return try {
             val nv21 = yuv420888ToNv21(image)
             val yuvImage = YuvImage(

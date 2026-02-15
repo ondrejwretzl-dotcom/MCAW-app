@@ -227,7 +227,7 @@ private fun updateCutInState(tsMs: Long, box: Box, frameW: Float, frameH: Float)
     if (frameW <= 0f || frameH <= 0f) return
 
     val areaNorm = (box.area / (frameW * frameH)).coerceIn(0f, 1f)
-    val off = egoOffsetInRoiN(box, frameW, frameH, 1.0f)
+    val off = egoOffsetInRoiN(box, frameW, frameH)
 
     if (!cutInPrevAreaNorm.isFinite() || cutInPrevTsMs <= 0L) {
         cutInPrevAreaNorm = areaNorm
@@ -521,7 +521,6 @@ val distanceScaled =
             if (modeRes.changed) {
                 flog("auto_mode effective=${'$'}{modeName(modeRes.effectiveMode)} reason=${'$'}{modeRes.reason}", force = true)
             }
-            val thresholds = thresholdsForMode(modeRes.effectiveMode)
             val riderSpeedKnown = riderSpeedMps.isFinite()
 val riderStanding = riderSpeedKnown && riderSpeedMps <= (6.0f / 3.6f) // < 6 km/h (město/kolony)
 
@@ -530,7 +529,7 @@ val imu = imuMonitor.snapshot(tsMs)
 
 // ROI weight (0..1) pro RiskEngine
 val roiContainment = containmentRatioInTrapezoid(bestBox, roiTrap.pts).coerceIn(0f, 1f)
-val egoOffset = egoOffsetInRoiN(bestBox, frameW, frameH, 1.0f).coerceIn(0f, 2f)
+val egoOffset = egoOffsetInRoiN(bestBox, frameW, frameH).coerceIn(0f, 2f)
 
 val risk = if (riderStanding) {
     riskEngine.standingResult(riderSpeedMps)
@@ -1133,7 +1132,7 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
     }
 
 
-    private fun egoOffsetInRoiN(box: Box, frameW: Float, frameH: Float, maxOffset: Float): Float {
+    private fun egoOffsetInRoiN(box: Box, frameW: Float, frameH: Float): Float {
         if (frameW <= 0f || frameH <= 0f) return 1f
         val roi = AppPreferences.getRoiTrapezoidNormalized()
         val cxN = (box.cx / frameW).coerceIn(0f, 1f)
@@ -1155,7 +1154,7 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
         tracks: List<TemporalTracker.TrackedDetection>,
         frameW: Float,
         frameH: Float,
-        roiTrap: RoiTrapPx,
+        _roiTrap: RoiTrapPx,
         tsMs: Long
     ): TemporalTracker.TrackedDetection? {
         if (tracks.isEmpty() || frameW <= 0f || frameH <= 0f) return null
@@ -1169,7 +1168,7 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
         val poolEgo = if (AppPreferences.laneFilter) {
             val maxOff = dynamicEgoMaxOffset(tsMs)
             val filtered = pool.filter { t ->
-                egoOffsetInRoiN(t.detection.box, frameW, frameH, maxOff) <= maxOff
+                egoOffsetInRoiN(t.detection.box, frameW, frameH) <= maxOff
             }
             if (filtered.isNotEmpty()) filtered else pool
         } else {
@@ -1189,7 +1188,7 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
             val score = d.score.coerceIn(0f, 1f)
             val egoScore = if (AppPreferences.laneFilter) {
                 val maxOff = dynamicEgoMaxOffset(tsMs)
-                val off = egoOffsetInRoiN(b, frameW, frameH, maxOff)
+                val off = egoOffsetInRoiN(b, frameW, frameH)
                 (1f - (off / maxOff)).coerceIn(0f, 1f)
             } else {
                 0.5f

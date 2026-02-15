@@ -46,7 +46,7 @@ class RiderImuMonitor(context: Context) : SensorEventListener {
         accel?.let { sm.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME) }
     }
 
-    fun snapshot(nowMs: Long): Snapshot {
+    fun snapshot(_nowMs: Long): Snapshot {
         return Snapshot(
             brakeConfidence = lastBrakeConfidence.coerceIn(0f, 1f),
             leanDeg = lastLeanDeg
