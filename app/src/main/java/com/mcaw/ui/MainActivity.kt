@@ -194,8 +194,7 @@ class MainActivity : ComponentActivity() {
         findViewById<MaterialButton>(R.id.btnCamera).setOnClickListener {
             ensurePermissions(PendingAction.OPEN_CAMERA)
         }
-    }
-        PublicLogWriter.writeTextFile(this, "mcaw_session_$timestamp.txt", content)
+
     }
 
     private fun ensurePermissions(action: PendingAction) {
@@ -447,7 +446,7 @@ class MainActivity : ComponentActivity() {
         txtWhy.setTextColor(c)
     }
 
-private fun formatMetric(value: Float, unit: String): String {
+    private fun formatMetric(value: Float, unit: String): String {
         return if (value.isFinite()) "%.2f %s".format(value, unit) else "--.- $unit"
     }
 
@@ -493,12 +492,14 @@ private fun formatMetric(value: Float, unit: String): String {
     }
 
     private fun logActivity(message: String) {
-    // Unified session log line (no extra per-activity files).
-    // S,<ts_ms>,<message>
-    val tsMs = System.currentTimeMillis()
-    SessionLogFile.init(this)
-    PublicLogWriter.appendLogLine(this, SessionLogFile.fileName, "S,$tsMs,$message")
-}
+        // Unified session log line (no extra per-activity files).
+        // S,<ts_ms>,<message>
+        val tsMs = System.currentTimeMillis()
+        val clean = message.replace("
+", " ").replace("", " ").trim()
+        val escaped = "\"" + clean.replace("\"", "\"\"") + "\""
+        PublicLogWriter.appendLogLine(this, SessionLogFile.fileName, "S,$tsMs,$escaped")
+    }
 
     private enum class PendingAction {
         START_ENGINE,
