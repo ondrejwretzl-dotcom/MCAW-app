@@ -495,8 +495,7 @@ class MainActivity : ComponentActivity() {
         // Unified session log line (no extra per-activity files).
         // S,<ts_ms>,<message>
         val tsMs = System.currentTimeMillis()
-        val clean = message.replace("
-", " ").replace("", " ").trim()
+        val clean = message.replace("\n", " ").replace("\r", " ").trim()
         val escaped = "\"" + clean.replace("\"", "\"\"") + "\""
         PublicLogWriter.appendLogLine(this, SessionLogFile.fileName, "S,$tsMs,$escaped")
     }
@@ -506,4 +505,3 @@ class MainActivity : ComponentActivity() {
         OPEN_CAMERA
     }
 }
-
