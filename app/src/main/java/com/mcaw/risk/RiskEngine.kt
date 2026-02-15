@@ -71,12 +71,12 @@ class RiskEngine {
     // Hysteresis on riskScore (prevents blinking)
     private var lastLevel: Int = 0
 
-    // EMA-integrated riskScore (anti-blink / continuity)
-    private var emaRisk: Float = 0f
-    private var emaInit: Boolean = false
-
     // Separate hysteresis for TTC (kept inside engine; not fallback)
     private var lastTtcLevel: Int = 0
+
+    // EMA on riskScore (continuity / anti-blink)
+    private var riskEmaValid: Boolean = false
+    private var riskEma: Float = 0f
 
     // Single reusable result instance (avoid per-frame allocations)
     private val out = Result()
@@ -87,7 +87,7 @@ class RiskEngine {
         distanceM: Float,
         approachSpeedMps: Float,
         ttcSec: Float,
-        ttcSlopeSecPerSec: Float = 0f, // sec/sec (negative = closing faster)
+        ttcSlopeSecPerSec: Float, // sec/sec, negative = TTC decreasing
         roiContainment: Float,   // 0..1
         egoOffsetN: Float,       // 0..2 (0 center)
         cutInActive: Boolean,
@@ -130,8 +130,8 @@ class RiskEngine {
         // IMU braking: if rider is braking hard, slightly raise risk (predictive) near target.
         val egoBrake = egoBrakingConfidence.coerceIn(0f, 1f)
 
-        // --- Weighted raw risk ---
-        var rawRisk =
+        // --- Weighted risk ---
+        var risk =
             (ttcScore * 0.35f) +
             (distScore * 0.20f) +
             (relScore * 0.20f) +
@@ -141,55 +141,48 @@ class RiskEngine {
 
         // boost if strong ego braking (but don't make it dominant)
         if (egoBrake >= 0.65f) {
-            rawRisk += 0.08f * ((egoBrake - 0.65f) / 0.35f).coerceIn(0f, 1f)
+            risk += 0.08f * ((egoBrake - 0.65f) / 0.35f).coerceIn(0f, 1f)
         }
 
         // Quality gating: in poor frames suppress ORANGE; RED only when clearly critical.
         val conservative = qualityPoor
         if (conservative) {
             // reduce risk a bit to avoid "city lights / bumps" noise
-            rawRisk *= 0.88f
+            risk *= 0.88f
         }
 
         // Lean: high lean -> more jitter / different optical flow; reduce sensitivity moderately.
         if (leanDeg.isFinite()) {
             val lean = abs(leanDeg)
             val k = ((lean - 20f) / 25f).coerceIn(0f, 1f) // after ~20° start reducing
-            rawRisk *= (1f - 0.12f * k) // max -12%
+            risk *= (1f - 0.12f * k) // max -12%
         }
 
-        rawRisk = rawRisk.coerceIn(0f, 1f)
+        risk = risk.coerceIn(0f, 1f)
 
-        // --- EMA integrate (continuity) ---
-        val riseAlpha = 0.30f
-        val fallAlpha = 0.15f
-        if (!emaInit) {
-            emaRisk = rawRisk
-            emaInit = true
-        } else {
-            val a = if (rawRisk >= emaRisk) riseAlpha else fallAlpha
-            emaRisk += a * (rawRisk - emaRisk)
+        // --- Risk integrator (EMA + asymmetric response) ---
+        val riskFiltered = run {
+            val r = risk
+            if (!riskEmaValid) {
+                riskEma = r
+                riskEmaValid = true
+                r
+            } else {
+                val alpha = if (r > riskEma) 0.30f else 0.15f
+                riskEma = (riskEma + alpha * (r - riskEma)).coerceIn(0f, 1f)
+                riskEma
+            }
         }
-        val risk = emaRisk.coerceIn(0f, 1f)
 
-        // --- CRITICAL combo guard (avoid single-factor RED spikes) ---
-        val slope = if (ttcSlopeSecPerSec.isFinite()) ttcSlopeSecPerSec else 0f
-        val slopeStrong = slope <= -1.0f
-        val strongTtc = (ttcLevel >= 2) || (ttcScore >= 0.85f)
-        val strongDist = distScore >= 0.85f
-        val strongRel = relScore >= 0.85f
-        val midDist = distScore >= 0.60f
-        val midRel = relScore >= 0.60f
-        val allowRed = strongTtc && (strongDist || strongRel || (slopeStrong && (midDist || midRel)))
+        // --- CRITICAL requires combo (ttc trend + distance/rel_v), not single-factor spike ---
+        val strongTtc = (ttcLevel == 2) || (ttcScore >= 0.75f)
+        val strongDist = distScore >= 0.70f
+        val strongRel = relScore >= 0.70f
+        val slopeStrong = ttcSlopeSecPerSec.isFinite() && (ttcSlopeSecPerSec <= -1.0f)
+        val allowRed = strongTtc && (strongDist || strongRel || (slopeStrong && (distScore >= 0.55f || relScore >= 0.55f)))
 
         // --- Convert risk -> level (with hysteresis) ---
-        var level = riskToLevelWithHysteresis(risk, conservative)
-        if (level == 2 && !allowRed) {
-            // Cap to ORANGE when combo confirmation is missing.
-            // Also break RED latch immediately to prevent "stuck RED" on spikes.
-            lastLevel = 1
-            level = 1
-        }
+        val level = riskToLevelWithHysteresis(riskFiltered, conservative, allowRed)
 
         val state = when (level) {
             2 -> State.CRITICAL
@@ -214,7 +207,7 @@ class RiskEngine {
 
         // Fill reusable result
         out.level = level
-        out.riskScore = risk
+        out.riskScore = riskFiltered
         out.reasonBits = bits
         out.state = state
         return out
@@ -290,7 +283,7 @@ class RiskEngine {
         return lastTtcLevel
     }
 
-    private fun riskToLevelWithHysteresis(risk: Float, conservative: Boolean): Int {
+    private fun riskToLevelWithHysteresis(risk: Float, conservative: Boolean, allowRed: Boolean): Int {
         val orangeOn = if (conservative) 0.62f else 0.45f
         val redOn = if (conservative) 0.82f else 0.75f
 
@@ -309,6 +302,10 @@ class RiskEngine {
                 risk >= orangeOn -> 1
                 else -> 0
             }
+        }
+        if (!allowRed && lastLevel == 2) {
+            // Downgrade to ORANGE when combo condition for RED is not satisfied.
+            lastLevel = 1
         }
         return lastLevel
     }

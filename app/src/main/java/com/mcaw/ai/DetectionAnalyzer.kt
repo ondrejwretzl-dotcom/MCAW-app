@@ -4,7 +4,12 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.RectF
 import android.graphics.PointF
+import android.media.AudioManager
+import android.media.MediaPlayer
+import android.os.VibrationEffect
+import android.os.Vibrator
 import android.os.SystemClock
+import android.speech.tts.TextToSpeech
 import android.util.Log
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
@@ -169,16 +174,15 @@ private fun assessFrameQuality(image: ImageProxy): FrameQuality {
     // TTC smoothing/hold (prevents blinking when switching TTC source)
     private var ttcEma: Float = Float.POSITIVE_INFINITY
     private var ttcEmaValid: Boolean = false
+
+
+    // TTC trend (sec/sec). Negative => TTC decreasing.
+    private var ttcSlopeEma: Float = 0f
+    private var ttcSlopeValid: Boolean = false
     private var lastTtcUpdateTsMs: Long = -1L
 
     private var lastTtcHeight: Float = Float.POSITIVE_INFINITY
     private var lastTtcHeightTsMs: Long = -1L
-
-    // TTC slope (sec/sec) for trend detection (negative = TTC decreasing)
-    private var lastTtcForSlope: Float = Float.NaN
-    private var lastTtcForSlopeTsMs: Long = -1L
-    private var ttcSlopeEma: Float = 0f
-    private var ttcSlopeEmaValid: Boolean = false
     private val ttcHeightHoldMs: Long = 1200L
 
     private var distEma: Float = Float.NaN
@@ -204,6 +208,15 @@ private fun assessFrameQuality(image: ImageProxy): FrameQuality {
 
     private var lastAlertLevel = 0
     private var lastTtcLevel: Int = 0
+
+    private var tts: TextToSpeech? = null
+
+    // --- Alert audio (fix: keep strong ref, handle focus, stop on level change) ---
+    private var alertPlayer: MediaPlayer? = null
+    private var audioFocusRequest: Any? = null // AudioFocusRequest on API 26+, kept as Any for source compat
+    private var audioFocusGranted: Boolean = false
+    private var lastFocusGain: Int = android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
+    private var lastFocusUsage: Int = android.media.AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE
 
     // --- Cut-in detection (dynamic ego offset boost) ---
     private var cutInPrevAreaNorm: Float = Float.NaN
@@ -243,7 +256,17 @@ private fun updateCutInState(tsMs: Long, box: Box, frameW: Float, frameH: Float)
 
         if (growth.isFinite() && growth >= AppPreferences.cutInGrowthRatio && movingToCenter) {
             cutInBoostUntilMs = tsMs + AppPreferences.cutInBoostMs
-            flog("cutin boost until=$cutInBoostUntilMs growth=%.2f off=%.2f->%.2f".format(growth, cutInPrevOffset, off), force = true)
+            flog(
+                String.format(
+                    Locale.US,
+                    "cutin boost until=%d growth=%.2f off=%.2f->%.2f",
+                    cutInBoostUntilMs,
+                    growth,
+                    cutInPrevOffset,
+                    off
+                ),
+                force = true
+            )
         }
     }
 
@@ -290,6 +313,11 @@ private fun updateCutInState(tsMs: Long, box: Box, frameW: Float, frameH: Float)
         if (AppPreferences.debugOverlay) {
             traceLogger = SessionTraceLogger(ctx, SessionLogFile.fileName).also { it.start() }
         }
+
+        if (AppPreferences.voice) {
+            tts = TextToSpeech(ctx) { status ->
+                if (status == TextToSpeech.SUCCESS) tts?.language = Locale.getDefault()
+            }
         }
     }
 
@@ -329,7 +357,15 @@ val riderSpeedRawMps = speedProvider.getCurrent().speedMps
 // Frame quality assessment (fast heuristics on Y plane).
 val quality = assessFrameQuality(image)
 if (AppPreferences.debugOverlay) {
-    flog("quality poor=${quality.poor} luma=%.1f grad=%.2f".format(quality.meanLuma, quality.meanGrad))
+    flog(
+        String.format(
+            Locale.US,
+            "quality poor=%s luma=%.1f grad=%.2f",
+            quality.poor,
+            quality.meanLuma,
+            quality.meanGrad
+        )
+    )
 }
 
 
@@ -367,8 +403,7 @@ if (AppPreferences.debugOverlay) {
                 lockedSinceMs = 0L
                 switchCandidateId = null
                 switchCandidateCount = 0
-                lastAlertLevel = 0
-                AlertNotifier.stopInApp(ctx)
+                stopActiveAlerts()
 
                 // DEBUG trace: lock cleared
                 traceLogger?.logTarget(
@@ -483,32 +518,6 @@ val distanceScaled =
 
             val ttc = smoothTtc(ttcRaw, tsMs)
 
-            // TTC slope (sec/sec). Robust + EMA to avoid noise.
-            val ttcSlopeSecPerSec: Float = run {
-                val prevTtc = lastTtcForSlope
-                val prevTs = lastTtcForSlopeTsMs
-                lastTtcForSlope = ttc
-                lastTtcForSlopeTsMs = tsMs
-
-                if (!ttc.isFinite() || !prevTtc.isFinite() || prevTs <= 0L) {
-                    // reset / unknown
-                    ttcSlopeEmaValid = false
-                    0f
-                } else {
-                    val dtSec = ((tsMs - prevTs).coerceAtLeast(1L)).toFloat() / 1000f
-                    // Clamp to limit single-frame spikes
-                    val raw = ((ttc - prevTtc) / dtSec).coerceIn(-5f, 5f)
-                    val a = 0.25f
-                    if (!ttcSlopeEmaValid) {
-                        ttcSlopeEma = raw
-                        ttcSlopeEmaValid = true
-                    } else {
-                        ttcSlopeEma += a * (raw - ttcSlopeEma)
-                    }
-                    ttcSlopeEma
-                }
-            }
-
             // Approach speed used for alerting (derived from final smoothed TTC if available)
             val approachSpeedMps =
                 if (ttc.isFinite() && ttc > 0f && distanceM.isFinite()) (distanceM / ttc).coerceIn(0f, 80f)
@@ -542,7 +551,7 @@ val risk = if (riderStanding) {
         distanceM = distanceM,
         approachSpeedMps = approachSpeedMps,
         ttcSec = ttc,
-        ttcSlopeSecPerSec = ttcSlopeSecPerSec,
+        ttcSlopeSecPerSec = (if (ttcSlopeValid) ttcSlopeEma else Float.NaN),
         roiContainment = roiContainment,
         egoOffsetN = egoOffset,
         cutInActive = (cutInBoostUntilMs > 0L && tsMs <= cutInBoostUntilMs),
@@ -577,6 +586,7 @@ if (level != prevLevel || frameIndex % eventEveryNFrames == 0L) {
         state = risk.state,
         reasonBits = reasonBits,
         ttcSec = ttc,
+        ttcSlopeSecPerSec = (if (ttcSlopeValid) ttcSlopeEma else Float.NaN),
         distM = distanceM,
         relV = approachSpeedMps,
         roi = roiContainment,
@@ -591,10 +601,22 @@ if (level != prevLevel || frameIndex % eventEveryNFrames == 0L) {
     )
 }
 
-// Log why alert level was decided (debugOverlay only; sampled)
-if (AppPreferences.debugOverlay && (level != prevLevel || frameIndex % logEveryNFrames == 0L)) {
-    flog("risk level=$level score=%.2f state=${'$'}{risk.state} bits=$reasonBits reason=$alertReason".format(risk.riskScore), force = (level != prevLevel))
-}
+	// Log why alert level was decided (debugOverlay only; sampled)
+	if (AppPreferences.debugOverlay && (level != prevLevel || frameIndex % logEveryNFrames == 0L)) {
+		// Locale.US keeps dot decimal for parsability regardless of device locale.
+		flog(
+			String.format(
+				Locale.US,
+				"risk level=%d score=%.2f state=%s bits=%d reason=%s",
+				level,
+				risk.riskScore,
+				risk.state,
+				reasonBits,
+				alertReason
+			),
+			force = (level != prevLevel)
+		)
+	}
 sendOverlayUpdate(
                 box = bestBox,
                 frameW = frameW,
@@ -713,6 +735,170 @@ if (AppPreferences.debugOverlay) {
         val bottom = max(y1, y2)
         return Box(left, top, right, bottom)
     }
+
+    private fun stopActiveAlerts() {
+        lastAlertLevel = 0
+        val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        runCatching { alertPlayer?.stop() }
+        runCatching { alertPlayer?.release() }
+        alertPlayer = null
+        abandonAlertAudioFocus(am)
+    }
+
+    
+private fun playAlertSound(resId: Int, critical: Boolean) {
+    runCatching {
+        val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val usage = android.media.AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE
+        val gain = if (critical) AudioManager.AUDIOFOCUS_GAIN_TRANSIENT else AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
+        requestAlertAudioFocus(am, gain = gain, usage = usage)
+
+        // Stop previous
+        alertPlayer?.setOnCompletionListener(null)
+        runCatching { alertPlayer?.stop() }
+        runCatching { alertPlayer?.release() }
+        alertPlayer = null
+
+        val mp = MediaPlayer()
+        alertPlayer = mp
+
+        // User-configurable alert volumes (0..100 %). Priority stays via audio focus.
+        val vol = if (critical) AppPreferences.soundRedVolumeScalar else AppPreferences.soundOrangeVolumeScalar
+        mp.setVolume(vol, vol)
+
+        // Prefer Media/sonification so it follows MEDIA volume (alarm volume is often 0).
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+            mp.setAudioAttributes(
+                android.media.AudioAttributes.Builder()
+                    .setUsage(android.media.AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build()
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            mp.setAudioStreamType(AudioManager.STREAM_MUSIC)
+        }
+
+        val uri = android.net.Uri.parse("android.resource://${ctx.packageName}/$resId")
+        mp.setDataSource(ctx, uri)
+        mp.isLooping = false
+        mp.setOnCompletionListener { player ->
+            runCatching { player.release() }
+            if (alertPlayer === player) alertPlayer = null
+            abandonAlertAudioFocus(am)
+        }
+        mp.setOnErrorListener { player, what, extra ->
+            flog("alert sound error what=$what extra=$extra", force = true)
+            runCatching { player.release() }
+            if (alertPlayer === player) alertPlayer = null
+            abandonAlertAudioFocus(am)
+            true
+        }
+
+        mp.prepare()
+        mp.start()
+    }.onFailure {
+        val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        flog("alert sound fail: ${it.javaClass.simpleName} ${it.message}", force = true)
+        runCatching { alertPlayer?.release() }
+        alertPlayer = null
+        abandonAlertAudioFocus(am)
+    }
+}
+
+
+    private fun requestAlertAudioFocus(am: AudioManager, gain: Int, usage: Int) {
+        if (audioFocusGranted && gain == lastFocusGain && usage == lastFocusUsage) return
+
+        // If focus is already held with different params, release first.
+        if (audioFocusGranted) abandonAlertAudioFocus(am)
+
+        // API 26+ supports AudioFocusRequest, older uses legacy requestAudioFocus.
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            val listener = AudioManager.OnAudioFocusChangeListener { /* ignore */ }
+            val req = android.media.AudioFocusRequest.Builder(gain)
+                .setAudioAttributes(
+                    android.media.AudioAttributes.Builder()
+                        .setUsage(usage)
+                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build()
+                )
+                .setOnAudioFocusChangeListener(listener)
+                .setWillPauseWhenDucked(false)
+                .build()
+            audioFocusRequest = req
+            audioFocusGranted = (am.requestAudioFocus(req) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
+            if (audioFocusGranted) {
+                lastFocusGain = gain
+                lastFocusUsage = usage
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            audioFocusGranted = (am.requestAudioFocus(
+                null,
+                AudioManager.STREAM_MUSIC,
+                gain
+            ) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
+            if (audioFocusGranted) {
+                lastFocusGain = gain
+                lastFocusUsage = usage
+            }
+        }
+    }
+
+    private fun abandonAlertAudioFocus(am: AudioManager) {
+        if (!audioFocusGranted) return
+        audioFocusGranted = false
+
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            val req = audioFocusRequest as? android.media.AudioFocusRequest
+            if (req != null) {
+                am.abandonAudioFocusRequest(req)
+            } else {
+                am.abandonAudioFocus(null)
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            am.abandonAudioFocus(null)
+        }
+    }
+
+    private fun handleAlerts(level: Int) {
+    if (level <= 0 || level == lastAlertLevel) return
+    lastAlertLevel = level
+
+    when (level) {
+        1 -> {
+            // ORANGE (warning)
+            if (AppPreferences.sound && AppPreferences.soundOrange) {
+                playAlertSound(R.raw.alert_beep, critical = false)
+            }
+            if (AppPreferences.voice && AppPreferences.voiceOrange) {
+                val text = AppPreferences.ttsTextOrange.trim()
+                if (text.isNotEmpty()) {
+                    tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "tts_orange")
+                }
+            }
+        }
+        2 -> {
+            // RED (critical)
+            if (AppPreferences.sound && AppPreferences.soundRed) {
+                playAlertSound(R.raw.red_alert, critical = true)
+            }
+            if (AppPreferences.vibration) {
+                val vib = ctx.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+                if (vib.hasVibrator()) vib.vibrate(VibrationEffect.createOneShot(200, 150))
+            }
+            if (AppPreferences.voice && AppPreferences.voiceRed) {
+                val text = AppPreferences.ttsTextRed.trim()
+                if (text.isNotEmpty()) {
+                    tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "tts_red")
+                }
+            }
+        }
+    }
+}
+
 
     private fun sendOverlayUpdate(
         box: Box,
@@ -925,9 +1111,10 @@ val effectiveLevel = if (conservative) {
     val summary = buildString {
         append(reasonCore)
         append(" | ")
-        append("ttc="); append(if (ttc.isFinite()) "%.2f".format(ttc) else "INF")
-        append(" d="); append(if (distanceM.isFinite()) "%.2f".format(distanceM) else "INF")
-        append(" rel="); append(if (approachSpeedMps.isFinite()) "%.2f".format(approachSpeedMps) else "INF")
+		// Locale.US to keep dot decimal for debug strings that might be copied/parsed.
+		append("ttc="); append(if (ttc.isFinite()) String.format(Locale.US, "%.2f", ttc) else "INF")
+		append(" d="); append(if (distanceM.isFinite()) String.format(Locale.US, "%.2f", distanceM) else "INF")
+		append(" rel="); append(if (approachSpeedMps.isFinite()) String.format(Locale.US, "%.2f", approachSpeedMps) else "INF")
     }
 
     return AlertDecision(level = effectiveLevel, reason = summary + if (conservative) " | QCONSERV" else "")
@@ -1018,6 +1205,9 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
         lastTtcFiniteTsMs = -1L
         lastTtcHeight = Float.POSITIVE_INFINITY
         lastTtcHeightTsMs = -1L
+
+        ttcSlopeValid = false
+        ttcSlopeEma = 0f
     }
 
     /**
@@ -1056,6 +1246,9 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
             ttcEma = Float.POSITIVE_INFINITY
             lastTtcUpdateTsMs = tsMs
             return Float.POSITIVE_INFINITY
+
+        ttcSlopeValid = false
+        ttcSlopeEma = 0f
         }
 
         // Remember last finite TTC timestamp
@@ -1066,6 +1259,9 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
             ttcEmaValid = true
             lastTtcUpdateTsMs = tsMs
             return ttcEma
+
+            ttcSlopeEma = 0f
+            ttcSlopeValid = true
         }
 
         val dtSec = ((tsMs - lastTtcUpdateTsMs).coerceAtLeast(1L)).toFloat() / 1000f
@@ -1085,6 +1281,18 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
 
         val alpha = if (clamped < prev) 0.45f else 0.20f
         ttcEma = prev + alpha * (clamped - prev)
+
+        // TTC slope (sec/sec): derived from smoothed TTC to reduce noise.
+        if (dtSec > 0f && ttcEma.isFinite() && prev.isFinite()) {
+            val inst = ((ttcEma - prev) / dtSec).coerceIn(-8f, 4f)
+            val aS = 0.35f
+            ttcSlopeEma = if (!ttcSlopeValid) inst else (ttcSlopeEma + aS * (inst - ttcSlopeEma))
+            ttcSlopeValid = true
+        } else {
+            ttcSlopeValid = false
+            ttcSlopeEma = 0f
+        }
+
         return ttcEma
     }
 
@@ -1645,11 +1853,21 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
         }
         brakeCueStrength = if (brakeCueActive) strength else 0f
 
-        if (AppPreferences.debugOverlay) {
-            flog("brakeCue enabled=1 redRatio=%.3f redEma=%.3f dI=%.3f thr=%.2f dThr=%.2f strength=%.2f active=%s".format(
-                redRatio, brakeRedRatioEma, delta, thr, deltaThr, brakeCueStrength, brakeCueActive
-            ))
-        }
+		if (AppPreferences.debugOverlay) {
+			flog(
+				String.format(
+					Locale.US,
+					"brakeCue enabled=1 redRatio=%.3f redEma=%.3f dI=%.3f thr=%.2f dThr=%.2f strength=%.2f active=%s",
+					redRatio,
+					brakeRedRatioEma,
+					delta,
+					thr,
+					deltaThr,
+					brakeCueStrength,
+					brakeCueActive
+				)
+			)
+		}
 
         return BrakeCueResult(brakeCueActive, brakeCueStrength, brakeRedRatioEma, delta)
     }
