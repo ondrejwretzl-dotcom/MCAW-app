@@ -74,6 +74,10 @@ class RiskEngine {
     // Separate hysteresis for TTC (kept inside engine; not fallback)
     private var lastTtcLevel: Int = 0
 
+    // EMA on riskScore (continuity / anti-blink)
+    private var riskEmaValid: Boolean = false
+    private var riskEma: Float = 0f
+
     // Single reusable result instance (avoid per-frame allocations)
     private val out = Result()
 
@@ -83,6 +87,7 @@ class RiskEngine {
         distanceM: Float,
         approachSpeedMps: Float,
         ttcSec: Float,
+        ttcSlopeSecPerSec: Float, // sec/sec, negative = TTC decreasing
         roiContainment: Float,   // 0..1
         egoOffsetN: Float,       // 0..2 (0 center)
         cutInActive: Boolean,
@@ -155,8 +160,29 @@ class RiskEngine {
 
         risk = risk.coerceIn(0f, 1f)
 
+        // --- Risk integrator (EMA + asymmetric response) ---
+        val riskFiltered = run {
+            val r = risk
+            if (!riskEmaValid) {
+                riskEma = r
+                riskEmaValid = true
+                r
+            } else {
+                val alpha = if (r > riskEma) 0.30f else 0.15f
+                riskEma = (riskEma + alpha * (r - riskEma)).coerceIn(0f, 1f)
+                riskEma
+            }
+        }
+
+        // --- CRITICAL requires combo (ttc trend + distance/rel_v), not single-factor spike ---
+        val strongTtc = (ttcLevel == 2) || (ttcScore >= 0.75f)
+        val strongDist = distScore >= 0.70f
+        val strongRel = relScore >= 0.70f
+        val slopeStrong = ttcSlopeSecPerSec.isFinite() && (ttcSlopeSecPerSec <= -1.0f)
+        val allowRed = strongTtc && (strongDist || strongRel || (slopeStrong && (distScore >= 0.55f || relScore >= 0.55f)))
+
         // --- Convert risk -> level (with hysteresis) ---
-        val level = riskToLevelWithHysteresis(risk, conservative)
+        val level = riskToLevelWithHysteresis(riskFiltered, conservative, allowRed)
 
         val state = when (level) {
             2 -> State.CRITICAL
@@ -181,7 +207,7 @@ class RiskEngine {
 
         // Fill reusable result
         out.level = level
-        out.riskScore = risk
+        out.riskScore = riskFiltered
         out.reasonBits = bits
         out.state = state
         return out
@@ -257,7 +283,7 @@ class RiskEngine {
         return lastTtcLevel
     }
 
-    private fun riskToLevelWithHysteresis(risk: Float, conservative: Boolean): Int {
+    private fun riskToLevelWithHysteresis(risk: Float, conservative: Boolean, allowRed: Boolean): Int {
         val orangeOn = if (conservative) 0.62f else 0.45f
         val redOn = if (conservative) 0.82f else 0.75f
 
@@ -276,6 +302,10 @@ class RiskEngine {
                 risk >= orangeOn -> 1
                 else -> 0
             }
+        }
+        if (!allowRed && lastLevel == 2) {
+            // Downgrade to ORANGE when combo condition for RED is not satisfied.
+            lastLevel = 1
         }
         return lastLevel
     }

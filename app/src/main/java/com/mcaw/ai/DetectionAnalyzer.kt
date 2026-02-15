@@ -169,6 +169,11 @@ private fun assessFrameQuality(image: ImageProxy): FrameQuality {
     // TTC smoothing/hold (prevents blinking when switching TTC source)
     private var ttcEma: Float = Float.POSITIVE_INFINITY
     private var ttcEmaValid: Boolean = false
+
+
+    // TTC trend (sec/sec). Negative => TTC decreasing.
+    private var ttcSlopeEma: Float = 0f
+    private var ttcSlopeValid: Boolean = false
     private var lastTtcUpdateTsMs: Long = -1L
 
     private var lastTtcHeight: Float = Float.POSITIVE_INFINITY
@@ -510,6 +515,7 @@ val risk = if (riderStanding) {
         distanceM = distanceM,
         approachSpeedMps = approachSpeedMps,
         ttcSec = ttc,
+        ttcSlopeSecPerSec = (if (ttcSlopeValid) ttcSlopeEma else Float.NaN),
         roiContainment = roiContainment,
         egoOffsetN = egoOffset,
         cutInActive = (cutInBoostUntilMs > 0L && tsMs <= cutInBoostUntilMs),
@@ -544,6 +550,7 @@ if (level != prevLevel || frameIndex % eventEveryNFrames == 0L) {
         state = risk.state,
         reasonBits = reasonBits,
         ttcSec = ttc,
+        ttcSlopeSecPerSec = (if (ttcSlopeValid) ttcSlopeEma else Float.NaN),
         distM = distanceM,
         relV = approachSpeedMps,
         roi = roiContainment,
@@ -985,6 +992,9 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
         lastTtcFiniteTsMs = -1L
         lastTtcHeight = Float.POSITIVE_INFINITY
         lastTtcHeightTsMs = -1L
+
+        ttcSlopeValid = false
+        ttcSlopeEma = 0f
     }
 
     /**
@@ -1023,6 +1033,9 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
             ttcEma = Float.POSITIVE_INFINITY
             lastTtcUpdateTsMs = tsMs
             return Float.POSITIVE_INFINITY
+
+        ttcSlopeValid = false
+        ttcSlopeEma = 0f
         }
 
         // Remember last finite TTC timestamp
@@ -1033,6 +1046,9 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
             ttcEmaValid = true
             lastTtcUpdateTsMs = tsMs
             return ttcEma
+
+            ttcSlopeEma = 0f
+            ttcSlopeValid = true
         }
 
         val dtSec = ((tsMs - lastTtcUpdateTsMs).coerceAtLeast(1L)).toFloat() / 1000f
@@ -1052,6 +1068,18 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
 
         val alpha = if (clamped < prev) 0.45f else 0.20f
         ttcEma = prev + alpha * (clamped - prev)
+
+        // TTC slope (sec/sec): derived from smoothed TTC to reduce noise.
+        if (dtSec > 0f && ttcEma.isFinite() && prev.isFinite()) {
+            val inst = ((ttcEma - prev) / dtSec).coerceIn(-8f, 4f)
+            val aS = 0.35f
+            ttcSlopeEma = if (!ttcSlopeValid) inst else (ttcSlopeEma + aS * (inst - ttcSlopeEma))
+            ttcSlopeValid = true
+        } else {
+            ttcSlopeValid = false
+            ttcSlopeEma = 0f
+        }
+
         return ttcEma
     }
 
