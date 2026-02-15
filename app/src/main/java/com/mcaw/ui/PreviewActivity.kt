@@ -404,7 +404,7 @@ class PreviewActivity : ComponentActivity() {
         searchHandler.removeCallbacksAndMessages(null)
     }
 
-        private fun logActivity(msg: String) {
+    private fun logActivity(msg: String) {
         // Unified session log line (no extra preview/activity log file).
         // S,<ts_ms>,<message>
         val tsMs = System.currentTimeMillis()
@@ -412,3 +412,5 @@ class PreviewActivity : ComponentActivity() {
         val escaped = "\"" + clean.replace("\"", "\"\"") + "\""
         PublicLogWriter.appendLogLine(this, SessionLogFile.fileName, "S,$tsMs,$escaped")
     }
+
+}

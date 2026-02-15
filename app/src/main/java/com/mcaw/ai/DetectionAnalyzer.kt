@@ -281,15 +281,15 @@ private fun updateCutInState(tsMs: Long, box: Box, frameW: Float, frameH: Float)
     private fun flog(msg: String, force: Boolean = false) {
         if (!AppPreferences.debugOverlay) return
         if (!force && (frameIndex % logEveryNFrames != 0L)) return
-        val ts = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", java.util.Locale.US).format(System.currentTimeMillis())
-        run {
-            val tsMs = System.currentTimeMillis()
-            val clean = msg.replace("
-", " ").replace("
-", " ").trim()
-            val escaped = "\""+ clean.replace("\"", "\"\"") +"\""
-            PublicLogWriter.appendLogLine(ctx, SessionLogFile.fileName, "S,$tsMs,$escaped")
-        }
+        // Debug-only: never do file IO from analyzer thread.
+        val tsMs = System.currentTimeMillis()
+        val clean = msg.replace("\n", " ").replace("\r", " ").trim()
+        val escaped = "\"" + clean.replace("\"", "\"\"") + "\""
+
+        // Route to trace logger (buffered + flushed off-thread) when available.
+        // Fallback to logcat in the unlikely case trace logger isn't active.
+        val line = "S,$tsMs,$escaped"
+        traceLogger?.logLine(line) ?: android.util.Log.d("DetectionAnalyzer", line)
     }
 
     init {
