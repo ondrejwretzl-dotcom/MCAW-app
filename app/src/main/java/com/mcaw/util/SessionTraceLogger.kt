@@ -36,6 +36,7 @@ class SessionTraceLogger(
     private val lock = Any()
     private val pool = ArrayDeque<TargetEvent>(prealloc)
     private val queue = ArrayDeque<TargetEvent>(prealloc)
+    private val lineQueue = ArrayDeque<String>(prealloc)
 
     private var ht: HandlerThread? = null
     private var h: Handler? = null
@@ -53,8 +54,7 @@ class SessionTraceLogger(
         val thread = HandlerThread("mcaw_trace_log").also { it.start() }
         ht = thread
         h = Handler(thread.looper)
-
-        }
+    }
 
     fun close() {
         started = false
@@ -108,31 +108,56 @@ class SessionTraceLogger(
         }
     }
 
+
+    fun logLine(rawLine: String) {
+        if (!started) return
+
+        // This is for debug text lines (e.g., 'S,...'). Allocation is acceptable because it's debug-only.
+        val shouldPostDrain: Boolean = synchronized(lock) {
+            val wasEmpty = queue.isEmpty() && lineQueue.isEmpty()
+            lineQueue.addLast(rawLine)
+            wasEmpty
+        }
+
+        if (shouldPostDrain) {
+            h?.post { drainOnce() }
+        }
+    }
+
     private fun drainOnce() {
         while (true) {
-            val ev: TargetEvent = synchronized(lock) {
+            // Prefer structured target events first.
+            val ev: TargetEvent? = synchronized(lock) {
                 if (queue.isEmpty()) null else queue.removeFirst()
-            } ?: break
+            }
+            if (ev != null) {
+                sb.setLength(0)
+                TraceContract.appendTargetLine(
+                    sb = sb,
+                    tsMs = ev.tsMs,
+                    kind = ev.kind,
+                    lockedId = ev.lockedId,
+                    bestId = ev.bestId,
+                    bestPri = ev.bestPri,
+                    lockedPri = ev.lockedPri,
+                    candId = ev.candId,
+                    candCount = ev.candCount,
+                    alertLevel = ev.alertLevel,
+                    mode = ev.mode
+                )
+                PublicLogWriter.appendLogLine(context, fileName, sb.toString().trimEnd())
+                synchronized(lock) { pool.addLast(ev) }
+                continue
+            }
 
-            sb.setLength(0)
-            sb.append('T').append(',')
-            TraceContract.appendTargetLine(
-                sb = sb,
-                tsMs = ev.tsMs,
-                kind = ev.kind,
-                lockedId = ev.lockedId,
-                bestId = ev.bestId,
-                bestPri = ev.bestPri,
-                lockedPri = ev.lockedPri,
-                candId = ev.candId,
-                candCount = ev.candCount,
-                alertLevel = ev.alertLevel,
-                mode = ev.mode
-            )
-
-            PublicLogWriter.appendLogLine(context, fileName, sb.toString().trimEnd())
-
-            synchronized(lock) { pool.addLast(ev) }
+            val line: String? = synchronized(lock) {
+                if (lineQueue.isEmpty()) null else lineQueue.removeFirst()
+            }
+            if (line != null) {
+                PublicLogWriter.appendLogLine(context, fileName, line.trimEnd())
+                continue
+            }
+            break
         }
     }
 }

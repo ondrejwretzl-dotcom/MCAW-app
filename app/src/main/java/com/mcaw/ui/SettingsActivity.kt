@@ -19,7 +19,6 @@ import com.google.android.material.switchmaterial.SwitchMaterial
 import com.mcaw.app.R
 import com.mcaw.config.AppPreferences
 import com.mcaw.util.PublicLogWriter
-import com.mcaw.util.SessionLogFile
 
 class SettingsActivity : ComponentActivity() {
 
@@ -44,16 +43,15 @@ class SettingsActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         AppPreferences.ensureInit(this)
         setContentView(R.layout.activity_settings)
-        SessionLogFile.init(this)
-        logSession("settings_opened")
+        writeSessionLog("Settings opened")
 
         // Top actions
         findViewById<View>(R.id.btnOpenHelp)?.setOnClickListener {
-            logSession("open_help")
+            writeSessionLog("Open help")
             openActivitySafely(Intent(this, HelpActivity::class.java), title = "Návod")
         }
         findViewById<View>(R.id.btnOpenLegal)?.setOnClickListener {
-            logSession("open_legal")
+            writeSessionLog("Open legal")
             openActivitySafely(Intent(this, LegalActivity::class.java), title = "Upozornění a podmínky")
         }
         findViewById<View>(R.id.btnResetRecommended)?.setOnClickListener { confirmResetRecommended() }
@@ -438,7 +436,7 @@ Typicky 3–10°. Příliš velký sklon může zkrátit dohled; příliš malý
             .setNegativeButton("Zrušit", null)
             .setPositiveButton("Resetovat", DialogInterface.OnClickListener { _: DialogInterface, _: Int ->
                 resetRecommended()
-                logSession("reset_recommended")
+                writeSessionLog("Reset recommended")
             })
             .show()
     }
@@ -500,11 +498,13 @@ private fun resetRecommended() {
         if (count <= 0) return 0
         return value.coerceIn(0, count - 1)
     }
-    private fun logSession(message: String) {
-        // Unified session log line (no extra settings log file)
-        // S,<ts_ms>,<message>
+
+    private fun writeSessionLog(event: String) {
+        // Route settings events to unified per-run CSV log (no extra mcaw_settings_*.txt files).
+        com.mcaw.util.SessionLogFile.init(this)
         val tsMs = System.currentTimeMillis()
-        val clean = message.replace("\n", " ").replace("\r", " ").trim()
+        val clean = event.replace("\n", " ").replace("\r", " ").trim()
         val escaped = "\"" + clean.replace("\"", "\"\"") + "\""
-        PublicLogWriter.appendLogLine(this, SessionLogFile.fileName, "S,$tsMs,$escaped")
+        com.mcaw.util.PublicLogWriter.appendLogLine(this, com.mcaw.util.SessionLogFile.fileName, "S,$tsMs,$escaped")
     }
+}

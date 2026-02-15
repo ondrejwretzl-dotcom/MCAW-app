@@ -31,8 +31,6 @@ import com.mcaw.config.AppPreferences
 import com.mcaw.location.SpeedMonitor
 import com.mcaw.location.SpeedProvider
 import com.mcaw.util.LabelMapper
-import com.mcaw.util.PublicLogWriter
-import com.mcaw.util.SessionLogFile
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -136,7 +134,6 @@ class PreviewActivity : ComponentActivity() {
 
         speedProvider = SpeedProvider(this)
         speedMonitor = SpeedMonitor(speedProvider)
-        SessionLogFile.init(this)
 
         overlay.showTelemetry = AppPreferences.debugOverlay
 
@@ -404,11 +401,12 @@ class PreviewActivity : ComponentActivity() {
         searchHandler.removeCallbacksAndMessages(null)
     }
 
-        private fun logActivity(msg: String) {
-        // Unified session log line (no extra preview/activity log file).
-        // S,<ts_ms>,<message>
-        val tsMs = System.currentTimeMillis()
-        val clean = msg.replace("\n", " ").replace("\r", " ").trim()
-        val escaped = "\"" + clean.replace("\"", "\"\"") + "\""
-        PublicLogWriter.appendLogLine(this, SessionLogFile.fileName, "S,$tsMs,$escaped")
+    private fun logActivity(msg: String) {
+        try {
+            com.mcaw.util.PublicLogWriter.appendLogLine(this, SessionLogFile.fileName, msg)
+        } catch (_: Exception) {
+        }
     }
+
+    private fun sessionStamp(): String = System.currentTimeMillis().toString()
+}
