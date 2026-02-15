@@ -81,8 +81,9 @@ class RiskEngine {
     // Single reusable result instance (avoid per-frame allocations)
     private val out = Result()
 
+    @Suppress("UNUSED_PARAMETER")
     fun evaluate(
-        _tsMs: Long,
+        tsMs: Long,
         effectiveMode: Int,
         distanceM: Float,
         approachSpeedMps: Float,
@@ -94,7 +95,7 @@ class RiskEngine {
         brakeCueActive: Boolean,
         brakeCueStrength: Float, // 0..1
         qualityPoor: Boolean,
-        _riderSpeedMps: Float,
+        riderSpeedMps: Float,
         egoBrakingConfidence: Float, // 0..1
         leanDeg: Float              // deg, NaN if unknown
     ): Result {

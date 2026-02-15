@@ -10,8 +10,10 @@ import com.mcaw.app.R
 import com.mcaw.config.AppPreferences
 import android.media.AudioManager
 import android.media.MediaPlayer
+import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
+import android.os.VibratorManager
 import android.speech.tts.TextToSpeech
 import com.mcaw.app.MCAWApp
 import com.mcaw.risk.RiskEngine
@@ -158,6 +160,16 @@ object AlertNotifier {
         // Do not shutdown TTS here (user might get another alert soon). Released in shutdown().
         val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         abandonAlertAudioFocus(am)
+    }
+
+    private fun getVibratorCompat(context: Context): Vibrator? {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val vm = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
+            vm.defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+        }
     }
 
     /** Release long-lived resources (call from Activity/Service onDestroy). */
