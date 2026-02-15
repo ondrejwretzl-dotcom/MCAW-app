@@ -1,0 +1,157 @@
+package com.mcaw.risk
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/**
+ * D1 – Modelové scénáře pro RiskEngine (offline).
+ * Cíl: rychle chytat regresní chování (blikání, pozdní/žádné RED, falešné RED).
+ */
+class RiskEngineScenarioTest {
+
+    private data class Frame(
+        val tsMs: Long,
+        val distM: Float,
+        val relMps: Float,
+        val ttcSec: Float,
+        val ttcSlope: Float,
+        val brakeCue: Float = 0f,
+        val cutIn: Boolean = false,
+        val qW: Float = 1.0f
+    )
+
+    private fun runScenario(frames: List<Frame>, mode: Int = 1): List<Int> {
+        val engine = RiskEngine()
+        val levels = ArrayList<Int>(frames.size)
+        for (f in frames) {
+            val r = engine.evaluate(
+                tsMs = f.tsMs,
+                effectiveMode = mode,
+                distanceM = f.distM,
+                approachSpeedMps = f.relMps.coerceAtLeast(0f),
+                ttcSec = f.ttcSec,
+                ttcSlopeSecPerSec = f.ttcSlope,
+                roiContainment = 1f,
+                egoOffsetN = 0f,
+                cutInActive = f.cutIn,
+                brakeCueActive = f.brakeCue > 0f,
+                brakeCueStrength = f.brakeCue.coerceIn(0f, 1f),
+                qualityWeight = f.qW,
+                riderSpeedMps = 10f,
+                egoBrakingConfidence = if (f.brakeCue > 0f) 0.8f else 0.0f,
+                leanDeg = Float.NaN
+            )
+            levels.add(r.level)
+        }
+        return levels
+    }
+
+    private fun transitions(levels: List<Int>): Int {
+        var t = 0
+        for (i in 1 until levels.size) if (levels[i] != levels[i - 1]) t++
+        return t
+    }
+
+    @Test
+    fun scenario1_unexpectedJam_shouldReachRed() {
+        // Dojíždím do kolony, nebrzdím -> TTC padá rychle, rel vysoká.
+        val frames = (0 until 35).map { i ->
+            val ts = i * 50L
+            val ttc = (6.0f - i * 0.16f).coerceAtLeast(0.8f)
+            val dist = (70f - i * 1.8f).coerceAtLeast(9f)
+            Frame(ts, distM = dist, relMps = 10.0f, ttcSec = ttc, ttcSlope = -1.6f)
+        }
+        val levels = runScenario(frames)
+        assertTrue("Očekávám, že se objeví RED (level=2)", levels.any { it == 2 })
+    }
+
+    @Test
+    fun scenario2_knownJamBraking_shouldNotGoRed() {
+        // Řidič ví o koloně, brzdí -> rel rychle klesá, slope se zlepšuje.
+        val frames = (0 until 45).map { i ->
+            val ts = i * 50L
+            val rel = (8.0f - i * 0.20f).coerceAtLeast(0.0f)
+            val ttc = (5.0f - i * 0.06f).coerceAtLeast(1.6f)
+            val dist = (55f - i * 1.0f).coerceAtLeast(10f)
+            val brake = (0.2f + i * 0.02f).coerceIn(0f, 1f)
+            val slope = if (i < 10) -0.9f else -0.2f
+            Frame(ts, distM = dist, relMps = rel, ttcSec = ttc, ttcSlope = slope, brakeCue = brake)
+        }
+        val levels = runScenario(frames)
+        assertTrue("Nemělo by padnout RED při kontrolovaném brzdění", levels.none { it == 2 })
+        assertTrue("ORANGE se může objevit", levels.any { it == 1 } || levels.any { it == 0 })
+    }
+
+    @Test
+    fun scenario3_inTrafficJam_shouldBeStableNoRed() {
+        // Jedu v koloně: dist malá, rel ~0, slope ~0 -> žádné RED, minimum přechodů.
+        val frames = (0 until 120).map { i ->
+            val ts = i * 50L
+            val dist = 7.5f + (if (i % 30 < 15) 0.3f else -0.3f)
+            Frame(ts, distM = dist, relMps = 0.2f, ttcSec = 10f, ttcSlope = 0f)
+        }
+        val levels = runScenario(frames)
+        assertTrue("V koloně nesmí být RED", levels.none { it == 2 })
+        assertTrue("Anti-blink: nechci nadměrné přechody", transitions(levels) <= 6)
+    }
+
+    @Test
+    fun scenario4_highwayTruckFastClosing_shouldReachRed() {
+        // Dálnice: rychlé dojíždění kamionu.
+        val frames = (0 until 25).map { i ->
+            val ts = i * 50L
+            val ttc = (4.0f - i * 0.14f).coerceAtLeast(0.7f)
+            val dist = (80f - i * 3.2f).coerceAtLeast(10f)
+            Frame(ts, distM = dist, relMps = 16.0f, ttcSec = ttc, ttcSlope = -2.0f)
+        }
+        val levels = runScenario(frames)
+        assertTrue("Na dálnici při rychlém dojíždění očekávám RED", levels.any { it == 2 })
+    }
+
+    @Test
+    fun scenario5_ttcGlitchSpike_shouldNotGoRed() {
+        // Glitch: 1 frame TTC spadne, ale dist/rel/slope to nepotvrdí -> nesmí RED.
+        val frames = buildList {
+            // stabilně safe
+            for (i in 0 until 20) add(Frame(i * 50L, distM = 40f, relMps = 0.5f, ttcSec = 20f, ttcSlope = 0f))
+            // glitch frame
+            add(Frame(20 * 50L, distM = 40f, relMps = 0.5f, ttcSec = 0.6f, ttcSlope = 0f))
+            // návrat
+            for (i in 21 until 45) add(Frame(i * 50L, distM = 40f, relMps = 0.5f, ttcSec = 20f, ttcSlope = 0f))
+        }
+        val levels = runScenario(frames)
+        assertTrue("TTC spike bez potvrzení nesmí vyvolat RED", levels.none { it == 2 })
+
+        // sanity: maximálně krátké vybočení (ORANGE může na chvilku nastat, ale nemá blikat)
+        assertTrue("Nechci cvakání – omezený počet přechodů", transitions(levels) <= 4)
+    }
+
+    @Test
+    fun scenario_qualityLow_shouldBeMoreConservative() {
+        // Stejné vstupy, jen různé qualityWeight -> při nízké kvalitě se má snižovat agrese.
+        val base = (0 until 30).map { i ->
+            val ts = i * 50L
+            val ttc = (3.2f - i * 0.06f).coerceAtLeast(1.3f)
+            val dist = (25f - i * 0.5f).coerceAtLeast(9f)
+            Frame(ts, distM = dist, relMps = 5.0f, ttcSec = ttc, ttcSlope = -0.7f)
+        }
+        val goodQ = runScenario(base.map { it.copy(qW = 1.0f) })
+        val badQ = runScenario(base.map { it.copy(qW = 0.65f) })
+
+        val maxGood = goodQ.maxOrNull() ?: 0
+        val maxBad = badQ.maxOrNull() ?: 0
+
+        assertTrue("Nízká kvalita má být konzervativnější (max level nesmí být vyšší)", maxBad <= maxGood)
+
+        // pokud goodQ dosáhne RED, badQ má typicky skončit níž nebo později
+        if (maxGood == 2) {
+            val firstGoodRed = goodQ.indexOfFirst { it == 2 }
+            val firstBadRed = badQ.indexOfFirst { it == 2 }
+            assertTrue(
+                "Při nízké kvalitě očekávám pozdější nebo žádný RED",
+                firstBadRed == -1 || firstBadRed >= firstGoodRed
+            )
+        }
+    }
+}

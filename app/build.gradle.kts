@@ -57,6 +57,9 @@ android {
 }
 
 dependencies {
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.jetbrains.kotlin:kotlin-test-junit:1.9.24")
+
     val camerax_version = "1.3.1"
 
     // CameraX (nutné)
