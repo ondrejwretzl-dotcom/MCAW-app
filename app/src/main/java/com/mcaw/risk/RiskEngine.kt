@@ -94,7 +94,9 @@ class RiskEngine {
         cutInActive: Boolean,
         brakeCueActive: Boolean,
         brakeCueStrength: Float, // 0..1
-        qualityPoor: Boolean,
+        // C2: quality acts as a weight (0..1), not a hard gate.
+        // 1.0 = full confidence, lower values = more conservative thresholds and lower gain.
+        qualityWeight: Float = 1f,
         riderSpeedMps: Float,
         egoBrakingConfidence: Float, // 0..1
         leanDeg: Float              // deg, NaN if unknown
@@ -145,12 +147,12 @@ class RiskEngine {
             rawRisk += 0.08f * ((egoBrake - 0.65f) / 0.35f).coerceIn(0f, 1f)
         }
 
-        // Quality gating: in poor frames suppress ORANGE; RED only when clearly critical.
-        val conservative = qualityPoor
-        if (conservative) {
-            // reduce risk a bit to avoid "city lights / bumps" noise
-            rawRisk *= 0.88f
-        }
+        // C2: Quality is a continuous weight (no ON/OFF gating).
+        // Lower quality => slightly lower raw risk gain + stricter level thresholds.
+        val qW = qualityWeight.coerceIn(0.60f, 1.0f)
+        val conserv = (1f - qW).coerceIn(0f, 1f)
+        // reduce gain up to ~12% at worst quality (matches previous boolean behavior, but smooth)
+        rawRisk *= (1f - 0.12f * conserv)
 
         // Lean: high lean -> more jitter / different optical flow; reduce sensitivity moderately.
         if (leanDeg.isFinite()) {
@@ -175,16 +177,19 @@ class RiskEngine {
 
         // --- CRITICAL combo guard (avoid single-factor RED spikes) ---
         val slope = if (ttcSlopeSecPerSec.isFinite()) ttcSlopeSecPerSec else 0f
-        val slopeStrong = slope <= -1.0f
+        val slopeThr = -1.0f - 0.40f * conserv
+        val slopeStrong = slope <= slopeThr
         val strongTtc = (ttcLevel >= 2) || (ttcScore >= 0.85f)
-        val strongDist = distScore >= 0.85f
-        val strongRel = relScore >= 0.85f
-        val midDist = distScore >= 0.60f
-        val midRel = relScore >= 0.60f
+        val strongK = 0.85f + 0.05f * conserv
+        val midK = 0.60f + 0.10f * conserv
+        val strongDist = distScore >= strongK
+        val strongRel = relScore >= strongK
+        val midDist = distScore >= midK
+        val midRel = relScore >= midK
         val allowRed = strongTtc && (strongDist || strongRel || (slopeStrong && (midDist || midRel)))
 
         // --- Convert risk -> level (with hysteresis) ---
-        var level = riskToLevelWithHysteresis(risk, conservative)
+        var level = riskToLevelWithHysteresis(risk, conserv)
         if (level == 2 && !allowRed) {
             // Cap to ORANGE when combo confirmation is missing.
             // Also break RED latch immediately to prevent "stuck RED" on spikes.
@@ -208,9 +213,9 @@ class RiskEngine {
             if (brakeCueActive) bits = bits or BIT_BRAKE_CUE
             if (cutInActive) bits = bits or BIT_CUT_IN
             if (egoBrake >= 0.65f) bits = bits or BIT_EGO_BRAKE
-            if (conservative) bits = bits or BIT_QUALITY_CONSERV
+            if (conserv >= 0.15f) bits = bits or BIT_QUALITY_CONSERV
         } else {
-            if (conservative) bits = bits or BIT_QUALITY_CONSERV
+            if (conserv >= 0.15f) bits = bits or BIT_QUALITY_CONSERV
         }
 
         // Fill reusable result
@@ -291,9 +296,11 @@ class RiskEngine {
         return lastTtcLevel
     }
 
-    private fun riskToLevelWithHysteresis(risk: Float, conservative: Boolean): Int {
-        val orangeOn = if (conservative) 0.62f else 0.45f
-        val redOn = if (conservative) 0.82f else 0.75f
+    private fun riskToLevelWithHysteresis(risk: Float, conserv: Float): Int {
+        // C2: smooth thresholds between normal and conservative values.
+        val c = conserv.coerceIn(0f, 1f)
+        val orangeOn = 0.45f + 0.17f * c
+        val redOn = 0.75f + 0.07f * c
 
         val orangeOff = orangeOn - 0.06f
         val redOff = redOn - 0.05f

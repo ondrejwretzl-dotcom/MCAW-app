@@ -69,18 +69,30 @@ class DetectionAnalyzer(
 
     private val perf = PerfAgg()
 
+    // C2: Smoothed quality weight (0..1) to avoid rapid toggling.
+    private var qualityWeightEma: Float = 1f
+    private var qualityWeightEmaValid: Boolean = false
 
-// Frame quality heuristics (cheap): low-light + low edge energy => likely blur/noise.
-private data class FrameQuality(val poor: Boolean, val meanLuma: Float, val meanGrad: Float)
 
-private fun assessFrameQuality(image: ImageProxy): FrameQuality {
-    if (!AppPreferences.qualityGatingEnabled) return FrameQuality(poor = false, meanLuma = Float.NaN, meanGrad = Float.NaN)
-    val plane = image.planes.firstOrNull() ?: return FrameQuality(false, Float.NaN, Float.NaN)
+    // Frame quality heuristics (cheap): low-light + low edge energy => likely blur/noise.
+    // C2: quality is a weight (0..1), not a hard gate.
+    private data class FrameQuality(
+        val poor: Boolean,
+        val meanLuma: Float,
+        val meanGrad: Float,
+        val weight: Float
+    )
+
+    private fun assessFrameQuality(image: ImageProxy): FrameQuality {
+        if (!AppPreferences.qualityGatingEnabled) {
+            return FrameQuality(poor = false, meanLuma = Float.NaN, meanGrad = Float.NaN, weight = 1f)
+        }
+        val plane = image.planes.firstOrNull() ?: return FrameQuality(false, Float.NaN, Float.NaN, 1f)
     val buf = plane.buffer
     val rowStride = plane.rowStride
     val w = image.width
     val h = image.height
-    if (w <= 0 || h <= 0 || rowStride <= 0) return FrameQuality(false, Float.NaN, Float.NaN)
+        if (w <= 0 || h <= 0 || rowStride <= 0) return FrameQuality(false, Float.NaN, Float.NaN, 1f)
 
     // sample a central window to avoid sky/dashboard; works regardless of rotation.
     val x0 = (w * 0.20f).toInt().coerceIn(0, w - 1)
@@ -113,19 +125,31 @@ private fun assessFrameQuality(image: ImageProxy): FrameQuality {
             }
             y += step
         }
-    } catch (t: Throwable) {
-        return FrameQuality(false, Float.NaN, Float.NaN)
-    }
+        } catch (t: Throwable) {
+            return FrameQuality(false, Float.NaN, Float.NaN, 1f)
+        }
 
-    if (n <= 0) return FrameQuality(false, Float.NaN, Float.NaN)
+        if (n <= 0) return FrameQuality(false, Float.NaN, Float.NaN, 1f)
     val meanL = (sumL / n).toFloat()
     val meanG = (sumG / n).toFloat()
 
     // Thresholds tuned to be conservative on phones (Samsung A56).
-    val lowLight = meanL < 35f
-    val lowEdges = meanG < 4.5f
-    val poor = lowLight || lowEdges
-    return FrameQuality(poor = poor, meanLuma = meanL, meanGrad = meanG)
+        val lowLight = meanL < 35f
+        val lowEdges = meanG < 4.5f
+
+        // Weight mapping (conservative): low light and low edge energy reduce confidence smoothly.
+        fun ramp01(x: Float, lo: Float, hi: Float): Float {
+            if (!x.isFinite()) return 1f
+            val t = ((x - lo) / (hi - lo)).coerceIn(0f, 1f)
+            return t
+        }
+        // 0.6..1.0 range to avoid "muting" the system completely.
+        val wLight = 0.60f + 0.40f * ramp01(meanL, lo = 20f, hi = 60f)
+        val wEdges = 0.60f + 0.40f * ramp01(meanG, lo = 3.0f, hi = 8.0f)
+        val wQ = minOf(wLight, wEdges).coerceIn(0.60f, 1.0f)
+
+        val poor = (wQ < 0.75f) || lowLight || lowEdges
+        return FrameQuality(poor = poor, meanLuma = meanL, meanGrad = meanG, weight = wQ)
 }
 
 
@@ -326,7 +350,21 @@ val riderSpeedRawMps = speedProvider.getCurrent().speedMps
             val riderSpeedMps = smoothRiderSpeed(riderSpeedRawMps)
 
 // Frame quality assessment (fast heuristics on Y plane).
-val quality = assessFrameQuality(image)
+            val quality = assessFrameQuality(image)
+            val qualityWeight: Float = run {
+                val q = quality.weight.coerceIn(0f, 1f)
+                // Drop fast (bad frames matter immediately), recover slower (avoid flicker).
+                val a = if (!qualityWeightEmaValid) 1f else if (q < qualityWeightEma) 0.35f else 0.10f
+                if (!qualityWeightEmaValid) {
+                    qualityWeightEma = q
+                    qualityWeightEmaValid = true
+                } else {
+                    qualityWeightEma += a * (q - qualityWeightEma)
+                }
+                qualityWeightEma.coerceIn(0f, 1f)
+            }
+            // Keep the legacy boolean for logging/debug, derived from the smoothed weight.
+            val qualityPoor = AppPreferences.qualityGatingEnabled && (qualityWeight < 0.75f)
 if (AppPreferences.debugOverlay) {
     flog("quality poor=${quality.poor} luma=%.1f grad=%.2f".format(quality.meanLuma, quality.meanGrad))
 }
@@ -546,7 +584,7 @@ val risk = if (riderStanding) {
         cutInActive = (cutInBoostUntilMs > 0L && tsMs <= cutInBoostUntilMs),
         brakeCueActive = brakeCue.active,
         brakeCueStrength = brakeCue.strength,
-        qualityPoor = quality.poor,
+	        qualityWeight = qualityWeight,
         riderSpeedMps = riderSpeedMps,
         egoBrakingConfidence = imu.brakeConfidence,
         leanDeg = imu.leanDeg
@@ -578,7 +616,7 @@ if (level != prevLevel || frameIndex % eventEveryNFrames == 0L) {
         distM = distanceM,
         relV = approachSpeedMps,
         roi = roiContainment,
-        qualityPoor = quality.poor,
+	        qualityPoor = qualityPoor,
         cutIn = (cutInBoostUntilMs > 0L && tsMs <= cutInBoostUntilMs),
         brake = brakeCue.active,
         egoBrake = imu.brakeConfidence,
