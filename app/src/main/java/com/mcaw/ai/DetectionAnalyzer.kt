@@ -290,6 +290,7 @@ private fun updateCutInState(tsMs: Long, box: Box, frameW: Float, frameH: Float)
         if (AppPreferences.debugOverlay) {
             traceLogger = SessionTraceLogger(ctx, SessionLogFile.fileName).also { it.start() }
         }
+        }
     }
 
     override fun analyze(image: ImageProxy) {
