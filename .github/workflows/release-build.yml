@@ -1,4 +1,4 @@
-name: Android CI (signed release)
+name: Android CI (signed release) -s testy
 
 on:
   push:
@@ -19,22 +19,17 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 17
+          java-version: "17"
+          cache: gradle
 
-      # Provision Gradle (bez wrapperu) + cache
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
-        with:
-          gradle-version: 8.7
-          cache-disabled: false
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
 
-      - name: Verify Gradle
-        run: gradle -v
+      # D1: scénářové unit testy (offline regresní síť)
+      - name: Unit tests (D1)
+        run: ./gradlew :app:test --no-daemon
 
-      # DŮLEŽITÉ: bez tohoto se na každém fresh runneru vytvoří nový debug.keystore,
-      # a APK pak nejde aktualizovat (INSTALL_FAILED_UPDATE_INCOMPATIBLE / "Aplikace v konfliktu").
-      # Pro update bez odinstalace je nutné buildit SIGNED release se stabilním keystore.
-      # Keystore bereme ze Secrets (base64) a uložíme do app/mcaw-release.keystore.
+      # Stabilní signed release (pro update bez odinstalace)
       - name: Write release keystore
         env:
           MCAW_KEYSTORE_B64: ${{ secrets.MCAW_KEYSTORE_B64 }}
@@ -45,7 +40,6 @@ jobs:
           fi
           echo "${MCAW_KEYSTORE_B64}" | base64 -d > app/mcaw-release.keystore
 
-      # Build bez wrapperu (release)
       - name: Build Release APK
         env:
           MCAW_KEYSTORE_PATH: mcaw-release.keystore
@@ -54,11 +48,15 @@ jobs:
           MCAW_KEY_PASSWORD: ${{ secrets.MCAW_KEY_PASSWORD }}
           VERSION_CODE: ${{ github.run_number }}
           VERSION_NAME: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('1.0.{0}', github.run_number) }}
-        run: |
-          gradle --no-daemon assembleRelease
+        run: ./gradlew :app:assembleRelease --no-daemon
+
+      - name: Cleanup keystore
+        if: always()
+        run: rm -f app/mcaw-release.keystore
 
       - name: Upload Release APK
         uses: actions/upload-artifact@v4
         with:
           name: MCAW-release-apk
           path: app/build/outputs/apk/release/*.apk
+
