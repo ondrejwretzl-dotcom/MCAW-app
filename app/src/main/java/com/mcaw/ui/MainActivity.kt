@@ -15,9 +15,14 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import android.widget.TextView
 import android.widget.ProgressBar
+import android.util.TypedValue
 import androidx.activity.ComponentActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
 import com.mcaw.ai.DetectionAnalyzer
 import com.mcaw.app.BuildConfig
 import com.mcaw.app.R
@@ -50,6 +55,12 @@ class MainActivity : ComponentActivity() {
     private lateinit var txtBrakeLamp: TextView
     private lateinit var txtWhy: TextView
     private lateinit var progressAlive: ProgressBar
+    private lateinit var dotService: View
+    private lateinit var panelMiniPreview: com.google.android.material.card.MaterialCardView
+    private lateinit var previewThumb: PreviewView
+    private var cameraProvider: ProcessCameraProvider? = null
+    private var previewUseCase: Preview? = null
+    private var miniPreviewBound: Boolean = false
     private var lastBrakeLampUiState: Boolean = false
 
     private var pulseAnimator: ValueAnimator? = null
@@ -62,6 +73,21 @@ class MainActivity : ComponentActivity() {
 
     private val logLines: ArrayDeque<String> = ArrayDeque()
     private val speedHandler = Handler(Looper.getMainLooper())
+    private val metricsWatchdogHandler = Handler(Looper.getMainLooper())
+    private var metricsWatchdogPosted: Boolean = false
+    private val metricsWatchdog = object : Runnable {
+        override fun run() {
+            // If service is running but we haven't received fresh metrics recently,
+            // clear the UI to avoid "stuck" values when the target disappears.
+            if (serviceRunning) {
+                val ageMs = SystemClock.elapsedRealtime() - lastMetricsUpdateMs
+                if (ageMs > 1500L) {
+                    applyNoTargetUi()
+                }
+            }
+            metricsWatchdogHandler.postDelayed(this, 500L)
+        }
+    }
 
     // --- Rider speed UX stabilization ---
     // Metrics from DetectionAnalyzer should be the primary source (when camera/service runs).
@@ -71,6 +97,8 @@ class MainActivity : ComponentActivity() {
 
     private var lastOverallLevelUi: Int = -1
     private var lastTtcLevelUi: Int = -1
+
+    private var lastMetricsUpdateMs: Long = 0L
 
     private val colorBgSafe = android.graphics.Color.parseColor("#1E222A")
     private val colorBgOrange = android.graphics.Color.parseColor("#332514")
@@ -83,6 +111,8 @@ class MainActivity : ComponentActivity() {
     private val metricsReceiver = object : android.content.BroadcastReceiver() {
         override fun onReceive(context: android.content.Context?, intent: android.content.Intent?) {
             if (intent == null) return
+
+            lastMetricsUpdateMs = SystemClock.elapsedRealtime()
 
             val ttc = intent.getFloatExtra(DetectionAnalyzer.EXTRA_TTC, Float.POSITIVE_INFINITY)
             val distance =
@@ -103,11 +133,15 @@ class MainActivity : ComponentActivity() {
             val brakeCue =
                 intent.getBooleanExtra("brake_cue", false) || intent.getBooleanExtra("extra_brake_cue", false)
 
-            // U2: v mřížce chceme reálné hodnoty (bez dlouhých popisků). Popisky jsou v layoutu.
-            txtTtc.text = if (ttc.isFinite()) "%.2f s".format(ttc) else "--.- s"
-            txtDistance.text =
-                if (distance.isFinite()) "%.2f m".format(distance) else
-                    "--.- m"
+            val mappedLabel = LabelMapper.mapLabel(label)
+            val hasTarget = ttc.isFinite() || distance.isFinite() || objectSpeed.isFinite() || !mappedLabel.isNullOrBlank()
+            if (!hasTarget) {
+                applyNoTargetUi()
+            } else {
+                // U2: v mřížce chceme reálné hodnoty (bez dlouhých popisků). Popisky jsou v layoutu.
+                txtTtc.text = if (ttc.isFinite()) "%.2f s".format(ttc) else "--.- s"
+                txtDistance.text = if (distance.isFinite()) "%.1f m".format(distance) else "--.- m"
+            }
 
             // Rider speed from analyzer (primary)
             val riderText = formatRiderSpeedFromMps(riderSpeed)
@@ -116,15 +150,11 @@ class MainActivity : ComponentActivity() {
             val speedKmh = if (speed.isFinite()) speed * 3.6f else Float.POSITIVE_INFINITY
             val objKmh = if (objectSpeed.isFinite()) objectSpeed * 3.6f else Float.POSITIVE_INFINITY
 
-            txtSpeed.text =
-                if (speedKmh.isFinite()) "%.1f km/h".format(speedKmh) else
-                    "--.- km/h"
-            txtObjectSpeed.text =
-                if (objKmh.isFinite()) "%.1f km/h".format(objKmh) else
-                    "--.- km/h"
-
-            val mappedLabel = LabelMapper.mapLabel(label)
-            txtDetectedObject.text = if (mappedLabel.isNotBlank()) mappedLabel else "--"
+            if (hasTarget) {
+                txtSpeed.text = if (speedKmh.isFinite()) "%.1f km/h".format(speedKmh) else "--.- km/h"
+                txtObjectSpeed.text = if (objKmh.isFinite()) "%.1f km/h".format(objKmh) else "--.- km/h"
+                txtDetectedObject.text = if (mappedLabel.isNotBlank()) mappedLabel else "--"
+            }
 
             // UI pravidlo U2: TTC se nemá barvit podle alertů. Vždy klidná, neutrální barva.
             val ttcLevel = ttcLevelForUi(ttc)
@@ -151,6 +181,14 @@ class MainActivity : ComponentActivity() {
                     "level=$level brakeCue=$brakeCue reason=${alertReason.replace("\n"," ").take(120)}"
             )
         }
+    }
+
+    private fun applyNoTargetUi() {
+        txtTtc.text = "--.- s"
+        txtDistance.text = "--.- m"
+        txtSpeed.text = "--.- km/h"
+        txtObjectSpeed.text = "--.- km/h"
+        txtDetectedObject.text = "--"
     }
 
     private val requiredPerms = arrayOf(
@@ -180,8 +218,14 @@ class MainActivity : ComponentActivity() {
         txtBrakeLamp = findViewById(R.id.txtBrakeLamp)
         txtWhy = findViewById(R.id.txtWhy)
         progressAlive = findViewById(R.id.progressAlive)
+        dotService = findViewById(R.id.dotService)
+        panelMiniPreview = findViewById(R.id.panelMiniPreview)
+        previewThumb = findViewById(R.id.previewThumb)
         updateWhy(0, "")
         updateBrakeLamp(false)
+
+        setupServiceDot()
+        setupMiniPreview()
 
         // Jemný vizuální rám metrik – stabilní, bez zásahů do výpočtu risk.
         panelMetrics.strokeWidth = dpToPx(2)
@@ -197,6 +241,8 @@ class MainActivity : ComponentActivity() {
         logActivity("app_start build=${BuildConfig.VERSION_NAME}(${BuildConfig.VERSION_CODE})")
 
         findViewById<MaterialButton>(R.id.btnStart).setOnClickListener {
+            // Prevent camera conflicts: stop mini preview before starting the service.
+            stopMiniPreview()
             ensurePermissions(PendingAction.START_ENGINE)
         }
         findViewById<MaterialButton>(R.id.btnStop).setOnClickListener { stopEngine() }
@@ -208,6 +254,20 @@ class MainActivity : ComponentActivity() {
             ensurePermissions(PendingAction.OPEN_CAMERA)
         }
 
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Mini preview is debug-oriented and must never compete with the running service.
+        refreshMiniPreviewVisibility()
+        maybeStartMiniPreview()
+        startMetricsWatchdog()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        stopMiniPreview()
+        stopMetricsWatchdog()
     }
 
     private fun ensurePermissions(action: PendingAction) {
@@ -249,6 +309,8 @@ class MainActivity : ComponentActivity() {
         ContextCompat.startForegroundService(this, intent)
         serviceRunning = true
         txtStatus.text = "Služba: BĚŽÍ"
+        updateServiceDot(true)
+        refreshMiniPreviewVisibility()
         // UI-only: SAFE alive indikace se může zobrazit ještě před prvními metrikami.
         updateAliveIndicator(running = true, riderStanding = false, overallLevel = 0)
         addLog("Služba spuštěna")
@@ -259,10 +321,13 @@ class MainActivity : ComponentActivity() {
         stopService(Intent(this, McawService::class.java))
         serviceRunning = false
         txtStatus.text = "Služba: ZASTAVENA"
+        updateServiceDot(false)
         updateAliveIndicator(running = false, riderStanding = false, overallLevel = 0)
         stopPulse()
         alertTransitionAnimator?.cancel()
         panelMetrics.strokeColor = android.graphics.Color.TRANSPARENT
+        refreshMiniPreviewVisibility()
+        maybeStartMiniPreview()
         addLog("Služba zastavena")
         logActivity("service_stop")
     }
@@ -391,6 +456,8 @@ class MainActivity : ComponentActivity() {
             else -> "Služba: BĚŽÍ"
         }
 
+        updateServiceDot(serviceRunning)
+
         // SAFE "alive" indikace: jen když služba běží, jezdec nestojí a overall je SAFE.
         updateAliveIndicator(serviceRunning, riderStanding, overallLevel)
 
@@ -412,6 +479,18 @@ class MainActivity : ComponentActivity() {
             2 -> AppPreferences.ttsTextRed.ifBlank { "BRZDI" }
             1 -> AppPreferences.ttsTextOrange.ifBlank { "POZOR" }
             else -> "SAFE"
+        }
+
+        // SAFE má být klidný (menší), ORANGE/RED dominantní (větší).
+        val newAlertTextSp = when (overallLevel) {
+            2 -> 60f
+            1 -> 60f
+            else -> 44f
+        }
+        val newAlertPaddingV = when (overallLevel) {
+            2 -> dpToPx(22)
+            1 -> dpToPx(22)
+            else -> dpToPx(14)
         }
 
         val newMetricsStroke = when (overallLevel) {
@@ -452,6 +531,8 @@ class MainActivity : ComponentActivity() {
                         txtAlert.animate().cancel()
                         txtAlert.animate().alpha(0.0f).setDuration(90L).withEndAction {
                             txtAlert.text = newAlertText
+                            txtAlert.setTextSize(TypedValue.COMPLEX_UNIT_SP, newAlertTextSp)
+                            txtAlert.setPadding(txtAlert.paddingLeft, newAlertPaddingV, txtAlert.paddingRight, newAlertPaddingV)
                             txtAlert.animate().alpha(1.0f).setDuration(120L).start()
                         }.start()
                     }
@@ -483,6 +564,92 @@ class MainActivity : ComponentActivity() {
 
     private fun dpToPx(dp: Int): Int {
         return (dp * resources.displayMetrics.density).toInt()
+    }
+
+    private fun setupServiceDot() {
+        // dotService is a simple view in XML; render it as a circle.
+        val bg = android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.OVAL
+            setColor(android.graphics.Color.parseColor("#3A3F4A"))
+        }
+        dotService.background = bg
+    }
+
+    private fun updateServiceDot(running: Boolean) {
+        val color = if (running) colorAccentSafe else android.graphics.Color.parseColor("#3A3F4A")
+        val bg = (dotService.background as? android.graphics.drawable.GradientDrawable)
+            ?: android.graphics.drawable.GradientDrawable().apply { shape = android.graphics.drawable.GradientDrawable.OVAL }
+        bg.setColor(color)
+        dotService.background = bg
+    }
+
+    private fun setupMiniPreview() {
+        // Debug-only mini preview: tap opens the full PreviewActivity.
+        panelMiniPreview.setOnClickListener {
+            startActivity(Intent(this, PreviewActivity::class.java))
+        }
+    }
+
+    private fun refreshMiniPreviewVisibility() {
+        // Show mini preview only in debug overlay mode, and only when the service is NOT running.
+        val show = AppPreferences.debugOverlay && !serviceRunning
+        panelMiniPreview.visibility = if (show) View.VISIBLE else View.GONE
+    }
+
+    private fun maybeStartMiniPreview() {
+        if (panelMiniPreview.visibility != View.VISIBLE) return
+        if (!hasCameraPermission()) return
+        if (miniPreviewBound) return
+
+        val providerFuture = ProcessCameraProvider.getInstance(this)
+        providerFuture.addListener({
+            cameraProvider = providerFuture.get()
+            bindMiniPreview()
+        }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun bindMiniPreview() {
+        val provider = cameraProvider ?: return
+        if (serviceRunning) return
+        try {
+            provider.unbindAll()
+            val selector = CameraSelector.DEFAULT_BACK_CAMERA
+            previewUseCase = Preview.Builder().build().also {
+                it.setSurfaceProvider(previewThumb.surfaceProvider)
+            }
+            provider.bindToLifecycle(this, selector, previewUseCase)
+            miniPreviewBound = true
+        } catch (t: Throwable) {
+            miniPreviewBound = false
+            // Fail silently: mini preview is optional and must never break main UX.
+        }
+    }
+
+    private fun stopMiniPreview() {
+        if (!miniPreviewBound) return
+        try {
+            cameraProvider?.unbindAll()
+        } catch (_: Throwable) {
+            // ignore
+        }
+        miniPreviewBound = false
+        previewUseCase = null
+    }
+
+    private fun hasCameraPermission(): Boolean {
+        return ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun startMetricsWatchdog() {
+        if (metricsWatchdogPosted) return
+        metricsWatchdogPosted = true
+        metricsWatchdogHandler.post(metricsWatchdog)
+    }
+
+    private fun stopMetricsWatchdog() {
+        if (!metricsWatchdogPosted) return
+        metricsWatchdogPosted = false
+        metricsWatchdogHandler.removeCallbacks(metricsWatchdog)
     }
 
     private fun startPulse(level: Int) {

@@ -57,7 +57,7 @@
 
     </LinearLayout>
 
-    <!-- Dominantní alert banner (text dle TTS nastavení; logika v kódu) -->
+    <!-- Dominantní alert banner (SAFE klidný / ORANGE+RED dominantní; text dle TTS nastavení v kódu) -->
     <com.google.android.material.card.MaterialCardView
         android:id="@+id/panelAlert"
         android:layout_width="match_parent"
@@ -82,28 +82,90 @@
 
     </com.google.android.material.card.MaterialCardView>
 
-    <!-- Stav služby: menší, nedominantní (zachovat id + update v kódu) -->
-    <com.google.android.material.card.MaterialCardView
+    <!-- Stav služby: pill (nedominantní) + mini preview (debug-only) -->
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginBottom="10dp"
-        app:cardCornerRadius="18dp"
-        app:cardUseCompatPadding="true"
-        app:cardElevation="2dp">
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
 
-        <TextView
-            android:id="@+id/txtStatus"
-            android:layout_width="match_parent"
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/panelService"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:text="Služba: ZASTAVENA"
-            android:textColor="#C9D1D9"
-            android:textStyle="bold"
-            android:textSize="16sp"
-            android:gravity="center"
-            android:padding="14dp"
-            android:background="#1E222A" />
+            android:layout_weight="1"
+            app:cardCornerRadius="18dp"
+            app:cardUseCompatPadding="true"
+            app:cardElevation="2dp">
 
-    </com.google.android.material.card.MaterialCardView>
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:padding="12dp"
+                android:background="#1E222A">
+
+                <View
+                    android:id="@+id/dotService"
+                    android:layout_width="10dp"
+                    android:layout_height="10dp"
+                    android:layout_marginEnd="10dp"
+                    android:background="@android:color/darker_gray" />
+
+                <TextView
+                    android:id="@+id/txtStatus"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Služba: ZASTAVENA"
+                    android:textColor="#C9D1D9"
+                    android:textStyle="bold"
+                    android:textSize="16sp" />
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/panelMiniPreview"
+            android:layout_width="110dp"
+            android:layout_height="72dp"
+            android:layout_marginStart="10dp"
+            android:visibility="gone"
+            app:cardCornerRadius="16dp"
+            app:cardUseCompatPadding="true"
+            app:cardElevation="2dp">
+
+            <FrameLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="#0B1115">
+
+                <androidx.camera.view.PreviewView
+                    android:id="@+id/previewThumb"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:scaleType="fitCenter" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="bottom|start"
+                    android:layout_margin="6dp"
+                    android:paddingLeft="6dp"
+                    android:paddingRight="6dp"
+                    android:paddingTop="2dp"
+                    android:paddingBottom="2dp"
+                    android:text="PREVIEW"
+                    android:textSize="10sp"
+                    android:textStyle="bold"
+                    android:textColor="#FFFFFF"
+                    android:background="#55000000" />
+
+            </FrameLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+    </LinearLayout>
 
     <!-- Panel s metrikami: 2x3 boxy, větší čísla, klidné (bez zásahu do logiky/TTS) -->
     <com.google.android.material.card.MaterialCardView
@@ -157,10 +219,12 @@
                         android:text="--.- s"
                         android:textColor="#C9D1D9"
                         android:textStyle="bold"
-                        android:textSize="32sp"
                         android:gravity="center"
                         android:maxLines="1"
-                        android:ellipsize="end" />
+                        android:autoSizeTextType="uniform"
+                        android:autoSizeMinTextSize="22sp"
+                        android:autoSizeMaxTextSize="40sp"
+                        android:autoSizeStepGranularity="2sp" />
                 </LinearLayout>
 
                 <!-- 2) Distance -->
@@ -190,10 +254,12 @@
                         android:text="--.- m"
                         android:textColor="#FFFFFF"
                         android:textStyle="bold"
-                        android:textSize="28sp"
                         android:gravity="center"
                         android:maxLines="1"
-                        android:ellipsize="end" />
+                        android:autoSizeTextType="uniform"
+                        android:autoSizeMinTextSize="20sp"
+                        android:autoSizeMaxTextSize="34sp"
+                        android:autoSizeStepGranularity="2sp" />
                 </LinearLayout>
 
                 <!-- 3) Rider speed -->
@@ -223,10 +289,12 @@
                         android:text="0.0 km/h"
                         android:textColor="#FFFFFF"
                         android:textStyle="bold"
-                        android:textSize="28sp"
                         android:gravity="center"
                         android:maxLines="1"
-                        android:ellipsize="end" />
+                        android:autoSizeTextType="uniform"
+                        android:autoSizeMinTextSize="20sp"
+                        android:autoSizeMaxTextSize="34sp"
+                        android:autoSizeStepGranularity="2sp" />
                 </LinearLayout>
 
                 <!-- 4) Relative speed -->
@@ -256,10 +324,12 @@
                         android:text="--.- km/h"
                         android:textColor="#FFFFFF"
                         android:textStyle="bold"
-                        android:textSize="28sp"
                         android:gravity="center"
                         android:maxLines="1"
-                        android:ellipsize="end" />
+                        android:autoSizeTextType="uniform"
+                        android:autoSizeMinTextSize="20sp"
+                        android:autoSizeMaxTextSize="34sp"
+                        android:autoSizeStepGranularity="2sp" />
                 </LinearLayout>
 
                 <!-- 5) Object speed -->
@@ -289,10 +359,12 @@
                         android:text="--.- km/h"
                         android:textColor="#FFFFFF"
                         android:textStyle="bold"
-                        android:textSize="28sp"
                         android:gravity="center"
                         android:maxLines="1"
-                        android:ellipsize="end" />
+                        android:autoSizeTextType="uniform"
+                        android:autoSizeMinTextSize="20sp"
+                        android:autoSizeMaxTextSize="34sp"
+                        android:autoSizeStepGranularity="2sp" />
                 </LinearLayout>
 
                 <!-- 6) Detected object -->
@@ -322,10 +394,12 @@
                         android:text="--"
                         android:textColor="#FFFFFF"
                         android:textStyle="bold"
-                        android:textSize="22sp"
                         android:gravity="center"
-                        android:maxLines="2"
-                        android:ellipsize="end" />
+                        android:maxLines="1"
+                        android:autoSizeTextType="uniform"
+                        android:autoSizeMinTextSize="16sp"
+                        android:autoSizeMaxTextSize="28sp"
+                        android:autoSizeStepGranularity="2sp" />
                 </LinearLayout>
 
             </GridLayout>
