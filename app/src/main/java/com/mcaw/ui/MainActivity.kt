@@ -33,6 +33,8 @@ import com.mcaw.util.ReasonTextMapper
 class MainActivity : ComponentActivity() {
 
     private lateinit var txtStatus: TextView
+    private lateinit var txtAlert: TextView
+    private lateinit var panelAlert: com.google.android.material.card.MaterialCardView
     private var serviceRunning: Boolean = false
     private lateinit var txtTtc: TextView
     private lateinit var txtDistance: TextView
@@ -101,10 +103,11 @@ class MainActivity : ComponentActivity() {
             val brakeCue =
                 intent.getBooleanExtra("brake_cue", false) || intent.getBooleanExtra("extra_brake_cue", false)
 
-            txtTtc.text = if (ttc.isFinite()) "TTC: %.2f s".format(ttc) else "TTC: --.- s"
+            // U2: v mřížce chceme reálné hodnoty (bez dlouhých popisků). Popisky jsou v layoutu.
+            txtTtc.text = if (ttc.isFinite()) "%.2f s".format(ttc) else "--.- s"
             txtDistance.text =
-                if (distance.isFinite()) "Vzdálenost: %.2f m".format(distance) else
-                    "Vzdálenost: --.- m"
+                if (distance.isFinite()) "%.2f m".format(distance) else
+                    "--.- m"
 
             // Rider speed from analyzer (primary)
             val riderText = formatRiderSpeedFromMps(riderSpeed)
@@ -114,36 +117,18 @@ class MainActivity : ComponentActivity() {
             val objKmh = if (objectSpeed.isFinite()) objectSpeed * 3.6f else Float.POSITIVE_INFINITY
 
             txtSpeed.text =
-                if (speedKmh.isFinite()) "Rychlost přiblížení: %.1f km/h".format(speedKmh) else
-                    "Rychlost přiblížení: --.- km/h"
+                if (speedKmh.isFinite()) "%.1f km/h".format(speedKmh) else
+                    "--.- km/h"
             txtObjectSpeed.text =
-                if (objKmh.isFinite()) "Rychlost objektu: %.1f km/h".format(objKmh) else
-                    "Rychlost objektu: --.- km/h"
+                if (objKmh.isFinite()) "%.1f km/h".format(objKmh) else
+                    "--.- km/h"
 
             val mappedLabel = LabelMapper.mapLabel(label)
-            txtDetectedObject.text = if (mappedLabel.isNotBlank()) {
-                "Detekovaný objekt: $mappedLabel"
-            } else {
-                "Detekovaný objekt: --"
-            }
+            txtDetectedObject.text = if (mappedLabel.isNotBlank()) mappedLabel else "--"
 
-            val overallColor = when (disp.level) {
-                2 -> colorAccentRed
-                1 -> colorAccentOrange
-                else -> colorAccentSafe
-            }
-
-            // TTC barva má odpovídat zobrazené hodnotě TTC (ne "overall" levelu)
+            // UI pravidlo U2: TTC se nemá barvit podle alertů. Vždy klidná, neutrální barva.
             val ttcLevel = ttcLevelForUi(ttc)
-            val ttcColor = when (ttcLevel) {
-                2 -> colorAccentRed
-                1 -> colorAccentOrange
-                else -> colorAccentSafe
-            }
-            txtTtc.setTextColor(ttcColor)
-
-            // Celkový stav (overall level) promítneme do statusu, aby bylo jasné, že může být horší než TTC
-            txtStatus.setTextColor(overallColor)
+            txtTtc.setTextColor(android.graphics.Color.parseColor("#C9D1D9"))
 
             val riderKmhForUi = if (riderSpeed.isFinite()) riderSpeed * 3.6f else Float.POSITIVE_INFINITY
             applyVisualAlert(disp.level, ttcLevel, riderKmhForUi)
@@ -178,6 +163,8 @@ class MainActivity : ComponentActivity() {
         setContentView(R.layout.activity_main)
 
         txtStatus = findViewById(R.id.txtStatus)
+        txtAlert = findViewById(R.id.txtAlert)
+        panelAlert = findViewById(R.id.panelAlert)
         txtTtc = findViewById(R.id.txtTtc)
         txtDistance = findViewById(R.id.txtDistance)
         txtSpeed = findViewById(R.id.txtSpeed)
@@ -397,12 +384,11 @@ class MainActivity : ComponentActivity() {
 
     private fun applyVisualAlert(overallLevel: Int, ttcLevel: Int, riderKmh: Float) {
         val riderStanding = riderKmh.isFinite() && riderKmh < 2.0f
+        // Stav služby = nedominantní; alert má vlastní banner.
         txtStatus.text = when {
             !serviceRunning -> "Služba: ZASTAVENA"
-            riderStanding -> "Služba: AKTIVNÍ · stojíš (alert vypnut)"
-            overallLevel == 2 -> "Služba: AKTIVNÍ · KRITICKÉ"
-            overallLevel == 1 -> "Služba: AKTIVNÍ · VAROVÁNÍ"
-            else -> "Služba: AKTIVNÍ · OK"
+            riderStanding -> "Služba: BĚŽÍ · stojíš (alert vypnut)"
+            else -> "Služba: BĚŽÍ"
         }
 
         // SAFE "alive" indikace: jen když služba běží, jezdec nestojí a overall je SAFE.
@@ -411,15 +397,21 @@ class MainActivity : ComponentActivity() {
         // Jemný přechod mezi úrovněmi – bez blikání.
         animateAlertTransitionIfNeeded(overallLevel, ttcLevel)
 
-        val shouldPulse = serviceRunning && !riderStanding && overallLevel > 0
-        if (shouldPulse) startPulse(overallLevel) else stopPulse()
+        // U2: žádné blikání / pulzování (alert musí být stabilní). Plynulé crossfade stačí.
+        stopPulse()
     }
 
     private fun animateAlertTransitionIfNeeded(overallLevel: Int, ttcLevel: Int) {
-        val newStatusBg = when (overallLevel) {
+        val newAlertBg = when (overallLevel) {
             2 -> colorBgRed
             1 -> colorBgOrange
             else -> colorBgSafe
+        }
+
+        val newAlertText = when (overallLevel) {
+            2 -> AppPreferences.ttsTextRed.ifBlank { "BRZDI" }
+            1 -> AppPreferences.ttsTextOrange.ifBlank { "POZOR" }
+            else -> "SAFE"
         }
 
         val newMetricsStroke = when (overallLevel) {
@@ -428,23 +420,17 @@ class MainActivity : ComponentActivity() {
             else -> android.graphics.Color.TRANSPARENT
         }
 
-        val newTtcBg = when (ttcLevel) {
-            2 -> colorBgRed
-            1 -> colorBgOrange
-            else -> android.graphics.Color.TRANSPARENT
-        }
-
         val needsOverallAnim = lastOverallLevelUi != overallLevel
-        val needsTtcAnim = lastTtcLevelUi != ttcLevel
+        // TTC UI je klidné a nebarví se, proto ho neanimujeme.
+        val needsTtcAnim = false
 
         // Pokud se nic nezměnilo, nedělej žádnou animaci (žádné micro-flicker).
         if (!needsOverallAnim && !needsTtcAnim) {
             return
         }
 
-        // Start barvy z aktuálního UI (fallback na SAFE/transparent).
-        val statusStart = (txtStatus.background as? android.graphics.drawable.ColorDrawable)?.color ?: colorBgSafe
-        val ttcStart = (txtTtc.background as? android.graphics.drawable.ColorDrawable)?.color ?: android.graphics.Color.TRANSPARENT
+        // Start barvy z aktuálního UI (fallback na SAFE).
+        val alertStart = (txtAlert.background as? android.graphics.drawable.ColorDrawable)?.color ?: colorBgSafe
         val strokeStart = panelMetrics.strokeColor
 
         alertTransitionAnimator?.cancel()
@@ -454,18 +440,28 @@ class MainActivity : ComponentActivity() {
             addUpdateListener { a ->
                 val t = a.animatedValue as Float
                 if (needsOverallAnim) {
-                    txtStatus.setBackgroundColor(lerpColor(statusStart, newStatusBg, t))
+                    // Crossfade banner background + jemný fade textu.
+                    txtAlert.setBackgroundColor(lerpColor(alertStart, newAlertBg, t))
                     panelMetrics.strokeColor = lerpColor(strokeStart, newMetricsStroke, t)
                 }
-                if (needsTtcAnim) {
-                    txtTtc.setBackgroundColor(lerpColor(ttcStart, newTtcBg, t))
-                }
             }
+            // Text banneru měníme jednorázově s krátkým alpha přechodem.
+            addListener(object : android.animation.AnimatorListenerAdapter() {
+                override fun onAnimationStart(animation: android.animation.Animator) {
+                    if (needsOverallAnim) {
+                        txtAlert.animate().cancel()
+                        txtAlert.animate().alpha(0.0f).setDuration(90L).withEndAction {
+                            txtAlert.text = newAlertText
+                            txtAlert.animate().alpha(1.0f).setDuration(120L).start()
+                        }.start()
+                    }
+                }
+            })
             start()
         }
 
         lastOverallLevelUi = overallLevel
-        lastTtcLevelUi = ttcLevel
+        lastTtcLevelUi = 0
     }
 
     private fun updateAliveIndicator(running: Boolean, riderStanding: Boolean, overallLevel: Int) {
@@ -575,13 +571,13 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun formatRiderSpeedFromMps(speedMps: Float): String {
-        if (!speedMps.isFinite() || speedMps < 0f) return "Rychlost jezdce: --.- km/h"
+        if (!speedMps.isFinite() || speedMps < 0f) return "--.- km/h"
 
         // deadband (GPS jitter at low speeds)
         val deadbandMps = 0.5f // ~1.8 km/h
         val v = if (speedMps < deadbandMps) 0f else speedMps.coerceIn(0f, 80f)
         val kmh = v * 3.6f
-        return "Rychlost jezdce: %.1f km/h".format(kmh)
+        return "%.1f km/h".format(kmh)
     }
 
     private fun applyRiderSpeedText(text: String, fromMetrics: Boolean) {

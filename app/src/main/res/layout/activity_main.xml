@@ -57,7 +57,32 @@
 
     </LinearLayout>
 
-    <!-- Stav služby (zachovat id + vizuální update v kódu) -->
+    <!-- Dominantní alert banner (text dle TTS nastavení; logika v kódu) -->
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/panelAlert"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="10dp"
+        app:cardCornerRadius="22dp"
+        app:cardUseCompatPadding="true"
+        app:cardElevation="3dp">
+
+        <TextView
+            android:id="@+id/txtAlert"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="SAFE"
+            android:textColor="#FFFFFF"
+            android:textStyle="bold"
+            android:textSize="44sp"
+            android:gravity="center"
+            android:paddingTop="18dp"
+            android:paddingBottom="18dp"
+            android:background="#0B1115" />
+
+    </com.google.android.material.card.MaterialCardView>
+
+    <!-- Stav služby: menší, nedominantní (zachovat id + update v kódu) -->
     <com.google.android.material.card.MaterialCardView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -71,7 +96,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Služba: ZASTAVENA"
-            android:textColor="#FFFFFF"
+            android:textColor="#C9D1D9"
             android:textStyle="bold"
             android:textSize="16sp"
             android:gravity="center"
@@ -112,20 +137,29 @@
                     android:layout_columnWeight="1"
                     android:layout_rowWeight="1"
                     android:background="#1E222A"
-                    android:padding="12dp"
+                    android:padding="8dp"
                     android:orientation="vertical"
                     android:gravity="center">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="TTC"
+                        android:textColor="#6B7280"
+                        android:textSize="12sp"
+                        android:textStyle="bold"
+                        android:gravity="center" />
 
                     <TextView
                         android:id="@+id/txtTtc"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="TTC: --.- s"
-                        android:textColor="#00E5A8"
+                        android:text="--.- s"
+                        android:textColor="#C9D1D9"
                         android:textStyle="bold"
-                        android:textSize="34sp"
+                        android:textSize="32sp"
                         android:gravity="center"
-                        android:maxLines="2"
+                        android:maxLines="1"
                         android:ellipsize="end" />
                 </LinearLayout>
 
@@ -136,20 +170,29 @@
                     android:layout_columnWeight="1"
                     android:layout_rowWeight="1"
                     android:background="#1E222A"
-                    android:padding="12dp"
+                    android:padding="8dp"
                     android:orientation="vertical"
                     android:gravity="center">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="VZDÁL"
+                        android:textColor="#6B7280"
+                        android:textSize="12sp"
+                        android:textStyle="bold"
+                        android:gravity="center" />
 
                     <TextView
                         android:id="@+id/txtDistance"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Vzdálenost: --.- m"
+                        android:text="--.- m"
                         android:textColor="#FFFFFF"
                         android:textStyle="bold"
-                        android:textSize="22sp"
+                        android:textSize="28sp"
                         android:gravity="center"
-                        android:maxLines="2"
+                        android:maxLines="1"
                         android:ellipsize="end" />
                 </LinearLayout>
 
@@ -160,20 +203,29 @@
                     android:layout_columnWeight="1"
                     android:layout_rowWeight="1"
                     android:background="#1E222A"
-                    android:padding="12dp"
+                    android:padding="8dp"
                     android:orientation="vertical"
                     android:gravity="center">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="TY"
+                        android:textColor="#6B7280"
+                        android:textSize="12sp"
+                        android:textStyle="bold"
+                        android:gravity="center" />
 
                     <TextView
                         android:id="@+id/txtRiderSpeed"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Rychlost jezdce: 0.0 km/h"
+                        android:text="0.0 km/h"
                         android:textColor="#FFFFFF"
                         android:textStyle="bold"
-                        android:textSize="22sp"
+                        android:textSize="28sp"
                         android:gravity="center"
-                        android:maxLines="2"
+                        android:maxLines="1"
                         android:ellipsize="end" />
                 </LinearLayout>
 
@@ -184,20 +236,29 @@
                     android:layout_columnWeight="1"
                     android:layout_rowWeight="1"
                     android:background="#1E222A"
-                    android:padding="12dp"
+                    android:padding="8dp"
                     android:orientation="vertical"
                     android:gravity="center">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="REL"
+                        android:textColor="#6B7280"
+                        android:textSize="12sp"
+                        android:textStyle="bold"
+                        android:gravity="center" />
 
                     <TextView
                         android:id="@+id/txtSpeed"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Rychlost přiblížení: --.- km/h"
+                        android:text="--.- km/h"
                         android:textColor="#FFFFFF"
                         android:textStyle="bold"
-                        android:textSize="22sp"
+                        android:textSize="28sp"
                         android:gravity="center"
-                        android:maxLines="2"
+                        android:maxLines="1"
                         android:ellipsize="end" />
                 </LinearLayout>
 
@@ -208,20 +269,29 @@
                     android:layout_columnWeight="1"
                     android:layout_rowWeight="1"
                     android:background="#1E222A"
-                    android:padding="12dp"
+                    android:padding="8dp"
                     android:orientation="vertical"
                     android:gravity="center">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="OBJ"
+                        android:textColor="#6B7280"
+                        android:textSize="12sp"
+                        android:textStyle="bold"
+                        android:gravity="center" />
 
                     <TextView
                         android:id="@+id/txtObjectSpeed"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Rychlost objektu: --.- km/h"
+                        android:text="--.- km/h"
                         android:textColor="#FFFFFF"
                         android:textStyle="bold"
-                        android:textSize="22sp"
+                        android:textSize="28sp"
                         android:gravity="center"
-                        android:maxLines="2"
+                        android:maxLines="1"
                         android:ellipsize="end" />
                 </LinearLayout>
 
@@ -232,18 +302,27 @@
                     android:layout_columnWeight="1"
                     android:layout_rowWeight="1"
                     android:background="#1E222A"
-                    android:padding="12dp"
+                    android:padding="8dp"
                     android:orientation="vertical"
                     android:gravity="center">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="OBJEKT"
+                        android:textColor="#6B7280"
+                        android:textSize="12sp"
+                        android:textStyle="bold"
+                        android:gravity="center" />
 
                     <TextView
                         android:id="@+id/txtDetectedObject"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Detekovaný objekt: --"
+                        android:text="--"
                         android:textColor="#FFFFFF"
                         android:textStyle="bold"
-                        android:textSize="20sp"
+                        android:textSize="22sp"
                         android:gravity="center"
                         android:maxLines="2"
                         android:ellipsize="end" />
