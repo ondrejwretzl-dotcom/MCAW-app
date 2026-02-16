@@ -10,8 +10,11 @@ import android.os.Looper
 import android.os.SystemClock
 import android.text.method.ScrollingMovementMethod
 import android.view.View
+import android.view.animation.DecelerateInterpolator
 import com.google.android.material.button.MaterialButton
+import com.google.android.material.card.MaterialCardView
 import android.widget.TextView
+import android.widget.ProgressBar
 import androidx.activity.ComponentActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -40,13 +43,15 @@ class MainActivity : ComponentActivity() {
     private lateinit var txtActivityLog: TextView
     private lateinit var txtBuildInfo: TextView
     private lateinit var root: View
-    private lateinit var panelMetrics: View
+    private lateinit var panelMetrics: MaterialCardView
     private lateinit var brakeLamp: TextView
     private lateinit var txtBrakeLamp: TextView
     private lateinit var txtWhy: TextView
+    private lateinit var progressAlive: ProgressBar
     private var lastBrakeLampUiState: Boolean = false
 
     private var pulseAnimator: ValueAnimator? = null
+    private var alertTransitionAnimator: ValueAnimator? = null
     private var pendingAction: PendingAction? = null
     private val alertSmoother = AlertUiSmoother()
     private lateinit var speedProvider: SpeedProvider
@@ -61,6 +66,17 @@ class MainActivity : ComponentActivity() {
     // SpeedMonitor polling stays as a fallback only when metrics haven't arrived recently.
     private var lastMetricsRiderSpeedUpdateMs: Long = 0L
     private var lastRiderSpeedText: String? = null
+
+    private var lastOverallLevelUi: Int = -1
+    private var lastTtcLevelUi: Int = -1
+
+    private val colorBgSafe = android.graphics.Color.parseColor("#1E222A")
+    private val colorBgOrange = android.graphics.Color.parseColor("#332514")
+    private val colorBgRed = android.graphics.Color.parseColor("#331B1B")
+
+    private val colorAccentSafe = android.graphics.Color.parseColor("#00E5A8")
+    private val colorAccentOrange = android.graphics.Color.parseColor("#FF9F0A")
+    private val colorAccentRed = android.graphics.Color.parseColor("#FF3B30")
 
     private val metricsReceiver = object : android.content.BroadcastReceiver() {
         override fun onReceive(context: android.content.Context?, intent: android.content.Intent?) {
@@ -112,17 +128,17 @@ class MainActivity : ComponentActivity() {
             }
 
             val overallColor = when (disp.level) {
-                2 -> android.graphics.Color.parseColor("#FF3B30")
-                1 -> android.graphics.Color.parseColor("#FF9F0A")
-                else -> android.graphics.Color.parseColor("#00E5A8")
+                2 -> colorAccentRed
+                1 -> colorAccentOrange
+                else -> colorAccentSafe
             }
 
             // TTC barva má odpovídat zobrazené hodnotě TTC (ne "overall" levelu)
             val ttcLevel = ttcLevelForUi(ttc)
             val ttcColor = when (ttcLevel) {
-                2 -> android.graphics.Color.parseColor("#FF3B30")
-                1 -> android.graphics.Color.parseColor("#FF9F0A")
-                else -> android.graphics.Color.parseColor("#00E5A8")
+                2 -> colorAccentRed
+                1 -> colorAccentOrange
+                else -> colorAccentSafe
             }
             txtTtc.setTextColor(ttcColor)
 
@@ -176,8 +192,13 @@ class MainActivity : ComponentActivity() {
         brakeLamp = findViewById(R.id.brakeLamp)
         txtBrakeLamp = findViewById(R.id.txtBrakeLamp)
         txtWhy = findViewById(R.id.txtWhy)
+        progressAlive = findViewById(R.id.progressAlive)
         updateWhy(0, "")
         updateBrakeLamp(false)
+
+        // Jemný vizuální rám metrik – stabilní, bez zásahů do výpočtu risk.
+        panelMetrics.strokeWidth = dpToPx(2)
+        panelMetrics.strokeColor = android.graphics.Color.TRANSPARENT
 
         speedProvider = SpeedProvider(this)
         speedMonitor = SpeedMonitor(speedProvider)
@@ -241,6 +262,8 @@ class MainActivity : ComponentActivity() {
         ContextCompat.startForegroundService(this, intent)
         serviceRunning = true
         txtStatus.text = "Služba: BĚŽÍ"
+        // UI-only: SAFE alive indikace se může zobrazit ještě před prvními metrikami.
+        updateAliveIndicator(running = true, riderStanding = false, overallLevel = 0)
         addLog("Služba spuštěna")
         logActivity("service_start")
     }
@@ -249,6 +272,10 @@ class MainActivity : ComponentActivity() {
         stopService(Intent(this, McawService::class.java))
         serviceRunning = false
         txtStatus.text = "Služba: ZASTAVENA"
+        updateAliveIndicator(running = false, riderStanding = false, overallLevel = 0)
+        stopPulse()
+        alertTransitionAnimator?.cancel()
+        panelMetrics.strokeColor = android.graphics.Color.TRANSPARENT
         addLog("Služba zastavena")
         logActivity("service_stop")
     }
@@ -378,22 +405,88 @@ class MainActivity : ComponentActivity() {
             else -> "Služba: AKTIVNÍ · OK"
         }
 
-        val bgColor = when (overallLevel) {
-            2 -> android.graphics.Color.parseColor("#331B1B")
-            1 -> android.graphics.Color.parseColor("#332514")
-            else -> android.graphics.Color.parseColor("#1E222A")
-        }
-        txtStatus.setBackgroundColor(bgColor)
+        // SAFE "alive" indikace: jen když služba běží, jezdec nestojí a overall je SAFE.
+        updateAliveIndicator(serviceRunning, riderStanding, overallLevel)
 
-        val ttcBg = when (ttcLevel) {
-            2 -> android.graphics.Color.parseColor("#331B1B")
-            1 -> android.graphics.Color.parseColor("#332514")
-            else -> android.graphics.Color.TRANSPARENT
-        }
-        txtTtc.setBackgroundColor(ttcBg)
+        // Jemný přechod mezi úrovněmi – bez blikání.
+        animateAlertTransitionIfNeeded(overallLevel, ttcLevel)
 
         val shouldPulse = serviceRunning && !riderStanding && overallLevel > 0
         if (shouldPulse) startPulse(overallLevel) else stopPulse()
+    }
+
+    private fun animateAlertTransitionIfNeeded(overallLevel: Int, ttcLevel: Int) {
+        val newStatusBg = when (overallLevel) {
+            2 -> colorBgRed
+            1 -> colorBgOrange
+            else -> colorBgSafe
+        }
+
+        val newMetricsStroke = when (overallLevel) {
+            2 -> colorAccentRed
+            1 -> colorAccentOrange
+            else -> android.graphics.Color.TRANSPARENT
+        }
+
+        val newTtcBg = when (ttcLevel) {
+            2 -> colorBgRed
+            1 -> colorBgOrange
+            else -> android.graphics.Color.TRANSPARENT
+        }
+
+        val needsOverallAnim = lastOverallLevelUi != overallLevel
+        val needsTtcAnim = lastTtcLevelUi != ttcLevel
+
+        // Pokud se nic nezměnilo, nedělej žádnou animaci (žádné micro-flicker).
+        if (!needsOverallAnim && !needsTtcAnim) {
+            return
+        }
+
+        // Start barvy z aktuálního UI (fallback na SAFE/transparent).
+        val statusStart = (txtStatus.background as? android.graphics.drawable.ColorDrawable)?.color ?: colorBgSafe
+        val ttcStart = (txtTtc.background as? android.graphics.drawable.ColorDrawable)?.color ?: android.graphics.Color.TRANSPARENT
+        val strokeStart = panelMetrics.strokeColor
+
+        alertTransitionAnimator?.cancel()
+        alertTransitionAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 220L
+            interpolator = DecelerateInterpolator()
+            addUpdateListener { a ->
+                val t = a.animatedValue as Float
+                if (needsOverallAnim) {
+                    txtStatus.setBackgroundColor(lerpColor(statusStart, newStatusBg, t))
+                    panelMetrics.strokeColor = lerpColor(strokeStart, newMetricsStroke, t)
+                }
+                if (needsTtcAnim) {
+                    txtTtc.setBackgroundColor(lerpColor(ttcStart, newTtcBg, t))
+                }
+            }
+            start()
+        }
+
+        lastOverallLevelUi = overallLevel
+        lastTtcLevelUi = ttcLevel
+    }
+
+    private fun updateAliveIndicator(running: Boolean, riderStanding: Boolean, overallLevel: Int) {
+        val show = running && !riderStanding && overallLevel == 0
+        progressAlive.visibility = if (show) View.VISIBLE else View.INVISIBLE
+        if (show) {
+            // Jemná indikace: zelená pro SAFE (bez blikání).
+            progressAlive.indeterminateTintList = android.content.res.ColorStateList.valueOf(colorAccentSafe)
+        }
+    }
+
+    private fun lerpColor(from: Int, to: Int, t: Float): Int {
+        val a = android.graphics.Color.alpha(from) + ((android.graphics.Color.alpha(to) - android.graphics.Color.alpha(from)) * t).toInt()
+        val r = android.graphics.Color.red(from) + ((android.graphics.Color.red(to) - android.graphics.Color.red(from)) * t).toInt()
+        val g = android.graphics.Color.green(from) + ((android.graphics.Color.green(to) - android.graphics.Color.green(from)) * t).toInt()
+        val b = android.graphics.Color.blue(from) + ((android.graphics.Color.blue(to) - android.graphics.Color.blue(from)) * t).toInt()
+        return android.graphics.Color.argb(a, r, g, b)
+    }
+
+    private fun dpToPx(dp: Int): Int {
+        return (dp * resources.displayMetrics.density).toInt()
     }
 
     private fun startPulse(level: Int) {
