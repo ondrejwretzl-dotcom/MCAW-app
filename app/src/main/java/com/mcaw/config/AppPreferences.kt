@@ -78,9 +78,40 @@ var cutInBoostMs: Long
 var cutInGrowthRatio: Float
     get() = prefs.getFloat("cutin_growth_ratio", 1.25f).coerceIn(1.05f, 2.00f)
     set(v) = prefs.edit().putFloat("cutin_growth_ratio", v.coerceIn(1.05f, 2.00f)).apply()
-fun init(ctx: Context) {
+
+    private const val KEY_MIGRATED_MASTER_SWITCHES_V1 = "migrated_master_switches_v1"
+
+    fun init(ctx: Context) {
         prefs = ctx.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+        migrateMasterSwitchesToPerLevelOnce()
     }
+
+    /**
+     * U1 migrace: rušíme globální přepínače zvuku/hlasu v UX.
+     * Abychom zachovali chování pro existující uživatele:
+     * - pokud měl global sound/voice vypnuto, promítneme to do per-level přepínačů
+     * - a následně nastavíme global na true (kvůli starým gate podmínkám v kódu).
+     */
+    private fun migrateMasterSwitchesToPerLevelOnce() {
+        if (prefs.getBoolean(KEY_MIGRATED_MASTER_SWITCHES_V1, false)) return
+        val hadSoundOff = prefs.getBoolean("sound", true).not()
+        val hadVoiceOff = prefs.getBoolean("voice", false).not()
+
+        val e = prefs.edit()
+        if (hadSoundOff) {
+            e.putBoolean("sound_orange", false)
+            e.putBoolean("sound_red", false)
+            e.putBoolean("sound", true)
+        }
+        if (hadVoiceOff) {
+            // Pozor: voice default bylo false. Pokud bylo false, udržíme "ticho" přes per-level.
+            e.putBoolean("voice_orange", false)
+            e.putBoolean("voice_red", false)
+            e.putBoolean("voice", true)
+        }
+        e.putBoolean(KEY_MIGRATED_MASTER_SWITCHES_V1, true).apply()
+    }
+
 
     fun ensureInit(ctx: Context) {
         if (!::prefs.isInitialized) {
@@ -119,7 +150,10 @@ fun init(ctx: Context) {
                 }
                 prefs.edit().putBoolean(KEY_MODE_MIGRATED_V2, true).apply()
             }
-            return raw.coerceIn(MODE_AUTO, MODE_USER)
+            val v = raw.coerceIn(MODE_AUTO, MODE_USER)
+            // U1: uživatelský režim (MODE_USER) se v produkčním UX nepoužívá.
+            // Pokud někde zůstala stará hodnota, mapujeme ji na AUTO, aby nevzniklo skryté chování.
+            return if (v == MODE_USER) MODE_AUTO else v
         }
         set(v) = prefs.edit().putInt(KEY_MODE, v.coerceIn(MODE_AUTO, MODE_USER)).apply()
 
@@ -481,6 +515,50 @@ fun resetRoiToDefault() {
         val centerX = ((l + r) * 0.5f).coerceIn(0f, 1f)
         val halfW = maxOf(abs(centerX - l), abs(r - centerX)).coerceIn(ROI_TRAP_MIN_TOP_HALFW_N, 0.5f)
         setRoiTrapezoidNormalized(t, b, halfW, halfW, centerX = centerX)
+    }
+
+
+    /**
+     * U1: Když se vypne debug, chceme deterministické chování a žádné skryté "tuning" hodnoty.
+     *
+     * DŮLEŽITÉ: NEresetujeme kalibraci kamery (distanceScale / height / pitch) ani ROI trapezoid,
+     * protože tyto hodnoty mohou být nutné pro reálné uchycení telefonu (dodávka/moto/kabrio).
+     */
+    fun resetDebugOverridesToAutoRecommended() {
+        // Always use auto mode in production UX
+        detectionMode = MODE_AUTO
+
+        // Model selection: normal mode uses conservative default (EfficientDet=1).
+        selectedModel = 1
+
+        // Debug-only toggles / tunings -> recommended
+        qualityGatingEnabled = true
+        cutInProtectionEnabled = true
+        cutInOffsetBoost = 0.25f
+        cutInBoostMs = 900L
+        cutInGrowthRatio = 1.25f
+
+        // Lane / ROI tunings
+        laneFilter = true
+        laneEgoMaxOffset = 0.55f
+        roiStrictContainment = false
+
+        // Brake cue
+        brakeCueEnabled = true
+        brakeCueSensitivity = 1
+    }
+
+    /**
+     * U1: uživatelské prahy se v produkčním UX nepoužívají.
+     * Pomocná funkce pro tvrdý reset na doporučené (pro případ starých hodnot).
+     */
+    fun resetUserThresholdsToDefault() {
+        userTtcOrange = 3.0f
+        userTtcRed = 1.5f
+        userDistOrange = 16f
+        userDistRed = 9f
+        userSpeedOrange = 3f
+        userSpeedRed = 5f
     }
 
 }

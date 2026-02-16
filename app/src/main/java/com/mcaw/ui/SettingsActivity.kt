@@ -58,22 +58,15 @@ class SettingsActivity : ComponentActivity() {
 
         val spMode = findViewById<Spinner>(R.id.spMode)
         val spModel = findViewById<Spinner>(R.id.spModel)
-        val groupUser = findViewById<View>(R.id.groupUserThresholds)
+        val groupMode = findViewById<View>(R.id.groupMode)
+        val groupModel = findViewById<View>(R.id.groupModel)
+        val groupDebugOptions = findViewById<View>(R.id.groupDebugOptions)
         val txtModeDetails = findViewById<TextView>(R.id.txtModeDetails)
-
-        val etTtcOrange = findViewById<EditText>(R.id.etTtcOrange)
-        val etTtcRed = findViewById<EditText>(R.id.etTtcRed)
-        val etDistOrange = findViewById<EditText>(R.id.etDistOrange)
-        val etDistRed = findViewById<EditText>(R.id.etDistRed)
-        val etSpeedOrange = findViewById<EditText>(R.id.etSpeedOrange)
-        val etSpeedRed = findViewById<EditText>(R.id.etSpeedRed)
 
         val etTtsOrange = findViewById<EditText>(R.id.etTtsOrange)
         val etTtsRed = findViewById<EditText>(R.id.etTtsRed)
 
-        val swSound = findViewById<SwitchMaterial>(R.id.swSound)
         val swVibration = findViewById<SwitchMaterial>(R.id.swVibration)
-        val swVoice = findViewById<SwitchMaterial>(R.id.swVoice)
         val swDebug = findViewById<SwitchMaterial>(R.id.swDebug)
         val swLaneFilter = findViewById<SwitchMaterial>(R.id.swLaneFilter)
         val swRoiStrictContainment = findViewById<SwitchMaterial>(R.id.swRoiStrictContainment)
@@ -175,18 +168,15 @@ Typicky 3–10°. Příliš velký sklon může zkrátit dohled; příliš malý
             spMode.adapter = adapter
         }
 
-        spMode.setSelection(normalizeSelection(AppPreferences.detectionMode, spMode))
-        txtModeDetails.text = modeSummary(AppPreferences.detectionMode)
-
-        spMode.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(parent: AdapterView<*>, view: View?, position: Int, id: Long) {
-                AppPreferences.detectionMode = position
-                txtModeDetails.text = modeSummary(position)
-                groupUser.visibility = if (position == AppPreferences.MODE_USER) View.VISIBLE else View.GONE
-            }
-
-            override fun onNothingSelected(parent: AdapterView<*>) = Unit
+                // U1: Režim je pro uživatele vždy Automat. CITY/SPORT řeší AutoModeSwitcher interně.
+        AppPreferences.detectionMode = AppPreferences.MODE_AUTO
+        spMode.setSelection(AppPreferences.MODE_AUTO)
+        spMode.visibility = View.GONE
+        groupMode?.let {
+            // necháme pouze vysvětlující text
         }
+        txtModeDetails.text = modeSummary(AppPreferences.MODE_AUTO)
+
 
         // Model spinner
         ArrayAdapter.createFromResource(
@@ -207,16 +197,30 @@ Typicky 3–10°. Příliš velký sklon může zkrátit dohled; příliš malý
             override fun onNothingSelected(parent: AdapterView<*>) = Unit
         }
 
+        fun applyDebugVisibility(debugOn: Boolean) {
+            groupModel?.visibility = if (debugOn) View.VISIBLE else View.GONE
+            groupDebugOptions?.visibility = if (debugOn) View.VISIBLE else View.GONE
+        }
+
+
         // Alert switches
         fun bindSwitch(sw: SwitchMaterial, getter: () -> Boolean, setter: (Boolean) -> Unit) {
             sw.isChecked = getter()
             sw.setOnCheckedChangeListener { _, checked -> setter(checked) }
         }
 
-        bindSwitch(swSound, { AppPreferences.sound }, { AppPreferences.sound = it })
         bindSwitch(swVibration, { AppPreferences.vibration }, { AppPreferences.vibration = it })
-        bindSwitch(swVoice, { AppPreferences.voice }, { AppPreferences.voice = it })
-        bindSwitch(swDebug, { AppPreferences.debugOverlay }, { AppPreferences.debugOverlay = it })
+        swDebug.isChecked = AppPreferences.debugOverlay
+        applyDebugVisibility(swDebug.isChecked)
+        swDebug.setOnCheckedChangeListener { _, checked ->
+            AppPreferences.debugOverlay = checked
+            if (!checked) {
+                // U1: vypnutí debug musí vrátit tuning na AUTO/recommended
+                AppPreferences.resetDebugOverridesToAutoRecommended()
+                AppPreferences.resetUserThresholdsToDefault()
+            }
+            applyDebugVisibility(checked)
+        }
         bindSwitch(swLaneFilter, { AppPreferences.laneFilter }, { AppPreferences.laneFilter = it })
         bindSwitch(swRoiStrictContainment, { AppPreferences.roiStrictContainment }, { AppPreferences.roiStrictContainment = it })
         bindSwitch(swBrakeCue, { AppPreferences.brakeCueEnabled }, { AppPreferences.brakeCueEnabled = it })
@@ -240,71 +244,6 @@ Typicky 3–10°. Příliš velký sklon může zkrátit dohled; příliš malý
                 AppPreferences.brakeCueSensitivity = position
             }
 
-            override fun onNothingSelected(parent: AdapterView<*>) = Unit
-        }
-
-        // User thresholds
-        fun applyUserThresholds() {
-            AppPreferences.userTtcOrange = readFloat(etTtcOrange, AppPreferences.userTtcOrange)
-            AppPreferences.userTtcRed = readFloat(etTtcRed, AppPreferences.userTtcRed)
-            AppPreferences.userDistOrange = readFloat(etDistOrange, AppPreferences.userDistOrange)
-            AppPreferences.userDistRed = readFloat(etDistRed, AppPreferences.userDistRed)
-            AppPreferences.userSpeedOrange = readFloat(etSpeedOrange, AppPreferences.userSpeedOrange)
-            AppPreferences.userSpeedRed = readFloat(etSpeedRed, AppPreferences.userSpeedRed)
-        }
-
-        fun bindDefaults() {
-            etTtcOrange.setText(AppPreferences.userTtcOrange.toString())
-            etTtcRed.setText(AppPreferences.userTtcRed.toString())
-            etDistOrange.setText(AppPreferences.userDistOrange.toString())
-            etDistRed.setText(AppPreferences.userDistRed.toString())
-            etSpeedOrange.setText(AppPreferences.userSpeedOrange.toString())
-            etSpeedRed.setText(AppPreferences.userSpeedRed.toString())
-
-            etTtsOrange.setText(AppPreferences.ttsTextOrange)
-            etTtsRed.setText(AppPreferences.ttsTextRed)
-
-            // Camera calibration
-            etCameraMountHeight?.setText(AppPreferences.cameraMountHeightM.toString())
-            etCameraPitchDownDeg?.setText(AppPreferences.cameraPitchDownDeg.toString())
-
-            // Advanced sliders
-            bindLaneWidthSlider(sliderLaneWidth, txtLaneWidthValue)
-            bindDistanceScaleSlider(sliderDistanceScale, txtDistanceScaleValue)
-            bindAlertVolumeSlider(sliderOrangeVolume, txtOrangeVolumeValue, isRed = false)
-            bindAlertVolumeSlider(sliderRedVolume, txtRedVolumeValue, isRed = true)
-
-            // User thresholds group visibility based on mode
-            groupUser.visibility = if (AppPreferences.detectionMode == 2) View.VISIBLE else View.GONE
-        }
-
-        bindDefaults()
-
-        val watcher = object : TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
-            override fun afterTextChanged(s: Editable?) {
-                applyUserThresholds()
-            }
-        }
-
-        etTtcOrange.addTextChangedListener(watcher)
-        etTtcRed.addTextChangedListener(watcher)
-        etDistOrange.addTextChangedListener(watcher)
-        etDistRed.addTextChangedListener(watcher)
-        etSpeedOrange.addTextChangedListener(watcher)
-        etSpeedRed.addTextChangedListener(watcher)
-
-        val ttsWatcher = object : TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
-            override fun afterTextChanged(s: Editable?) {
-                AppPreferences.ttsTextOrange = etTtsOrange.text?.toString() ?: AppPreferences.ttsTextOrange
-                AppPreferences.ttsTextRed = etTtsRed.text?.toString() ?: AppPreferences.ttsTextRed
-            }
-        }
-        etTtsOrange.addTextChangedListener(ttsWatcher)
-        etTtsRed.addTextChangedListener(ttsWatcher)
 
         // Camera calibration inputs
         val cameraWatcher = object : TextWatcher {
@@ -442,12 +381,10 @@ Typicky 3–10°. Příliš velký sklon může zkrátit dohled; příliš malý
     }
 
 private fun resetRecommended() {
-        // defaults tuned for "city" / typical use, safe for Samsung A56
-        AppPreferences.laneFilter = true
-        AppPreferences.laneEgoMaxOffset = 0.55f
+        // U1: doporučené hodnoty pro běžné použití (bez zásahu do zvuku/hlasu).
+        // Kalibrace vzdálenosti je součástí doporučených (vracíme na 1.0).
+        AppPreferences.resetDebugOverridesToAutoRecommended()
         AppPreferences.distanceScale = 1.0f
-        AppPreferences.qualityGatingEnabled = true
-        AppPreferences.cutInProtectionEnabled = true
 
         // Refresh UI (simple approach: recreate)
         recreate()

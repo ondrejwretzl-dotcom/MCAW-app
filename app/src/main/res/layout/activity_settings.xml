@@ -175,6 +175,11 @@
                     android:textSize="13sp"
                     android:layout_marginTop="2dp" />
 
+                <LinearLayout
+                    android:id="@+id/groupMode"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -198,6 +203,13 @@
                     android:textSize="13sp"
                     android:layout_marginTop="6dp" />
 
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/groupModel"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -210,102 +222,8 @@
                     android:id="@+id/spModel"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:entries="@array/models" />
+                    android:entries="@array/models" />                </LinearLayout>
 
-                <!-- Uživatelské prahy -->
-                <TextView
-                    android:id="@+id/txtUserThresholds"
-                    android:text="Uživatel: vlastní prahy (TTC / vzdálenost / rychlost)"
-                    android:layout_marginTop="14dp"
-                    android:layout_marginBottom="8dp"
-                    android:textStyle="bold"
-                    android:textColor="#0F172A"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content" />
-
-                <LinearLayout
-                    android:id="@+id/groupUserThresholds"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical">
-
-                    <TextView
-                        android:text="TTC (s) – oranžová / červená"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content" />
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal">
-                        <EditText
-                            android:id="@+id/etTtcOrange"
-                            android:layout_width="0dp"
-                            android:layout_weight="1"
-                            android:layout_height="wrap_content"
-                            android:inputType="numberDecimal"
-                            android:hint="oranžová" />
-                        <EditText
-                            android:id="@+id/etTtcRed"
-                            android:layout_width="0dp"
-                            android:layout_weight="1"
-                            android:layout_height="wrap_content"
-                            android:inputType="numberDecimal"
-                            android:hint="červená" />
-                    </LinearLayout>
-
-                    <TextView
-                        android:layout_marginTop="10dp"
-                        android:text="Vzdálenost (m) – oranžová / červená"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content" />
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal">
-                        <EditText
-                            android:id="@+id/etDistOrange"
-                            android:layout_width="0dp"
-                            android:layout_weight="1"
-                            android:layout_height="wrap_content"
-                            android:inputType="numberDecimal"
-                            android:hint="oranžová" />
-                        <EditText
-                            android:id="@+id/etDistRed"
-                            android:layout_width="0dp"
-                            android:layout_weight="1"
-                            android:layout_height="wrap_content"
-                            android:inputType="numberDecimal"
-                            android:hint="červená" />
-                    </LinearLayout>
-
-                    <TextView
-                        android:layout_marginTop="10dp"
-                        android:text="Rychlost přiblížení (m/s) – oranžová / červená"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content" />
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal">
-                        <EditText
-                            android:id="@+id/etSpeedOrange"
-                            android:layout_width="0dp"
-                            android:layout_weight="1"
-                            android:layout_height="wrap_content"
-                            android:inputType="numberDecimal"
-                            android:hint="oranžová" />
-                        <EditText
-                            android:id="@+id/etSpeedRed"
-                            android:layout_width="0dp"
-                            android:layout_weight="1"
-                            android:layout_height="wrap_content"
-                            android:inputType="numberDecimal"
-                            android:hint="červená" />
-                    </LinearLayout>
-                </LinearLayout>
-
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
 
         <!-- Varování -->
         <com.google.android.material.card.MaterialCardView
@@ -357,28 +275,16 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Globální přepínače + rozdělení pro oranžovou a červenou."
+                    android:text="Nastavení zvuku/hlasu zvlášť pro oranžovou a červenou."
                     android:textColor="#475569"
                     android:textSize="13sp"
                     android:layout_marginTop="2dp" />
-
-                <com.google.android.material.switchmaterial.SwitchMaterial
-                    android:id="@+id/swSound"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Zvuk" />
 
                 <com.google.android.material.switchmaterial.SwitchMaterial
                     android:id="@+id/swVibration"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Vibrace" />
-
-                <com.google.android.material.switchmaterial.SwitchMaterial
-                    android:id="@+id/swVoice"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Hlasové varování" />
 
                 <View
                     android:layout_width="match_parent"
@@ -559,68 +465,6 @@
                     android:textSize="16sp"
                     android:textStyle="bold" />
 
-                <!-- Lane filter row -->
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical">
-
-                    <com.google.android.material.switchmaterial.SwitchMaterial
-                        android:id="@+id/swLaneFilter"
-                        android:layout_width="0dp"
-                        android:layout_weight="1"
-                        android:layout_height="wrap_content"
-                        android:text="Omezit detekci na jízdní dráhu" />
-
-                    <ImageButton
-                        android:id="@+id/btnInfoLaneFilter"
-                        android:layout_width="40dp"
-                        android:layout_height="40dp"
-                        android:background="@android:color/transparent"
-                        android:contentDescription="Info"
-                        android:src="@android:drawable/ic_menu_info_details" />
-                </LinearLayout>
-
-                <!-- Lane width slider -->
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="Šířka pruhu (tolerance do stran)"
-                    android:textColor="#0F172A"
-                    android:textStyle="bold"
-                    android:layout_marginTop="10dp" />
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical">
-
-                    <TextView
-                        android:id="@+id/txtLaneWidthValue"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Střední"
-                        android:textColor="#475569"
-                        android:layout_marginEnd="10dp" />
-
-                    <com.google.android.material.slider.Slider
-                        android:id="@+id/sliderLaneWidth"
-                        android:layout_width="0dp"
-                        android:layout_weight="1"
-                        android:layout_height="wrap_content"
-                        app:labelBehavior="gone" />
-
-                    <ImageButton
-                        android:id="@+id/btnInfoLaneWidth"
-                        android:layout_width="40dp"
-                        android:layout_height="40dp"
-                        android:background="@android:color/transparent"
-                        android:contentDescription="Info"
-                        android:src="@android:drawable/ic_menu_info_details" />
-                </LinearLayout>
-
                 <!-- Distance scale slider -->
                 <TextView
                     android:layout_width="match_parent"
@@ -721,6 +565,75 @@
         android:src="@android:drawable/ic_menu_info_details" />
 </LinearLayout>
 
+
+                <LinearLayout
+                    android:id="@+id/groupDebugOptions"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                <!-- Lane filter row -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <com.google.android.material.switchmaterial.SwitchMaterial
+                        android:id="@+id/swLaneFilter"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:layout_height="wrap_content"
+                        android:text="Omezit detekci na jízdní dráhu" />
+
+                    <ImageButton
+                        android:id="@+id/btnInfoLaneFilter"
+                        android:layout_width="40dp"
+                        android:layout_height="40dp"
+                        android:background="@android:color/transparent"
+                        android:contentDescription="Info"
+                        android:src="@android:drawable/ic_menu_info_details" />
+                </LinearLayout>
+
+                <!-- Lane width slider -->
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Šířka pruhu (tolerance do stran)"
+                    android:textColor="#0F172A"
+                    android:textStyle="bold"
+                    android:layout_marginTop="10dp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <TextView
+                        android:id="@+id/txtLaneWidthValue"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Střední"
+                        android:textColor="#475569"
+                        android:layout_marginEnd="10dp" />
+
+                    <com.google.android.material.slider.Slider
+                        android:id="@+id/sliderLaneWidth"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:layout_height="wrap_content"
+                        app:labelBehavior="gone" />
+
+                    <ImageButton
+                        android:id="@+id/btnInfoLaneWidth"
+                        android:layout_width="40dp"
+                        android:layout_height="40dp"
+                        android:background="@android:color/transparent"
+                        android:contentDescription="Info"
+                        android:src="@android:drawable/ic_menu_info_details" />
+                </LinearLayout>
+
 <!-- Quality gating -->
 
                 <LinearLayout
@@ -799,6 +712,9 @@
                     android:id="@+id/spBrakeCueSensitivity"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content" />
+
+                </LinearLayout>
+
 
                 <com.google.android.material.switchmaterial.SwitchMaterial
                     android:id="@+id/swDebug"
