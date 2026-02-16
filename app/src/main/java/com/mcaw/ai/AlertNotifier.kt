@@ -15,6 +15,7 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import com.mcaw.app.MCAWApp
 import com.mcaw.risk.RiskEngine
 
@@ -108,6 +109,26 @@ object AlertNotifier {
     private var lastFocusGain: Int = -1
     private var lastFocusUsage: Int = -1
 
+    // M1: Best-effort routing that behaves closer to an incoming call / ringtone.
+    // Goal: make alerts audible even when user is listening to car radio and BT routing is not active.
+    private const val ALERT_USAGE = android.media.AudioAttributes.USAGE_NOTIFICATION_RINGTONE
+    private const val ALERT_GAIN = AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE
+
+    // Single listener instance to avoid per-alert allocations.
+    private val ttsListener = object : UtteranceProgressListener() {
+        override fun onStart(utteranceId: String?) = Unit
+        override fun onError(utteranceId: String?) {
+            val ctx = MCAWApp.instance
+            val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            abandonAlertAudioFocus(am)
+        }
+        override fun onDone(utteranceId: String?) {
+            val ctx = MCAWApp.instance
+            val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            abandonAlertAudioFocus(am)
+        }
+    }
+
     fun handleInApp(context: Context, level: Int, _risk: RiskEngine.Result? = null) {
         if (level <= 0) return
 
@@ -190,6 +211,9 @@ object AlertNotifier {
         try {
             val inst = ensureTts(context)
             if (inst != null && ttsReady) {
+                // Use same focus/routing strategy as sound (ORANGE/RED behave the same).
+                val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                requestAlertAudioFocus(am, gain = ALERT_GAIN, usage = ALERT_USAGE)
                 inst.speak(text, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
             }
         } catch (_: Exception) {
@@ -204,6 +228,7 @@ object AlertNotifier {
             tts = appTts
             ttsReady = true
             ownsTts = false
+            configureTtsAudio(appTts)
             return appTts
         }
 
@@ -217,6 +242,8 @@ object AlertNotifier {
                 ttsReady = (status == TextToSpeech.SUCCESS)
                 if (ttsReady) {
                     runCatching { created?.language = java.util.Locale.getDefault() }
+                    runCatching { created?.setOnUtteranceProgressListener(ttsListener) }
+                    runCatching { created?.let { configureTtsAudio(it) } }
                 }
             }
             tts = created
@@ -225,13 +252,23 @@ object AlertNotifier {
         }
     }
 
+    private fun configureTtsAudio(inst: TextToSpeech) {
+        // Route like ringtone / call signalling to improve chance of being heard in car.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            val attrs = android.media.AudioAttributes.Builder()
+                .setUsage(ALERT_USAGE)
+                .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH)
+                .build()
+            runCatching { inst.setAudioAttributes(attrs) }
+        }
+        runCatching { inst.setOnUtteranceProgressListener(ttsListener) }
+    }
+
     private fun playAlertSound(context: Context, resId: Int, critical: Boolean) {
         val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
-        // Strategy from previous discussion: NAVIGATION_GUIDANCE + gain transient for better BT routing.
-        val usage = android.media.AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE
-        val gain = if (critical) AudioManager.AUDIOFOCUS_GAIN_TRANSIENT else AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
-        requestAlertAudioFocus(am, gain = gain, usage = usage)
+        // M1: Use same routing strategy for ORANGE and RED.
+        requestAlertAudioFocus(am, gain = ALERT_GAIN, usage = ALERT_USAGE)
 
         try {
             val mp = alertPlayer ?: MediaPlayer().also { alertPlayer = it }
@@ -242,7 +279,7 @@ object AlertNotifier {
 
             mp.setAudioAttributes(
                 android.media.AudioAttributes.Builder()
-                    .setUsage(usage)
+                    .setUsage(ALERT_USAGE)
                     .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
                     .build()
             )
@@ -292,7 +329,7 @@ object AlertNotifier {
             @Suppress("DEPRECATION")
             audioFocusGranted = (am.requestAudioFocus(
                 null,
-                AudioManager.STREAM_MUSIC,
+                AudioManager.STREAM_RING,
                 gain
             ) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
             if (audioFocusGranted) {
