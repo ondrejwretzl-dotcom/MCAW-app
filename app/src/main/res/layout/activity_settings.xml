@@ -222,7 +222,12 @@
                     android:id="@+id/spModel"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:entries="@array/models" />                </LinearLayout>
+                    android:entries="@array/models" />
+
+                </LinearLayout>
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
 
 
         <!-- Varování -->
