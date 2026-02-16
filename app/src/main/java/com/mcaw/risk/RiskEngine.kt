@@ -70,6 +70,39 @@ class RiskEngine {
             return (payloadBits and REASON_BITS_PAYLOAD_MASK) or v
         }
 
+
+        /**
+         * Krátký stabilní klasifikační kód pro CSV analýzu.
+         *
+         * - low 3 bity = core faktory (TTC/DIST/REL)
+         * - vyšší bity = pomocné flagy (ROI_LOW, BRAKE_CUE, CUT_IN, EGO_BRAKE, QCONSERV, RIDER_STAND, SLOPE, RED_OK, RED_GUARD)
+         *
+         * Pozn.: Maskuje verzovací nibbl (bits 28..31).
+         */
+        fun reasonId(reasonBits: Int): Int {
+            if (reasonBits == 0) return 0
+
+            val payload = stripReasonVersion(reasonBits)
+
+            val ttc = if ((payload and BIT_TTC) != 0) 1 else 0
+            val dist = if ((payload and BIT_DIST) != 0) 1 else 0
+            val rel = if ((payload and BIT_REL) != 0) 1 else 0
+            val core = ttc or (dist shl 1) or (rel shl 2) // 0..7
+
+            var aux = 0
+            if ((payload and BIT_ROI_LOW) != 0) aux = aux or (1 shl 0)
+            if ((payload and BIT_BRAKE_CUE) != 0) aux = aux or (1 shl 1)
+            if ((payload and BIT_CUT_IN) != 0) aux = aux or (1 shl 2)
+            if ((payload and BIT_EGO_BRAKE) != 0) aux = aux or (1 shl 3)
+            if ((payload and BIT_QUALITY_CONSERV) != 0) aux = aux or (1 shl 4)
+            if ((payload and BIT_RIDER_STAND) != 0) aux = aux or (1 shl 5)
+            if ((payload and BIT_TTC_SLOPE_STRONG) != 0) aux = aux or (1 shl 6)
+            if ((payload and BIT_RED_COMBO_OK) != 0) aux = aux or (1 shl 7)
+            if ((payload and BIT_RED_GUARDED) != 0) aux = aux or (1 shl 8)
+
+            return core or (aux shl 3)
+        }
+
         fun formatReasonShort(bits: Int): String {
             val payload = stripReasonVersion(bits)
             if (payload == 0) return "SAFE"
