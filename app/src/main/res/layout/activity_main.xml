@@ -391,7 +391,7 @@
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>
 
-    <!-- Controls: preview (debug-only) + camera button, big power, settings -->
+    <!-- Controls: mini preview (debug-only) + camera/settings left of power button -->
     <com.google.android.material.card.MaterialCardView
         android:id="@+id/panelControls"
         android:layout_width="match_parent"
@@ -407,21 +407,21 @@
             android:background="#171A1F"
             android:gravity="center_vertical"
             android:orientation="horizontal"
-            android:padding="12dp">
+            android:padding="10dp">
 
-            <!-- Left: mini preview + camera icon -->
+            <!-- Left: mini preview + camera/settings icons (stacked) -->
             <LinearLayout
-                android:layout_width="0dp"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
+                android:layout_marginEnd="10dp"
                 android:gravity="center_horizontal"
                 android:orientation="vertical">
 
                 <com.google.android.material.card.MaterialCardView
                     android:id="@+id/panelMiniPreview"
-                    android:layout_width="120dp"
+                    android:layout_width="122dp"
                     android:layout_height="78dp"
-                    android:layout_marginBottom="10dp"
+                    android:layout_marginBottom="8dp"
                     android:visibility="gone"
                     app:cardCornerRadius="16dp"
                     app:cardElevation="2dp"
@@ -457,33 +457,56 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnCamera"
-                    android:layout_width="64dp"
-                    android:layout_height="64dp"
+                    android:layout_width="56dp"
+                    android:layout_height="56dp"
                     android:contentDescription="Kamera"
                     android:text=""
                     android:textAllCaps="false"
-                    app:cornerRadius="18dp"
+                    app:cornerRadius="16dp"
                     app:icon="@android:drawable/ic_menu_camera"
                     app:iconGravity="textStart"
                     app:iconPadding="0dp"
-                    app:iconSize="28dp"
-                    app:backgroundTint="#1E222A" />
+                    app:iconSize="26dp"
+                    app:iconTint="#E5E7EB"
+                    app:backgroundTint="#2A2F3A" />
+
+                <View
+                    android:layout_width="1dp"
+                    android:layout_height="10dp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnSettings"
+                    android:layout_width="56dp"
+                    android:layout_height="56dp"
+                    android:contentDescription="Nastavení"
+                    android:text=""
+                    android:textAllCaps="false"
+                    app:cornerRadius="16dp"
+                    app:icon="@android:drawable/ic_menu_preferences"
+                    app:iconGravity="textStart"
+                    app:iconPadding="0dp"
+                    app:iconSize="26dp"
+                    app:iconTint="#E5E7EB"
+                    app:backgroundTint="#2A2F3A" />
 
             </LinearLayout>
+
+            <View
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:layout_weight="1" />
 
             <!-- Center: big power button (single START/STOP) -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnPower"
-                android:layout_width="120dp"
-                android:layout_height="120dp"
-                android:layout_marginStart="10dp"
-                android:layout_marginEnd="10dp"
+                android:layout_width="112dp"
+                android:layout_height="112dp"
                 android:contentDescription="Start / Stop"
                 android:text="START"
                 android:textAllCaps="false"
                 android:textSize="18sp"
                 android:textStyle="bold"
-                app:cornerRadius="60dp"
+                app:cornerRadius="56dp"
                 app:icon="@android:drawable/ic_lock_power_off"
                 app:iconGravity="textTop"
                 app:iconPadding="4dp"
@@ -492,33 +515,10 @@
                 app:strokeWidth="4dp"
                 app:strokeColor="#00E5A8" />
 
-            <!-- Right: settings icon -->
-            <LinearLayout
+            <View
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:gravity="center_horizontal"
-                android:orientation="vertical">
-
-                <View
-                    android:layout_width="1dp"
-                    android:layout_height="88dp" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnSettings"
-                    android:layout_width="64dp"
-                    android:layout_height="64dp"
-                    android:contentDescription="Nastavení"
-                    android:text=""
-                    android:textAllCaps="false"
-                    app:cornerRadius="18dp"
-                    app:icon="@android:drawable/ic_menu_preferences"
-                    app:iconGravity="textStart"
-                    app:iconPadding="0dp"
-                    app:iconSize="28dp"
-                    app:backgroundTint="#1E222A" />
-
-            </LinearLayout>
+                android:layout_height="1dp"
+                android:layout_weight="1" />
 
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>
@@ -550,7 +550,7 @@
         android:id="@+id/panelBottom"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="10dp"
+        android:layout_marginTop="8dp"
         android:gravity="center_vertical"
         android:orientation="horizontal">
 
@@ -563,11 +563,13 @@
             android:text="NÁVOD"
             android:textAllCaps="false"
             android:textSize="14sp"
+            android:textColor="#E5E7EB"
             app:backgroundTint="#1E222A"
             app:cornerRadius="14dp"
             app:icon="@android:drawable/ic_menu_help"
             app:iconPadding="6dp"
-            app:iconSize="18dp" />
+            app:iconSize="18dp"
+            app:iconTint="#E5E7EB" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnLegal"
@@ -578,11 +580,13 @@
             android:text="LEGAL"
             android:textAllCaps="false"
             android:textSize="14sp"
+            android:textColor="#E5E7EB"
             app:backgroundTint="#1E222A"
             app:cornerRadius="14dp"
             app:icon="@android:drawable/ic_menu_info_details"
             app:iconPadding="6dp"
-            app:iconSize="18dp" />
+            app:iconSize="18dp"
+            app:iconTint="#E5E7EB" />
 
     </LinearLayout>
 

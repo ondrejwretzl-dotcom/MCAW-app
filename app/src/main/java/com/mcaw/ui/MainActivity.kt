@@ -766,26 +766,22 @@ class MainActivity : ComponentActivity() {
         txtWhy.setTextColor(c)
     }
 
-    private fun updatePowerButtonUi(overallLevel: Int) {
-        // When service is stopped, keep UI calm.
-        if (!serviceRunning) {
+    private fun updatePowerButtonUi(@Suppress("UNUSED_PARAMETER") overallLevel: Int) {
+        // UX: Power button color reflects SERVICE state only (running vs stopped), not alert.
+        // Alert dominance is handled by the banner.
+        if (serviceRunning) {
+            btnPower.text = "STOP"
+            val on = colorAccentSafe
+            btnPower.strokeColor = android.content.res.ColorStateList.valueOf(on)
+            btnPower.setTextColor(on)
+            btnPower.iconTint = android.content.res.ColorStateList.valueOf(on)
+        } else {
             btnPower.text = "START"
-            btnPower.strokeColor = android.content.res.ColorStateList.valueOf(colorAccentSafe)
-            btnPower.setTextColor(colorAccentSafe)
-            btnPower.iconTint = android.content.res.ColorStateList.valueOf(colorAccentSafe)
-            return
+            val off = android.graphics.Color.parseColor("#7C8796")
+            btnPower.strokeColor = android.content.res.ColorStateList.valueOf(off)
+            btnPower.setTextColor(off)
+            btnPower.iconTint = android.content.res.ColorStateList.valueOf(off)
         }
-
-        btnPower.text = "STOP"
-
-        val accent = when (overallLevel) {
-            2 -> colorAccentRed
-            1 -> colorAccentOrange
-            else -> colorAccentSafe
-        }
-        btnPower.strokeColor = android.content.res.ColorStateList.valueOf(accent)
-        btnPower.setTextColor(accent)
-        btnPower.iconTint = android.content.res.ColorStateList.valueOf(accent)
     }
 
     private fun formatMetric(value: Float, unit: String): String {
