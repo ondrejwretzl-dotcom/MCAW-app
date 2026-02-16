@@ -1,0 +1,12 @@
+  # Provision Gradle (bez wrapperu) + cache
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: 8.7
+          cache-disabled: false
+
+      - name: Regenerate Gradle Wrapper (fix broken gradle-wrapper.jar)
+        run: |
+          gradle wrapper --gradle-version 8.7
+          chmod +x ./gradlew
+          ./gradlew --version
