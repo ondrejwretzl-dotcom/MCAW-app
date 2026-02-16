@@ -40,6 +40,13 @@ class RiskEngine {
 
     companion object {
         // --- Reason bits (stabilní kontrakt pro logy/overlay) ---
+        // Kontrakt je verzovaný v horním nibblu (bits 28..31), aby nebylo nutné měnit CSV schema.
+        // Parser: version = (reasonBits ushr 28) & 0xF ; payloadBits = reasonBits & 0x0FFFFFFF
+        const val REASON_BITS_VERSION_CURRENT = 2
+        private const val REASON_BITS_VERSION_SHIFT = 28
+        private const val REASON_BITS_VERSION_MASK = 0xF shl REASON_BITS_VERSION_SHIFT
+        private const val REASON_BITS_PAYLOAD_MASK = REASON_BITS_VERSION_MASK.inv()
+
         const val BIT_TTC = 1 shl 0
         const val BIT_DIST = 1 shl 1
         const val BIT_REL = 1 shl 2
@@ -49,48 +56,36 @@ class RiskEngine {
         const val BIT_EGO_BRAKE = 1 shl 6
         const val BIT_QUALITY_CONSERV = 1 shl 7
         const val BIT_RIDER_STAND = 1 shl 8
+        const val BIT_TTC_SLOPE_STRONG = 1 shl 9
+        const val BIT_RED_COMBO_OK = 1 shl 10
+        const val BIT_RED_GUARDED = 1 shl 11
 
-        /**
-         * Krátký stabilní klasifikační kód pro CSV analýzu.
-         *
-         * - low 3 bity = core faktory (TTC/DIST/REL)
-         * - vyšší bity = pomocné flagy (ROI_LOW, BRAKE_CUE, CUT_IN, EGO_BRAKE, QCONSERV, RIDER_STAND)
-         *
-         * Pozn.: Maskuje potenciální budoucí verzovací nibbl (bits 28..31).
-         */
-        fun reasonId(bits: Int): Int {
-            if (bits == 0) return 0
+        fun reasonVersion(reasonBits: Int): Int = (reasonBits ushr REASON_BITS_VERSION_SHIFT) and 0xF
 
-            val payload = bits and 0x0FFFFFFF
+        fun stripReasonVersion(reasonBits: Int): Int = reasonBits and REASON_BITS_PAYLOAD_MASK
 
-            val ttc = if ((payload and BIT_TTC) != 0) 1 else 0
-            val dist = if ((payload and BIT_DIST) != 0) 1 else 0
-            val rel = if ((payload and BIT_REL) != 0) 1 else 0
-            val core = ttc or (dist shl 1) or (rel shl 2) // 0..7
-
-            var aux = 0
-            if ((payload and BIT_ROI_LOW) != 0) aux = aux or (1 shl 0)
-            if ((payload and BIT_BRAKE_CUE) != 0) aux = aux or (1 shl 1)
-            if ((payload and BIT_CUT_IN) != 0) aux = aux or (1 shl 2)
-            if ((payload and BIT_EGO_BRAKE) != 0) aux = aux or (1 shl 3)
-            if ((payload and BIT_QUALITY_CONSERV) != 0) aux = aux or (1 shl 4)
-            if ((payload and BIT_RIDER_STAND) != 0) aux = aux or (1 shl 5)
-
-            return core or (aux shl 3)
+        fun packReasonBits(payloadBits: Int, version: Int = REASON_BITS_VERSION_CURRENT): Int {
+            if (payloadBits == 0) return 0
+            val v = (version and 0xF) shl REASON_BITS_VERSION_SHIFT
+            return (payloadBits and REASON_BITS_PAYLOAD_MASK) or v
         }
 
         fun formatReasonShort(bits: Int): String {
-            if (bits == 0) return "SAFE"
+            val payload = stripReasonVersion(bits)
+            if (payload == 0) return "SAFE"
             val sb = StringBuilder(48)
-            if ((bits and BIT_RIDER_STAND) != 0) sb.append("RID_STAND ")
-            if ((bits and BIT_TTC) != 0) sb.append("TTC ")
-            if ((bits and BIT_DIST) != 0) sb.append("DIST ")
-            if ((bits and BIT_REL) != 0) sb.append("REL ")
-            if ((bits and BIT_ROI_LOW) != 0) sb.append("ROI_LOW ")
-            if ((bits and BIT_BRAKE_CUE) != 0) sb.append("BRAKE_CUE ")
-            if ((bits and BIT_CUT_IN) != 0) sb.append("CUT_IN ")
-            if ((bits and BIT_EGO_BRAKE) != 0) sb.append("EGO_BRAKE ")
-            if ((bits and BIT_QUALITY_CONSERV) != 0) sb.append("QCONSERV ")
+            if ((payload and BIT_RIDER_STAND) != 0) sb.append("RID_STAND ")
+            if ((payload and BIT_TTC) != 0) sb.append("TTC ")
+            if ((payload and BIT_TTC_SLOPE_STRONG) != 0) sb.append("SLOPE ")
+            if ((payload and BIT_DIST) != 0) sb.append("DIST ")
+            if ((payload and BIT_REL) != 0) sb.append("REL ")
+            if ((payload and BIT_ROI_LOW) != 0) sb.append("ROI_LOW ")
+            if ((payload and BIT_BRAKE_CUE) != 0) sb.append("BRAKE_CUE ")
+            if ((payload and BIT_CUT_IN) != 0) sb.append("CUT_IN ")
+            if ((payload and BIT_EGO_BRAKE) != 0) sb.append("EGO_BRAKE ")
+            if ((payload and BIT_QUALITY_CONSERV) != 0) sb.append("QCONSERV ")
+            if ((payload and BIT_RED_COMBO_OK) != 0) sb.append("RED_OK ")
+            if ((payload and BIT_RED_GUARDED) != 0) sb.append("RED_GUARD ")
             // trim trailing space
             if (sb.isNotEmpty() && sb[sb.length - 1] == ' ') sb.setLength(sb.length - 1)
             return sb.toString()
@@ -218,8 +213,9 @@ class RiskEngine {
         val allowRed = strongTtc && (strongDist || strongRel || (slopeStrong && (midDist || midRel)))
 
         // --- Convert risk -> level (with hysteresis) ---
-        var level = riskToLevelWithHysteresis(risk, conserv)
-        if (level == 2 && !allowRed) {
+        val preGuardLevel = riskToLevelWithHysteresis(risk, conserv)
+        var level = preGuardLevel
+        if (preGuardLevel == 2 && !allowRed) {
             // Cap to ORANGE when combo confirmation is missing.
             // Also break RED latch immediately to prevent "stuck RED" on spikes.
             lastLevel = 1
@@ -243,14 +239,33 @@ class RiskEngine {
             if (cutInActive) bits = bits or BIT_CUT_IN
             if (egoBrake >= 0.65f) bits = bits or BIT_EGO_BRAKE
             if (conserv >= 0.15f) bits = bits or BIT_QUALITY_CONSERV
+            if (slopeStrong) bits = bits or BIT_TTC_SLOPE_STRONG
+            if (level == 2 && allowRed) bits = bits or BIT_RED_COMBO_OK
+            if (level == 1 && preGuardLevel == 2 && !allowRed) bits = bits or BIT_RED_GUARDED
         } else {
             if (conserv >= 0.15f) bits = bits or BIT_QUALITY_CONSERV
         }
 
+        // --- D2-3: Audit invariants (O(1), no allocations) ---
+        // Každý RED musí být auditovatelný z logu i po drobných změnách heuristik.
+        // - RED vždy nese BIT_RED_COMBO_OK
+        // - RED musí obsahovat alespoň jeden z core faktorů (TTC/DIST/REL)
+        if (level == 2) {
+            bits = bits or BIT_RED_COMBO_OK
+            if ((bits and (BIT_TTC or BIT_DIST or BIT_REL)) == 0) {
+                bits = bits or BIT_TTC
+            }
+        } else if (preGuardLevel == 2 && level == 1) {
+            // Guard potlačil RED -> vždy audit bit (i kdyby se změnila výše uvedená podmínka).
+            bits = bits or BIT_RED_GUARDED
+        }
+
+        val packedBits = packReasonBits(bits)
+
         // Fill reusable result
         out.level = level
         out.riskScore = risk
-        out.reasonBits = bits
+        out.reasonBits = packedBits
         out.state = state
         return out
     }
@@ -258,7 +273,7 @@ class RiskEngine {
     fun standingResult(_riderSpeedMps: Float): Result {
         out.level = 0
         out.riskScore = 0f
-        out.reasonBits = BIT_RIDER_STAND
+        out.reasonBits = packReasonBits(BIT_RIDER_STAND)
         out.state = State.SAFE
         return out
     }

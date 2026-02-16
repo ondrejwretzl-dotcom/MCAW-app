@@ -156,14 +156,67 @@ class RiskEngineScenarioTest {
     }
 
     @Test
-    fun reasonId_pack_shouldBeStable() {
-        val bits = RiskEngine.BIT_TTC or RiskEngine.BIT_REL or RiskEngine.BIT_BRAKE_CUE or RiskEngine.BIT_QUALITY_CONSERV
-        val id = RiskEngine.reasonId(bits)
+    fun reasonBits_redMustBeAuditable_andVersioned() {
+        val engine = RiskEngine()
+        val r = engine.evaluate(
+            tsMs = 0L,
+            effectiveMode = 1,
+            distanceM = 8.0f,
+            approachSpeedMps = 10.0f,
+            ttcSec = 0.9f,
+            ttcSlopeSecPerSec = -2.0f,
+            roiContainment = 1f,
+            egoOffsetN = 0f,
+            cutInActive = false,
+            brakeCueActive = false,
+            brakeCueStrength = 0f,
+            qualityWeight = 1.0f,
+            riderSpeedMps = 10f,
+            egoBrakingConfidence = 0f,
+            leanDeg = Float.NaN
+        )
 
-        // core: TTC(1) + REL(4) = 5
-        assertEquals(5, id and 0b111)
+        assertEquals("Sanity: očekávám RED", 2, r.level)
 
-        // aux: BRAKE_CUE (bit1) + QCONSERV (bit4) => (1<<1) | (1<<4) = 18
-        assertEquals(18, id ushr 3)
+        // version is embedded in the top nibble
+        assertEquals(2, RiskEngine.reasonVersion(r.reasonBits))
+
+        val payload = RiskEngine.stripReasonVersion(r.reasonBits)
+        assertTrue((payload and RiskEngine.BIT_TTC) != 0)
+        assertTrue((payload and RiskEngine.BIT_DIST) != 0)
+        assertTrue((payload and RiskEngine.BIT_REL) != 0)
+        assertTrue((payload and RiskEngine.BIT_TTC_SLOPE_STRONG) != 0)
+        assertTrue((payload and RiskEngine.BIT_RED_COMBO_OK) != 0)
+    }
+
+    @Test
+    fun reasonBits_redGuarded_shouldBeAuditable() {
+        // Připravím situaci, kde risk může krátce přelézt do "RED" podle riskScore,
+        // ale combo guard ho má potlačit (chybí strongDist/strongRel i slopeStrong).
+        val engine = RiskEngine()
+        val r = engine.evaluate(
+            tsMs = 0L,
+            effectiveMode = 1,
+            distanceM = 10.0f,          // distScore ~0.84 (těsně pod strongK ~0.85)
+            approachSpeedMps = 0.5f,    // rel nízká
+            ttcSec = 0.8f,              // strong TTC
+            ttcSlopeSecPerSec = -0.2f,  // slopeStrong = false
+            roiContainment = 1f,
+            egoOffsetN = 0f,
+            cutInActive = false,
+            brakeCueActive = true,
+            brakeCueStrength = 1.0f,
+            qualityWeight = 1.0f,
+            riderSpeedMps = 10f,
+            egoBrakingConfidence = 0.8f,
+            leanDeg = Float.NaN
+        )
+
+        assertEquals("Očekávám ORANGE (RED má být potlačen guardem)", 1, r.level)
+        assertEquals(2, RiskEngine.reasonVersion(r.reasonBits))
+
+        val payload = RiskEngine.stripReasonVersion(r.reasonBits)
+        assertTrue("Musí být označeno, že guard potlačil RED", (payload and RiskEngine.BIT_RED_GUARDED) != 0)
+        assertTrue("Nesmí být označeno RED_OK, když RED neprošel", (payload and RiskEngine.BIT_RED_COMBO_OK) == 0)
     }
 }
