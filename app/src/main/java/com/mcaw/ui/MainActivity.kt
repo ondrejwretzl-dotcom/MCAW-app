@@ -11,6 +11,7 @@ import android.os.SystemClock
 import android.text.method.ScrollingMovementMethod
 import android.view.View
 import android.view.animation.DecelerateInterpolator
+import android.widget.ImageView
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import android.widget.TextView
@@ -51,14 +52,19 @@ class MainActivity : ComponentActivity() {
     private lateinit var txtBuildInfo: TextView
     private lateinit var root: View
     private lateinit var panelMetrics: MaterialCardView
-    private lateinit var brakeLamp: TextView
+    private lateinit var brakeLamp: View
     private lateinit var txtBrakeLamp: TextView
     private lateinit var txtWhy: TextView
     private lateinit var progressAlive: ProgressBar
     private lateinit var dotService: View
     private lateinit var panelMiniPreview: com.google.android.material.card.MaterialCardView
     private lateinit var previewThumb: PreviewView
-    private lateinit var btnPower: com.google.android.material.button.MaterialButton
+
+    // Single power control
+    private lateinit var powerOuter: com.google.android.material.card.MaterialCardView
+    private lateinit var powerInner: com.google.android.material.card.MaterialCardView
+    private lateinit var imgPower: ImageView
+    private lateinit var txtPower: TextView
     private var cameraProvider: ProcessCameraProvider? = null
     private var previewUseCase: Preview? = null
     private var miniPreviewBound: Boolean = false
@@ -108,6 +114,9 @@ class MainActivity : ComponentActivity() {
     private val colorAccentSafe = android.graphics.Color.parseColor("#00E5A8")
     private val colorAccentOrange = android.graphics.Color.parseColor("#FF9F0A")
     private val colorAccentRed = android.graphics.Color.parseColor("#FF3B30")
+
+    // UI-only: neutrální šedá pro vypnutý stav (tlačítko START/STOP)
+    private val colorStrokeMuted = android.graphics.Color.parseColor("#8B97A6")
 
     private val metricsReceiver = object : android.content.BroadcastReceiver() {
         override fun onReceive(context: android.content.Context?, intent: android.content.Intent?) {
@@ -222,7 +231,11 @@ class MainActivity : ComponentActivity() {
         dotService = findViewById(R.id.dotService)
         panelMiniPreview = findViewById(R.id.panelMiniPreview)
         previewThumb = findViewById(R.id.previewThumb)
-        btnPower = findViewById(R.id.btnPower)
+
+        powerOuter = findViewById(R.id.powerOuter)
+        powerInner = findViewById(R.id.powerInner)
+        imgPower = findViewById(R.id.imgPower)
+        txtPower = findViewById(R.id.txtPower)
         updateWhy(0, "")
         updateBrakeLamp(false)
 
@@ -242,7 +255,8 @@ class MainActivity : ComponentActivity() {
         addLog("Aplikace spuštěna")
         logActivity("app_start build=${BuildConfig.VERSION_NAME}(${BuildConfig.VERSION_CODE})")
 
-        btnPower.setOnClickListener {
+        powerOuter.setOnClickListener {
+            // Single toggle: barva a text dle stavu služby, NIKOLI dle alertu.
             if (serviceRunning) {
                 stopEngine()
             } else {
@@ -251,6 +265,7 @@ class MainActivity : ComponentActivity() {
                 ensurePermissions(PendingAction.START_ENGINE)
             }
         }
+
         findViewById<MaterialButton>(R.id.btnSettings).setOnClickListener {
             logActivity("open_settings")
             startActivity(Intent(this, SettingsActivity::class.java))
@@ -259,7 +274,6 @@ class MainActivity : ComponentActivity() {
             ensurePermissions(PendingAction.OPEN_CAMERA)
         }
 
-        // Bottom bar
         findViewById<MaterialButton>(R.id.btnHelp).setOnClickListener {
             logActivity("open_help")
             startActivity(Intent(this, HelpActivity::class.java))
@@ -268,8 +282,6 @@ class MainActivity : ComponentActivity() {
             logActivity("open_legal")
             startActivity(Intent(this, LegalActivity::class.java))
         }
-
-        updatePowerButtonUi()
 
     }
 
@@ -327,7 +339,7 @@ class MainActivity : ComponentActivity() {
         serviceRunning = true
         txtStatus.text = "BĚŽÍ"
         updateServiceDot(true)
-        updatePowerButtonUi()
+        updatePowerUi(true)
         refreshMiniPreviewVisibility()
         // UI-only: SAFE alive indikace se může zobrazit ještě před prvními metrikami.
         updateAliveIndicator(running = true, riderStanding = false, overallLevel = 0)
@@ -340,7 +352,7 @@ class MainActivity : ComponentActivity() {
         serviceRunning = false
         txtStatus.text = "ZASTAVENA"
         updateServiceDot(false)
-        updatePowerButtonUi()
+        updatePowerUi(false)
         updateAliveIndicator(running = false, riderStanding = false, overallLevel = 0)
         stopPulse()
         alertTransitionAnimator?.cancel()
@@ -470,12 +482,15 @@ class MainActivity : ComponentActivity() {
         val riderStanding = riderKmh.isFinite() && riderKmh < 2.0f
         // Stav služby = nedominantní; alert má vlastní banner.
         txtStatus.text = when {
-            !serviceRunning -> "Služba: ZASTAVENA"
-            riderStanding -> "Služba: BĚŽÍ · stojíš (alert vypnut)"
-            else -> "Služba: BĚŽÍ"
+            !serviceRunning -> "ZASTAVENA"
+            riderStanding -> "BĚŽÍ · stojíš (alert vypnut)"
+            else -> "BĚŽÍ"
         }
 
         updateServiceDot(serviceRunning)
+
+        // Power button je indikátor stavu služby (zelená = běží, šedá = vypnuto).
+        updatePowerUi(serviceRunning)
 
         // SAFE "alive" indikace: jen když služba běží, jezdec nestojí a overall je SAFE.
         updateAliveIndicator(serviceRunning, riderStanding, overallLevel)
@@ -485,6 +500,17 @@ class MainActivity : ComponentActivity() {
 
         // U2: žádné blikání / pulzování (alert musí být stabilní). Plynulé crossfade stačí.
         stopPulse()
+    }
+
+    private fun updatePowerUi(running: Boolean) {
+        val ring = if (running) colorAccentSafe else colorStrokeMuted
+        powerOuter.strokeColor = ring
+        powerInner.strokeColor = ring
+
+        val label = if (running) "STOP" else "START"
+        txtPower.text = label
+        txtPower.setTextColor(ring)
+        imgPower.setColorFilter(ring)
     }
 
     private fun animateAlertTransitionIfNeeded(overallLevel: Int, ttcLevel: Int) {
@@ -602,22 +628,6 @@ class MainActivity : ComponentActivity() {
         dotService.background = bg
     }
 
-    private fun updatePowerButtonUi() {
-        if (serviceRunning) {
-            btnPower.text = "STOP"
-            btnPower.setBackgroundResource(R.drawable.bg_power_running)
-            val green = android.graphics.Color.parseColor("#00E5A8")
-            btnPower.setTextColor(green)
-            btnPower.iconTint = android.content.res.ColorStateList.valueOf(green)
-        } else {
-            btnPower.text = "START"
-            btnPower.setBackgroundResource(R.drawable.bg_power_stopped)
-            val gray = android.graphics.Color.parseColor("#AAB4BE")
-            btnPower.setTextColor(gray)
-            btnPower.iconTint = android.content.res.ColorStateList.valueOf(gray)
-        }
-    }
-
     private fun setupMiniPreview() {
         // Debug-only mini preview: tap opens the full PreviewActivity.
         panelMiniPreview.setOnClickListener {
@@ -626,13 +636,22 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun refreshMiniPreviewVisibility() {
-        // Show mini preview only in debug overlay mode, and only when the service is NOT running.
-        val show = AppPreferences.debugOverlay && !serviceRunning
-        panelMiniPreview.visibility = if (show) View.VISIBLE else View.GONE
+        // Mini preview panel is part of the main UI layout.
+        // IMPORTANT: we must NOT contend for the camera while the service is running.
+        // Live CameraX binding is therefore limited to debug overlay mode AND only when service is NOT running.
+        panelMiniPreview.visibility = View.VISIBLE
+
+        if (AppPreferences.debugOverlay && !serviceRunning) {
+            maybeStartMiniPreview()
+        } else {
+            stopMiniPreview()
+        }
     }
 
     private fun maybeStartMiniPreview() {
         if (panelMiniPreview.visibility != View.VISIBLE) return
+        // Live binding only in debug overlay and only when the service is NOT running.
+        if (!AppPreferences.debugOverlay || serviceRunning) return
         if (!hasCameraPermission()) return
         if (miniPreviewBound) return
 
