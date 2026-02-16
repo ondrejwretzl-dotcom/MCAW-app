@@ -154,4 +154,38 @@ class RiskEngineScenarioTest {
             )
         }
     }
+
+    @Test
+    fun reasonBits_redMustBeAuditable_andVersioned() {
+        val engine = RiskEngine()
+        val r = engine.evaluate(
+            tsMs = 0L,
+            effectiveMode = 1,
+            distanceM = 8.0f,
+            approachSpeedMps = 10.0f,
+            ttcSec = 0.9f,
+            ttcSlopeSecPerSec = -2.0f,
+            roiContainment = 1f,
+            egoOffsetN = 0f,
+            cutInActive = false,
+            brakeCueActive = false,
+            brakeCueStrength = 0f,
+            qualityWeight = 1.0f,
+            riderSpeedMps = 10f,
+            egoBrakingConfidence = 0f,
+            leanDeg = Float.NaN
+        )
+
+        assertEquals("Sanity: očekávám RED", 2, r.level)
+
+        // version is embedded in the top nibble
+        assertEquals(2, RiskEngine.reasonVersion(r.reasonBits))
+
+        val payload = RiskEngine.stripReasonVersion(r.reasonBits)
+        assertTrue((payload and RiskEngine.BIT_TTC) != 0)
+        assertTrue((payload and RiskEngine.BIT_DIST) != 0)
+        assertTrue((payload and RiskEngine.BIT_REL) != 0)
+        assertTrue((payload and RiskEngine.BIT_TTC_SLOPE_STRONG) != 0)
+        assertTrue((payload and RiskEngine.BIT_RED_COMBO_OK) != 0)
+    }
 }
