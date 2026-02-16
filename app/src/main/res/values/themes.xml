@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!--
+      MCAW 2.0 – U2 Theme
+      Goal: consistent industrial safety look, without changing behavior.
+    -->
+
+    <style name="Theme.MCAW" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- System bars -->
+        <item name="android:statusBarColor">@color/mcaw_bg</item>
+        <item name="android:navigationBarColor">@color/mcaw_bg</item>
+        <item name="android:windowLightStatusBar">false</item>
+
+        <!-- Brand / palette -->
+        <item name="colorPrimary">@color/mcaw_accent</item>
+        <item name="colorOnPrimary">@color/mcaw_bg</item>
+        <item name="colorSecondary">@color/mcaw_accent_blue</item>
+        <item name="colorOnSecondary">@color/mcaw_text_primary</item>
+
+        <item name="colorSurface">@color/mcaw_surface</item>
+        <item name="colorOnSurface">@color/mcaw_text_primary</item>
+        <item name="colorBackground">@color/mcaw_bg</item>
+        <item name="colorOnBackground">@color/mcaw_text_primary</item>
+
+        <item name="android:textColorPrimary">@color/mcaw_text_primary</item>
+        <item name="android:textColorSecondary">@color/mcaw_text_secondary</item>
+
+        <!-- Default component shapes -->
+        <item name="shapeAppearanceSmallComponent">@style/ShapeAppearance.MCAW.Small</item>
+        <item name="shapeAppearanceMediumComponent">@style/ShapeAppearance.MCAW.Medium</item>
+        <item name="shapeAppearanceLargeComponent">@style/ShapeAppearance.MCAW.Large</item>
+    </style>
+
+    <style name="ShapeAppearance.MCAW.Small" parent="ShapeAppearance.Material3.Corner.Small">
+        <item name="cornerSize">@dimen/mcaw_radius_s</item>
+    </style>
+
+    <style name="ShapeAppearance.MCAW.Medium" parent="ShapeAppearance.Material3.Corner.Medium">
+        <item name="cornerSize">@dimen/mcaw_radius_m</item>
+    </style>
+
+    <style name="ShapeAppearance.MCAW.Large" parent="ShapeAppearance.Material3.Corner.Large">
+        <item name="cornerSize">@dimen/mcaw_radius_l</item>
+    </style>
+
+    <!-- Text appearances used by U2 layouts (optional in U2-1; leveraged in U2-2+) -->
+    <style name="TextAppearance.MCAW.Metric" parent="TextAppearance.Material3.TitleMedium">
+        <item name="android:textSize">@dimen/mcaw_text_l</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/mcaw_text_primary</item>
+    </style>
+
+    <style name="TextAppearance.MCAW.MetricValue" parent="TextAppearance.Material3.TitleLarge">
+        <item name="android:textSize">@dimen/mcaw_text_2xl</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/mcaw_accent</item>
+    </style>
+
+    <style name="TextAppearance.MCAW.Alert" parent="TextAppearance.Material3.DisplayLarge">
+        <item name="android:textSize">@dimen/mcaw_text_alert</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:letterSpacing">0.03</item>
+        <item name="android:textColor">@color/mcaw_text_primary</item>
+    </style>
+
+</resources>

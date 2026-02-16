@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Spacing -->
+    <dimen name="mcaw_space_xs">6dp</dimen>
+    <dimen name="mcaw_space_s">10dp</dimen>
+    <dimen name="mcaw_space_m">14dp</dimen>
+    <dimen name="mcaw_space_l">18dp</dimen>
+    <dimen name="mcaw_space_xl">24dp</dimen>
+
+    <!-- Radii -->
+    <dimen name="mcaw_radius_s">12dp</dimen>
+    <dimen name="mcaw_radius_m">16dp</dimen>
+    <dimen name="mcaw_radius_l">18dp</dimen>
+    <dimen name="mcaw_radius_xl">24dp</dimen>
+
+    <!-- Typography (sizes only; weights set in styles) -->
+    <dimen name="mcaw_text_xs">11sp</dimen>
+    <dimen name="mcaw_text_s">12sp</dimen>
+    <dimen name="mcaw_text_m">14sp</dimen>
+    <dimen name="mcaw_text_l">18sp</dimen>
+    <dimen name="mcaw_text_xl">22sp</dimen>
+    <dimen name="mcaw_text_2xl">28sp</dimen>
+    <dimen name="mcaw_text_alert">64sp</dimen>
+
+    <!-- Component sizes -->
+    <dimen name="mcaw_button_height">46dp</dimen>
+</resources>

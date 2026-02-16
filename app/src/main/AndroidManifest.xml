@@ -20,7 +20,7 @@
     <application
         android:name=".MCAWApp"
         android:label="MCAW"
-        android:theme="@style/Theme.Material3.DayNight.NoActionBar"
+        android:theme="@style/Theme.MCAW"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round">
 

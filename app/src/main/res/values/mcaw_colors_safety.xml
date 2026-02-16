@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      MCAW 2.0 – Industrial Safety palette (U2)
+      NOTE: Keep colors stable; layout should reference these instead of hardcoded hex.
+    -->
+
+    <!-- Base surfaces -->
+    <color name="mcaw_bg">#0F1115</color>
+    <color name="mcaw_surface">#171A1F</color>
+    <color name="mcaw_surface_2">#1E222A</color>
+    <color name="mcaw_divider">#2A2F39</color>
+
+    <!-- Text -->
+    <color name="mcaw_text_primary">#FFFFFF</color>
+    <color name="mcaw_text_secondary">#C9D1D9</color>
+    <color name="mcaw_text_muted">#AAB4BE</color>
+    <color name="mcaw_text_dim">#6B7280</color>
+
+    <!-- Status colors -->
+    <color name="mcaw_safe">#2E7D32</color>
+    <color name="mcaw_caution">#FF9800</color>
+    <color name="mcaw_critical">#D32F2F</color>
+
+    <!-- Accent (buttons/links) -->
+    <color name="mcaw_accent">#00E5A8</color>
+    <color name="mcaw_accent_blue">#0A84FF</color>
+
+    <!-- Overlays -->
+    <color name="mcaw_scrim">#80000000</color>
+</resources>
