@@ -244,6 +244,8 @@ Typicky 3–10°. Příliš velký sklon může zkrátit dohled; příliš malý
                 AppPreferences.brakeCueSensitivity = position
             }
 
+            override fun onNothingSelected(parent: AdapterView<*>) = Unit
+        }
 
         // Camera calibration inputs
         val cameraWatcher = object : TextWatcher {
