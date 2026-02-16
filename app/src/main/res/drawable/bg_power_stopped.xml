@@ -1,10 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- subtle shadow -->
+    <item>
+        <shape android:shape="oval">
+            <gradient
+                android:type="radial"
+                android:gradientRadius="90dp"
+                android:centerX="0.5"
+                android:centerY="0.5"
+                android:startColor="#22000000"
+                android:endColor="#00000000" />
+        </shape>
+    </item>
+
     <!-- outer ring -->
     <item>
         <shape android:shape="oval">
             <solid android:color="#00000000" />
-            <stroke android:width="4dp" android:color="#55616E" />
+            <stroke android:width="5dp" android:color="#55616E" />
         </shape>
     </item>
     <!-- inner ring -->
@@ -12,6 +25,12 @@
         <shape android:shape="oval">
             <solid android:color="#00000000" />
             <stroke android:width="2dp" android:color="#33414C" />
+        </shape>
+    </item>
+
+    <item android:left="26dp" android:top="26dp" android:right="26dp" android:bottom="26dp">
+        <shape android:shape="oval">
+            <solid android:color="#0B1115" />
         </shape>
     </item>
 </layer-list>

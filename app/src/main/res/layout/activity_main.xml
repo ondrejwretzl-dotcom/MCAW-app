@@ -4,21 +4,24 @@
     android:id="@+id/root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#0F1115"
+    android:background="@drawable/bg_main_screen"
     android:orientation="vertical"
-    android:padding="16dp">
+    android:paddingLeft="16dp"
+    android:paddingTop="14dp"
+    android:paddingRight="16dp"
+    android:paddingBottom="14dp">
 
-    <!-- Top bar (minimal, stable) -->
+    <!-- Top bar -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="10dp"
+        android:layout_marginBottom="12dp"
         android:gravity="center_vertical"
         android:orientation="horizontal">
 
         <ImageView
-            android:layout_width="44dp"
-            android:layout_height="44dp"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
             android:contentDescription="MCAW logo"
             android:scaleType="fitCenter"
             android:src="@drawable/mcaw_logo" />
@@ -32,14 +35,17 @@
             android:textSize="22sp"
             android:textStyle="bold" />
 
-        <!-- SAFE "alive" indikace: jemná, bez blikání -->
-        <ProgressBar
-            android:id="@+id/progressAlive"
-            style="?android:attr/progressBarStyleSmall"
-            android:layout_width="18dp"
-            android:layout_height="18dp"
-            android:layout_marginStart="10dp"
-            android:indeterminate="true" />
+        <!-- Running indicator (subtle) -->
+        <TextView
+            android:id="@+id/txtAlive"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:alpha="0.9"
+            android:text="▶"
+            android:textColor="#3BA6FF"
+            android:textSize="14sp"
+            android:visibility="gone" />
 
         <View
             android:layout_width="0dp"
@@ -57,47 +63,47 @@
 
     </LinearLayout>
 
-    <!-- Dominant alert banner (SAFE větší než dřív, ORANGE/RED výraznější) -->
+    <!-- Dominant alert banner -->
     <com.google.android.material.card.MaterialCardView
         android:id="@+id/panelAlert"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="10dp"
-        app:cardCornerRadius="22dp"
-        app:cardElevation="3dp"
+        android:layout_marginBottom="12dp"
+        app:cardCornerRadius="26dp"
+        app:cardElevation="2dp"
         app:cardUseCompatPadding="true">
 
         <TextView
             android:id="@+id/txtAlert"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="#0B1115"
+            android:background="@drawable/bg_alert_banner"
             android:gravity="center"
-            android:paddingTop="24dp"
-            android:paddingBottom="24dp"
+            android:paddingTop="30dp"
+            android:paddingBottom="30dp"
             android:text="SAFE"
-            android:textColor="#FFFFFF"
+            android:textColor="#A7F3DD"
             android:textSize="56sp"
             android:textStyle="bold" />
 
     </com.google.android.material.card.MaterialCardView>
 
-    <!-- Panel s metrikami: 3x2, klidné, velké hodnoty -->
+    <!-- Metrics panel: 3x2 -->
     <com.google.android.material.card.MaterialCardView
         android:id="@+id/panelMetrics"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="10dp"
-        app:cardCornerRadius="18dp"
-        app:cardElevation="2dp"
+        android:layout_marginBottom="12dp"
+        app:cardCornerRadius="22dp"
+        app:cardElevation="1dp"
         app:cardUseCompatPadding="true">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="#171A1F"
+            android:background="@drawable/bg_panel_glass"
             android:orientation="vertical"
-            android:padding="12dp">
+            android:padding="14dp">
 
             <GridLayout
                 android:id="@+id/gridMetrics"
@@ -105,6 +111,7 @@
                 android:layout_height="wrap_content"
                 android:columnCount="3"
                 android:rowCount="2"
+                android:alignmentMode="alignMargins"
                 android:useDefaultMargins="true">
 
                 <!-- 1) TTC -->
@@ -113,10 +120,10 @@
                     android:layout_height="wrap_content"
                     android:layout_columnWeight="1"
                     android:layout_rowWeight="1"
-                    android:background="#1E222A"
+                    android:background="@drawable/bg_metric_tile"
                     android:gravity="center"
                     android:orientation="vertical"
-                    android:padding="8dp">
+                    android:padding="10dp">
 
                     <TextView
                         android:layout_width="wrap_content"
@@ -148,10 +155,10 @@
                     android:layout_height="wrap_content"
                     android:layout_columnWeight="1"
                     android:layout_rowWeight="1"
-                    android:background="#1E222A"
+                    android:background="@drawable/bg_metric_tile"
                     android:gravity="center"
                     android:orientation="vertical"
-                    android:padding="8dp">
+                    android:padding="10dp">
 
                     <TextView
                         android:layout_width="wrap_content"
@@ -183,10 +190,10 @@
                     android:layout_height="wrap_content"
                     android:layout_columnWeight="1"
                     android:layout_rowWeight="1"
-                    android:background="#1E222A"
+                    android:background="@drawable/bg_metric_tile"
                     android:gravity="center"
                     android:orientation="vertical"
-                    android:padding="8dp">
+                    android:padding="10dp">
 
                     <TextView
                         android:layout_width="wrap_content"
@@ -218,10 +225,10 @@
                     android:layout_height="wrap_content"
                     android:layout_columnWeight="1"
                     android:layout_rowWeight="1"
-                    android:background="#1E222A"
+                    android:background="@drawable/bg_metric_tile"
                     android:gravity="center"
                     android:orientation="vertical"
-                    android:padding="8dp">
+                    android:padding="10dp">
 
                     <TextView
                         android:layout_width="wrap_content"
@@ -253,10 +260,10 @@
                     android:layout_height="wrap_content"
                     android:layout_columnWeight="1"
                     android:layout_rowWeight="1"
-                    android:background="#1E222A"
+                    android:background="@drawable/bg_metric_tile"
                     android:gravity="center"
                     android:orientation="vertical"
-                    android:padding="8dp">
+                    android:padding="10dp">
 
                     <TextView
                         android:layout_width="wrap_content"
@@ -288,10 +295,10 @@
                     android:layout_height="wrap_content"
                     android:layout_columnWeight="1"
                     android:layout_rowWeight="1"
-                    android:background="#1E222A"
+                    android:background="@drawable/bg_metric_tile"
                     android:gravity="center"
                     android:orientation="vertical"
-                    android:padding="8dp">
+                    android:padding="10dp">
 
                     <TextView
                         android:layout_width="wrap_content"
@@ -322,23 +329,26 @@
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>
 
-    <!-- One-line status: brake cue + service + WHY (when alert) -->
+    <!-- Status line (brake cue + service) -->
     <com.google.android.material.card.MaterialCardView
         android:id="@+id/panelStatusLine"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="10dp"
-        app:cardCornerRadius="18dp"
-        app:cardElevation="2dp"
+        android:layout_marginBottom="12dp"
+        app:cardCornerRadius="22dp"
+        app:cardElevation="1dp"
         app:cardUseCompatPadding="true">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="#1E222A"
+            android:background="@drawable/bg_panel_glass"
             android:gravity="center_vertical"
             android:orientation="horizontal"
-            android:padding="12dp">
+            android:paddingLeft="14dp"
+            android:paddingTop="12dp"
+            android:paddingRight="14dp"
+            android:paddingBottom="12dp">
 
             <TextView
                 android:id="@+id/brakeLamp"
@@ -391,159 +401,177 @@
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>
 
-    <!-- Controls: preview (debug-only) + camera button, big power, settings -->
+    <!-- Controls: preview + STOP + camera/settings -->
     <com.google.android.material.card.MaterialCardView
         android:id="@+id/panelControls"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="10dp"
-        app:cardCornerRadius="18dp"
-        app:cardElevation="2dp"
+        android:layout_marginBottom="12dp"
+        app:cardCornerRadius="22dp"
+        app:cardElevation="1dp"
+        app:cardUseCompatPadding="true">
+
+        <androidx.constraintlayout.widget.ConstraintLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bg_panel_glass"
+            android:padding="14dp">
+
+
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/panelMiniPreview"
+                android:layout_width="0dp"
+                android:layout_height="110dp"
+                app:cardCornerRadius="18dp"
+                app:cardElevation="1dp"
+                app:cardUseCompatPadding="true"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toTopOf="parent"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintEnd_toStartOf="@id/btnPower"
+                android:layout_marginEnd="12dp">
+
+                <FrameLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:background="#0B1115">
+
+                    <androidx.camera.view.PreviewView
+                        android:id="@+id/previewThumb"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="bottom|start"
+                        android:layout_margin="8dp"
+                        android:background="@drawable/bg_preview_tag"
+                        android:paddingLeft="8dp"
+                        android:paddingRight="8dp"
+                        android:paddingTop="3dp"
+                        android:paddingBottom="3dp"
+                        android:text="PREVIEW"
+                        android:textColor="#FFFFFF"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+
+                </FrameLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnPower"
+                android:layout_width="150dp"
+                android:layout_height="150dp"
+                android:contentDescription="Start / Stop"
+                android:text="STOP"
+                android:textAllCaps="false"
+                android:textColor="#A7F3DD"
+                android:textSize="22sp"
+                android:textStyle="bold"
+                android:background="@drawable/bg_power_running"
+                app:icon="@drawable/ic_power"
+                app:iconGravity="textTop"
+                app:iconPadding="6dp"
+                app:iconTint="#A7F3DD"
+                app:iconSize="40dp"
+                app:layout_constraintTop_toTopOf="parent"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toEndOf="parent" />
+
+            <LinearLayout
+                android:id="@+id/panelRightButtons"
+                android:layout_width="120dp"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintTop_toTopOf="parent"
+                app:layout_constraintBottom_toBottomOf="parent">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnCamera"
+                    android:layout_width="match_parent"
+                    android:layout_height="56dp"
+                    android:layout_marginBottom="10dp"
+                    android:text="KAMERA"
+                    android:textAllCaps="false"
+                    android:textColor="#C9D1D9"
+                    android:textSize="13sp"
+                    app:cornerRadius="16dp"
+                    app:icon="@drawable/ic_camera"
+                    app:iconPadding="8dp"
+                    app:iconTint="#C9D1D9"
+                    app:iconSize="22dp"
+                    app:backgroundTint="#1E222A" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnSettings"
+                    android:layout_width="match_parent"
+                    android:layout_height="56dp"
+                    android:text="NASTAVENÍ"
+                    android:textAllCaps="false"
+                    android:textColor="#C9D1D9"
+                    android:textSize="13sp"
+                    app:cornerRadius="16dp"
+                    app:icon="@drawable/ic_settings"
+                    app:iconPadding="8dp"
+                    app:iconTint="#C9D1D9"
+                    app:iconSize="22dp"
+                    app:backgroundTint="#1E222A" />
+
+            </LinearLayout>
+
+        </androidx.constraintlayout.widget.ConstraintLayout>
+    </com.google.android.material.card.MaterialCardView>
+
+    <!-- Activities -->
+    <com.google.android.material.card.MaterialCardView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        app:cardCornerRadius="22dp"
+        app:cardElevation="1dp"
         app:cardUseCompatPadding="true">
 
         <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:background="#171A1F"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
-            android:padding="12dp">
+            android:layout_height="match_parent"
+            android:background="@drawable/bg_panel_glass"
+            android:orientation="vertical"
+            android:padding="14dp">
 
-            <!-- Left: mini preview + camera icon -->
-            <LinearLayout
-                android:layout_width="0dp"
+            <TextView
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:gravity="center_horizontal"
-                android:orientation="vertical">
-
-                <com.google.android.material.card.MaterialCardView
-                    android:id="@+id/panelMiniPreview"
-                    android:layout_width="120dp"
-                    android:layout_height="78dp"
-                    android:layout_marginBottom="10dp"
-                    android:visibility="gone"
-                    app:cardCornerRadius="16dp"
-                    app:cardElevation="2dp"
-                    app:cardUseCompatPadding="true">
-
-                    <FrameLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="match_parent"
-                        android:background="#0B1115">
-
-                        <androidx.camera.view.PreviewView
-                            android:id="@+id/previewThumb"
-                            android:layout_width="match_parent"
-                            android:layout_height="match_parent" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_gravity="bottom|start"
-                            android:layout_margin="6dp"
-                            android:background="#55000000"
-                            android:paddingLeft="6dp"
-                            android:paddingRight="6dp"
-                            android:paddingTop="2dp"
-                            android:paddingBottom="2dp"
-                            android:text="PREVIEW"
-                            android:textColor="#FFFFFF"
-                            android:textSize="10sp"
-                            android:textStyle="bold" />
-
-                    </FrameLayout>
-                </com.google.android.material.card.MaterialCardView>
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnCamera"
-                    android:layout_width="64dp"
-                    android:layout_height="64dp"
-                    android:contentDescription="Kamera"
-                    android:text=""
-                    android:textAllCaps="false"
-                    app:cornerRadius="18dp"
-                    app:icon="@android:drawable/ic_menu_camera"
-                    app:iconGravity="textStart"
-                    app:iconPadding="0dp"
-                    app:iconSize="28dp"
-                    app:backgroundTint="#1E222A" />
-
-            </LinearLayout>
-
-            <!-- Center: big power button (single START/STOP) -->
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnPower"
-                android:layout_width="120dp"
-                android:layout_height="120dp"
-                android:layout_marginStart="10dp"
-                android:layout_marginEnd="10dp"
-                android:contentDescription="Start / Stop"
-                android:text="START"
-                android:textAllCaps="false"
+                android:layout_marginBottom="8dp"
+                android:text="Aktivity:"
+                android:textColor="#FFFFFF"
                 android:textSize="18sp"
-                android:textStyle="bold"
-                app:cornerRadius="60dp"
-                app:icon="@android:drawable/ic_lock_power_off"
-                app:iconGravity="textTop"
-                app:iconPadding="4dp"
-                app:iconSize="34dp"
-                app:backgroundTint="#0B1115"
-                app:strokeWidth="4dp"
-                app:strokeColor="#00E5A8" />
+                android:textStyle="bold" />
 
-            <!-- Right: settings icon -->
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
+            <androidx.core.widget.NestedScrollView
+                android:id="@+id/scrollActivities"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
                 android:layout_weight="1"
-                android:gravity="center_horizontal"
-                android:orientation="vertical">
+                android:fillViewport="true"
+                android:overScrollMode="always"
+                android:scrollbars="vertical">
 
-                <View
-                    android:layout_width="1dp"
-                    android:layout_height="88dp" />
+                <TextView
+                    android:id="@+id/txtActivityLog"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:lineSpacingExtra="2dp"
+                    android:text="[--:--:--] ..."
+                    android:textColor="#C9D1D9"
+                    android:textSize="13sp" />
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnSettings"
-                    android:layout_width="64dp"
-                    android:layout_height="64dp"
-                    android:contentDescription="Nastavení"
-                    android:text=""
-                    android:textAllCaps="false"
-                    app:cornerRadius="18dp"
-                    app:icon="@android:drawable/ic_menu_preferences"
-                    app:iconGravity="textStart"
-                    app:iconPadding="0dp"
-                    app:iconSize="28dp"
-                    app:backgroundTint="#1E222A" />
-
-            </LinearLayout>
+            </androidx.core.widget.NestedScrollView>
 
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>
-
-    <!-- Activities: scrollable -->
-    <androidx.core.widget.NestedScrollView
-        android:id="@+id/scrollActivities"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:background="#14181E"
-        android:fillViewport="true"
-        android:overScrollMode="always"
-        android:scrollbars="vertical">
-
-        <TextView
-            android:id="@+id/txtActivityLog"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:padding="10dp"
-            android:text="Aktivity:\n- Aplikace spuštěna"
-            android:textColor="#C9D1D9"
-            android:textSize="13sp" />
-
-    </androidx.core.widget.NestedScrollView>
 
     <!-- Bottom bar: Help + Legal -->
     <LinearLayout

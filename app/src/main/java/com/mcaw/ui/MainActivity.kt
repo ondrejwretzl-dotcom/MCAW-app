@@ -13,7 +13,6 @@ import android.view.animation.DecelerateInterpolator
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import android.widget.TextView
-import android.widget.ProgressBar
 import android.util.TypedValue
 import androidx.activity.ComponentActivity
 import androidx.core.app.ActivityCompat
@@ -53,7 +52,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var brakeLamp: TextView
     private lateinit var txtBrakeLamp: TextView
     private lateinit var txtWhy: TextView
-    private lateinit var progressAlive: ProgressBar
+    private lateinit var txtAlive: TextView
     private lateinit var dotService: View
     private lateinit var panelMiniPreview: com.google.android.material.card.MaterialCardView
     private lateinit var previewThumb: PreviewView
@@ -223,7 +222,7 @@ class MainActivity : ComponentActivity() {
         brakeLamp = findViewById(R.id.brakeLamp)
         txtBrakeLamp = findViewById(R.id.txtBrakeLamp)
         txtWhy = findViewById(R.id.txtWhy)
-        progressAlive = findViewById(R.id.progressAlive)
+        txtAlive = findViewById(R.id.txtAlive)
         dotService = findViewById(R.id.dotService)
         panelMiniPreview = findViewById(R.id.panelMiniPreview)
         previewThumb = findViewById(R.id.previewThumb)
@@ -602,11 +601,7 @@ class MainActivity : ComponentActivity() {
 
     private fun updateAliveIndicator(running: Boolean, riderStanding: Boolean, overallLevel: Int) {
         val show = running && !riderStanding && overallLevel == 0
-        progressAlive.visibility = if (show) View.VISIBLE else View.INVISIBLE
-        if (show) {
-            // Jemná indikace: zelená pro SAFE (bez blikání).
-            progressAlive.indeterminateTintList = android.content.res.ColorStateList.valueOf(colorAccentSafe)
-        }
+        txtAlive.visibility = if (show) View.VISIBLE else View.GONE
     }
 
     private fun lerpColor(from: Int, to: Int, t: Float): Int {
@@ -646,13 +641,14 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun refreshMiniPreviewVisibility() {
-        // Show mini preview only in debug overlay mode, and only when the service is NOT running.
-        val show = AppPreferences.debugOverlay && !serviceRunning
-        panelMiniPreview.visibility = if (show) View.VISIBLE else View.GONE
+        // Redesigned UI: preview tile is part of the main layout. To avoid camera conflicts,
+        // we only bind the camera when the service is NOT running (see bindMiniPreview()).
+        panelMiniPreview.visibility = View.VISIBLE
     }
 
     private fun maybeStartMiniPreview() {
         if (panelMiniPreview.visibility != View.VISIBLE) return
+        if (serviceRunning) return
         if (!hasCameraPermission()) return
         if (miniPreviewBound) return
 
@@ -730,7 +726,7 @@ class MainActivity : ComponentActivity() {
 
     private fun updateBrakeLamp(active: Boolean) {
         val color =
-            if (active) android.graphics.Color.parseColor("#FF2D2D") else android.graphics.Color.parseColor("#3A3F4A")
+            if (active) android.graphics.Color.parseColor("#FF2D2D") else android.graphics.Color.parseColor("#00E5A8")
         val bg = (brakeLamp.background as? android.graphics.drawable.GradientDrawable)
             ?: android.graphics.drawable.GradientDrawable().apply {
                 shape = android.graphics.drawable.GradientDrawable.OVAL
@@ -770,7 +766,7 @@ class MainActivity : ComponentActivity() {
         // When service is stopped, keep UI calm.
         if (!serviceRunning) {
             btnPower.text = "START"
-            btnPower.strokeColor = android.content.res.ColorStateList.valueOf(colorAccentSafe)
+            btnPower.setBackgroundResource(R.drawable.bg_power_stopped)
             btnPower.setTextColor(colorAccentSafe)
             btnPower.iconTint = android.content.res.ColorStateList.valueOf(colorAccentSafe)
             return
@@ -778,12 +774,14 @@ class MainActivity : ComponentActivity() {
 
         btnPower.text = "STOP"
 
+        // Running state: keep the ring style stable (no flashing), only tint the icon/text by severity.
+        btnPower.setBackgroundResource(R.drawable.bg_power_running)
+
         val accent = when (overallLevel) {
             2 -> colorAccentRed
             1 -> colorAccentOrange
             else -> colorAccentSafe
         }
-        btnPower.strokeColor = android.content.res.ColorStateList.valueOf(accent)
         btnPower.setTextColor(accent)
         btnPower.iconTint = android.content.res.ColorStateList.valueOf(accent)
     }
