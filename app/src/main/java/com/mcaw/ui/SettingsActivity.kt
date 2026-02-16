@@ -471,15 +471,14 @@ private fun resetRecommended() {
         if (editText == null) return fallback
         val value = editText.text?.toString()?.trim()
         return value?.toFloatOrNull() ?: fallback
-    
+    }
 
-private fun formatFloatForInput(v: Float): String {
-    // Stabilní zápis s tečkou jako desetinným oddělovačem (EditText numberDecimal očekává '.')
-    return java.lang.String.format(java.util.Locale.US, "%.2f", v)
-        .trimEnd('0')
-        .trimEnd('.')
-}
-}
+    private fun formatFloatForInput(v: Float): String {
+        // Stabilní zápis s tečkou jako desetinným oddělovačem (EditText numberDecimal očekává '.')
+        return java.lang.String.format(java.util.Locale.US, "%.2f", v)
+            .trimEnd('0')
+            .trimEnd('.')
+    }
 
     private fun modeSummary(mode: Int): String {
         return when (mode) {
