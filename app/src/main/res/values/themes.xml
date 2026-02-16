@@ -3,18 +3,23 @@
 
     <!--
       MCAW 2.0 – U2 Theme (Industrial Safety)
-      NOTE: Project uses Material Components (com.google.android.material:material).
-      Therefore we base the theme on Theme.MaterialComponents.* (NOT Material3),
-      to avoid missing style/attr definitions during aapt2 linking.
+      IMPORTANT:
+      - Project uses Material Components (com.google.android.material:material).
+      - Do NOT reference Material3 styles/attrs.
+      - Avoid non-existent attrs like colorOnBackground in MaterialComponents.
     -->
 
     <style name="Theme.MCAW" parent="Theme.MaterialComponents.DayNight.NoActionBar">
-        <!-- System bars -->
+        <!-- System bars / fullscreen base (actual fullscreen flags handled per-Activity in U2-2) -->
         <item name="android:statusBarColor">@color/mcaw_bg</item>
         <item name="android:navigationBarColor">@color/mcaw_bg</item>
         <item name="android:windowLightStatusBar">false</item>
 
-        <!-- Brand / palette -->
+        <!-- Backgrounds (use android attrs to avoid missing support attrs) -->
+        <item name="android:colorBackground">@color/mcaw_bg</item>
+        <item name="android:windowBackground">@color/mcaw_bg</item>
+
+        <!-- Brand / palette (MaterialComponents-supported) -->
         <item name="colorPrimary">@color/mcaw_accent</item>
         <item name="colorPrimaryVariant">@color/mcaw_accent</item>
         <item name="colorOnPrimary">@color/mcaw_bg</item>
@@ -25,8 +30,6 @@
 
         <item name="colorSurface">@color/mcaw_surface</item>
         <item name="colorOnSurface">@color/mcaw_text_primary</item>
-        <item name="colorBackground">@color/mcaw_bg</item>
-        <item name="colorOnBackground">@color/mcaw_text_primary</item>
 
         <item name="android:textColorPrimary">@color/mcaw_text_primary</item>
         <item name="android:textColorSecondary">@color/mcaw_text_secondary</item>
