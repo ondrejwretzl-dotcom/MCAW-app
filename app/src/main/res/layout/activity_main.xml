@@ -12,9 +12,9 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_marginBottom="10dp"
         android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:layout_marginBottom="10dp">
+        android:orientation="horizontal">
 
         <ImageView
             android:layout_width="44dp"
@@ -72,11 +72,11 @@
             android:layout_height="wrap_content"
             android:background="#0B1115"
             android:gravity="center"
-            android:paddingTop="26dp"
-            android:paddingBottom="26dp"
+            android:paddingTop="28dp"
+            android:paddingBottom="28dp"
             android:text="SAFE"
             android:textColor="#FFFFFF"
-            android:textSize="52sp"
+            android:textSize="56sp"
             android:textStyle="bold" />
     </com.google.android.material.card.MaterialCardView>
 
@@ -184,7 +184,7 @@
                     android:visibility="gone" />
             </LinearLayout>
 
-            <!-- Controls row -->
+            <!-- Controls row (match mock): preview left, power center, camera/settings stacked RIGHT of power -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -192,13 +192,12 @@
                 android:gravity="center_vertical"
                 android:orientation="horizontal">
 
-                <!-- Preview thumb (UI placeholder; live preview can open PreviewActivity) -->
+                <!-- Preview thumb (debug-only) -->
                 <com.google.android.material.card.MaterialCardView
                     android:id="@+id/panelMiniPreview"
-                    android:layout_width="0dp"
-                    android:layout_height="110dp"
-                    android:layout_weight="1"
-                    android:visibility="visible"
+                    android:layout_width="120dp"
+                    android:layout_height="78dp"
+                    android:visibility="gone"
                     app:cardCornerRadius="18dp"
                     app:cardUseCompatPadding="true"
                     app:cardElevation="2dp">
@@ -230,13 +229,15 @@
                     </FrameLayout>
                 </com.google.android.material.card.MaterialCardView>
 
+                <View
+                    android:layout_width="12dp"
+                    android:layout_height="1dp" />
+
                 <!-- Power button -->
                 <com.google.android.material.card.MaterialCardView
                     android:id="@+id/powerOuter"
-                    android:layout_width="158dp"
-                    android:layout_height="158dp"
-                    android:layout_marginStart="10dp"
-                    android:layout_marginEnd="10dp"
+                    android:layout_width="150dp"
+                    android:layout_height="150dp"
                     android:clickable="true"
                     android:focusable="true"
                     android:foreground="?attr/selectableItemBackgroundBorderless"
@@ -289,32 +290,33 @@
                     </FrameLayout>
                 </com.google.android.material.card.MaterialCardView>
 
-                <!-- Camera + Settings (right side, stacked, visible) -->
+                <View
+                    android:layout_width="12dp"
+                    android:layout_height="1dp" />
+
+                <!-- Camera + Settings stacked right (more visible panels + icons) -->
                 <LinearLayout
-                    android:layout_width="132dp"
-                    android:layout_height="158dp"
+                    android:layout_width="88dp"
+                    android:layout_height="150dp"
                     android:gravity="center"
                     android:orientation="vertical">
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnCamera"
                         style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                        android:layout_width="match_parent"
-                        android:layout_height="64dp"
+                        android:layout_width="84dp"
+                        android:layout_height="66dp"
                         android:insetLeft="0dp"
                         android:insetRight="0dp"
                         android:insetTop="0dp"
                         android:insetBottom="0dp"
+                        android:padding="0dp"
+                        android:text=""
                         android:backgroundTint="#2F3743"
-                        android:text="KAMERA"
-                        android:textAllCaps="false"
-                        android:textColor="#F1F5F9"
-                        android:textStyle="bold"
-                        app:strokeColor="#465061"
+                        app:strokeColor="#596579"
                         app:strokeWidth="2dp"
                         app:icon="@android:drawable/ic_menu_camera"
-                        app:iconPadding="8dp"
-                        app:iconSize="24dp"
+                        app:iconSize="30dp"
                         app:iconTint="#F1F5F9" />
 
                     <View
@@ -324,24 +326,22 @@
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnSettings"
                         style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                        android:layout_width="match_parent"
-                        android:layout_height="64dp"
+                        android:layout_width="84dp"
+                        android:layout_height="66dp"
                         android:insetLeft="0dp"
                         android:insetRight="0dp"
                         android:insetTop="0dp"
                         android:insetBottom="0dp"
+                        android:padding="0dp"
+                        android:text=""
                         android:backgroundTint="#2F3743"
-                        android:text="NASTAVENÍ"
-                        android:textAllCaps="false"
-                        android:textColor="#F1F5F9"
-                        android:textStyle="bold"
-                        app:strokeColor="#465061"
+                        app:strokeColor="#596579"
                         app:strokeWidth="2dp"
                         app:icon="@android:drawable/ic_menu_manage"
-                        app:iconPadding="8dp"
-                        app:iconSize="24dp"
+                        app:iconSize="30dp"
                         app:iconTint="#F1F5F9" />
                 </LinearLayout>
+
             </LinearLayout>
 
         </LinearLayout>
