@@ -167,7 +167,8 @@ class SessionEventLogger(
                 mode = ev.mode,
                 lockedId = ev.lockedId,
                 label = ev.label,
-                detScore = ev.detScore
+                detScore = ev.detScore,
+                reasonId = RiskEngine.reasonId(ev.reasonBits)
             )
             PublicLogWriter.appendLogLine(context, fileName, sb.toString().trimEnd())
 

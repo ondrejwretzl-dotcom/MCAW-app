@@ -42,6 +42,9 @@ object LogContract {
     const val COL_LABEL = "label"            // canonical label of locked target (quoted CSV)
     const val COL_DET_SCORE = "det_score"    // detector confidence 0..1
 
+    // D2-2: compact reason classification for easier CSV filtering (derived from reason_bits)
+    const val COL_REASON_ID = "reason_id"
+
     /**
      * Stabilní hlavička CSV – vždy první řádek souboru.
      */
@@ -62,7 +65,8 @@ object LogContract {
         append(COL_MODE).append(',')
         append(COL_LOCKED_ID).append(',')
         append(COL_LABEL).append(',')
-        append(COL_DET_SCORE)
+        append(COL_DET_SCORE).append(',')
+        append(COL_REASON_ID)
         append('\n')
     }
 
@@ -92,7 +96,8 @@ object LogContract {
         mode: Int,
         lockedId: Long,
         label: String,
-        detScore: Float
+        detScore: Float,
+        reasonId: Int
     ) {
         sb.append(tsMs).append(',')
         appendFloat(sb, risk, 3); sb.append(',')
@@ -113,7 +118,8 @@ object LogContract {
         sb.append(mode).append(',')
         sb.append(lockedId).append(',')
         appendCsvString(sb, label); sb.append(',')
-        appendFloat(sb, detScore, 3)
+        appendFloat(sb, detScore, 3); sb.append(',')
+        sb.append(reasonId)
 
         sb.append('\n')
     }
