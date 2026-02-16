@@ -1,4 +1,4 @@
-name: Android CI (signed release) -s testy
+name: Android CI (signed release) - s testy (optimalizováno)
 
 on:
   push:
@@ -7,9 +7,20 @@ on:
   workflow_dispatch: {}
 
 jobs:
-  build:
-    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+  test:
+    name: Unit tests (D1)
     runs-on: ubuntu-22.04
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+
+    env:
+      # Bezpečné CI zrychlení (bez změny výstupu)
+      GRADLE_OPTS: >-
+        -Dorg.gradle.daemon=false
+        -Dorg.gradle.parallel=true
+        -Dorg.gradle.configureondemand=true
+        -Dorg.gradle.caching=true
+        -Dkotlin.incremental=true
+        -Dkotlin.compiler.execution.strategy=in-process
 
     steps:
       - name: Checkout
@@ -25,11 +36,61 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
-      # D1: scénářové unit testy (offline regresní síť)
-      - name: Unit tests (D1)
-        run: ./gradlew :app:test --no-daemon
+      # Wrapper + Gradle cache přes dedicated action (rychlejší a stabilnější)
+      - name: Setup Gradle cache
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          cache-disabled: false
 
-      # Stabilní signed release (pro update bez odinstalace)
+      # Rychlejší než :app:test (méně variant), ale stále pokryje D1 v src/test.
+      # Pokud bys někdy měl release-specific unit testy, změň na :app:testReleaseUnitTest.
+      - name: Run unit tests (D1)
+        run: ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace
+
+      # Když testy spadnou, nahraj reporty a výsledky pro diagnostiku.
+      - name: Upload test reports (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-reports
+          path: |
+            app/build/reports/tests/
+            app/build/test-results/
+
+  release:
+    name: Signed release APK
+    runs-on: ubuntu-22.04
+    needs: [ test ]
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+
+    env:
+      GRADLE_OPTS: >-
+        -Dorg.gradle.daemon=false
+        -Dorg.gradle.parallel=true
+        -Dorg.gradle.configureondemand=true
+        -Dorg.gradle.caching=true
+        -Dkotlin.incremental=true
+        -Dkotlin.compiler.execution.strategy=in-process
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
+      - name: Setup Gradle cache
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          cache-disabled: false
+
       - name: Write release keystore
         env:
           MCAW_KEYSTORE_B64: ${{ secrets.MCAW_KEYSTORE_B64 }}
@@ -48,7 +109,7 @@ jobs:
           MCAW_KEY_PASSWORD: ${{ secrets.MCAW_KEY_PASSWORD }}
           VERSION_CODE: ${{ github.run_number }}
           VERSION_NAME: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('1.0.{0}', github.run_number) }}
-        run: ./gradlew :app:assembleRelease --no-daemon
+        run: ./gradlew :app:assembleRelease --no-daemon --stacktrace
 
       - name: Cleanup keystore
         if: always()
