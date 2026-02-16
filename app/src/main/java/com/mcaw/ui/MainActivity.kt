@@ -8,7 +8,6 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
-import android.text.method.ScrollingMovementMethod
 import android.view.View
 import android.view.animation.DecelerateInterpolator
 import com.google.android.material.button.MaterialButton
@@ -58,6 +57,9 @@ class MainActivity : ComponentActivity() {
     private lateinit var dotService: View
     private lateinit var panelMiniPreview: com.google.android.material.card.MaterialCardView
     private lateinit var previewThumb: PreviewView
+    private lateinit var btnPower: MaterialButton
+    private lateinit var btnHelp: MaterialButton
+    private lateinit var btnLegal: MaterialButton
     private var cameraProvider: ProcessCameraProvider? = null
     private var previewUseCase: Preview? = null
     private var miniPreviewBound: Boolean = false
@@ -100,13 +102,18 @@ class MainActivity : ComponentActivity() {
 
     private var lastMetricsUpdateMs: Long = 0L
 
-    private val colorBgSafe = android.graphics.Color.parseColor("#1E222A")
-    private val colorBgOrange = android.graphics.Color.parseColor("#332514")
-    private val colorBgRed = android.graphics.Color.parseColor("#331B1B")
+    // Alert backgrounds (banner) – ORANGE/RED must be clearly different.
+    private val colorBgSafe = android.graphics.Color.parseColor("#0B1115")
+    private val colorBgOrange = android.graphics.Color.parseColor("#2A1C0F")
+    private val colorBgRed = android.graphics.Color.parseColor("#2A0F10")
 
     private val colorAccentSafe = android.graphics.Color.parseColor("#00E5A8")
     private val colorAccentOrange = android.graphics.Color.parseColor("#FF9F0A")
     private val colorAccentRed = android.graphics.Color.parseColor("#FF3B30")
+
+    private val colorTextSafe = android.graphics.Color.parseColor("#A7F3DD")
+    private val colorTextOrange = android.graphics.Color.parseColor("#FFC27A")
+    private val colorTextRed = android.graphics.Color.parseColor("#FF7A73")
 
     private val metricsReceiver = object : android.content.BroadcastReceiver() {
         override fun onReceive(context: android.content.Context?, intent: android.content.Intent?) {
@@ -210,7 +217,6 @@ class MainActivity : ComponentActivity() {
         txtRiderSpeed = findViewById(R.id.txtRiderSpeed)
         txtDetectedObject = findViewById(R.id.txtDetectedObject)
         txtActivityLog = findViewById(R.id.txtActivityLog)
-        txtActivityLog.movementMethod = ScrollingMovementMethod()
         txtBuildInfo = findViewById(R.id.txtBuildInfo)
         root = findViewById(R.id.root)
         panelMetrics = findViewById(R.id.panelMetrics)
@@ -221,6 +227,9 @@ class MainActivity : ComponentActivity() {
         dotService = findViewById(R.id.dotService)
         panelMiniPreview = findViewById(R.id.panelMiniPreview)
         previewThumb = findViewById(R.id.previewThumb)
+        btnPower = findViewById(R.id.btnPower)
+        btnHelp = findViewById(R.id.btnHelp)
+        btnLegal = findViewById(R.id.btnLegal)
         updateWhy(0, "")
         updateBrakeLamp(false)
 
@@ -240,12 +249,17 @@ class MainActivity : ComponentActivity() {
         addLog("Aplikace spuštěna")
         logActivity("app_start build=${BuildConfig.VERSION_NAME}(${BuildConfig.VERSION_CODE})")
 
-        findViewById<MaterialButton>(R.id.btnStart).setOnClickListener {
-            // Prevent camera conflicts: stop mini preview before starting the service.
-            stopMiniPreview()
-            ensurePermissions(PendingAction.START_ENGINE)
+        // Single power button (START/STOP).
+        btnPower.setOnClickListener {
+            if (serviceRunning) {
+                stopEngine()
+            } else {
+                // Prevent camera conflicts: stop mini preview before starting the service.
+                stopMiniPreview()
+                ensurePermissions(PendingAction.START_ENGINE)
+            }
         }
-        findViewById<MaterialButton>(R.id.btnStop).setOnClickListener { stopEngine() }
+
         findViewById<MaterialButton>(R.id.btnSettings).setOnClickListener {
             logActivity("open_settings")
             startActivity(Intent(this, SettingsActivity::class.java))
@@ -253,6 +267,18 @@ class MainActivity : ComponentActivity() {
         findViewById<MaterialButton>(R.id.btnCamera).setOnClickListener {
             ensurePermissions(PendingAction.OPEN_CAMERA)
         }
+
+        btnHelp.setOnClickListener {
+            logActivity("open_help")
+            startActivity(Intent(this, HelpActivity::class.java))
+        }
+        btnLegal.setOnClickListener {
+            logActivity("open_legal")
+            startActivity(Intent(this, LegalActivity::class.java))
+        }
+
+        updatePowerButtonUi(overallLevel = 0)
+        txtAlert.setTextColor(colorTextSafe)
 
     }
 
@@ -308,11 +334,12 @@ class MainActivity : ComponentActivity() {
         val intent = Intent(this, McawService::class.java)
         ContextCompat.startForegroundService(this, intent)
         serviceRunning = true
-        txtStatus.text = "Služba: BĚŽÍ"
+        txtStatus.text = "BĚŽÍ"
         updateServiceDot(true)
         refreshMiniPreviewVisibility()
         // UI-only: SAFE alive indikace se může zobrazit ještě před prvními metrikami.
         updateAliveIndicator(running = true, riderStanding = false, overallLevel = 0)
+        updatePowerButtonUi(overallLevel = lastOverallLevelUi.coerceAtLeast(0))
         addLog("Služba spuštěna")
         logActivity("service_start")
     }
@@ -320,7 +347,7 @@ class MainActivity : ComponentActivity() {
     private fun stopEngine() {
         stopService(Intent(this, McawService::class.java))
         serviceRunning = false
-        txtStatus.text = "Služba: ZASTAVENA"
+        txtStatus.text = "ZASTAVENA"
         updateServiceDot(false)
         updateAliveIndicator(running = false, riderStanding = false, overallLevel = 0)
         stopPulse()
@@ -328,6 +355,7 @@ class MainActivity : ComponentActivity() {
         panelMetrics.strokeColor = android.graphics.Color.TRANSPARENT
         refreshMiniPreviewVisibility()
         maybeStartMiniPreview()
+        updatePowerButtonUi(overallLevel = 0)
         addLog("Služba zastavena")
         logActivity("service_stop")
     }
@@ -449,11 +477,11 @@ class MainActivity : ComponentActivity() {
 
     private fun applyVisualAlert(overallLevel: Int, ttcLevel: Int, riderKmh: Float) {
         val riderStanding = riderKmh.isFinite() && riderKmh < 2.0f
-        // Stav služby = nedominantní; alert má vlastní banner.
+        // Stav služby je krátký (status line), alert má vlastní banner.
         txtStatus.text = when {
-            !serviceRunning -> "Služba: ZASTAVENA"
-            riderStanding -> "Služba: BĚŽÍ · stojíš (alert vypnut)"
-            else -> "Služba: BĚŽÍ"
+            !serviceRunning -> "ZASTAVENA"
+            riderStanding -> "BĚŽÍ · stojíš (alert vypnut)"
+            else -> "BĚŽÍ"
         }
 
         updateServiceDot(serviceRunning)
@@ -463,6 +491,9 @@ class MainActivity : ComponentActivity() {
 
         // Jemný přechod mezi úrovněmi – bez blikání.
         animateAlertTransitionIfNeeded(overallLevel, ttcLevel)
+
+        // Power button ring follows the overall alert level (only when running).
+        updatePowerButtonUi(overallLevel)
 
         // U2: žádné blikání / pulzování (alert musí být stabilní). Plynulé crossfade stačí.
         stopPulse()
@@ -481,22 +512,39 @@ class MainActivity : ComponentActivity() {
             else -> "SAFE"
         }
 
-        // SAFE má být klidný (menší), ORANGE/RED dominantní (větší).
+        val newAlertTextColor = when (overallLevel) {
+            2 -> colorTextRed
+            1 -> colorTextOrange
+            else -> colorTextSafe
+        }
+
+        // SAFE větší než dřív; ORANGE/RED ještě výraznější.
         val newAlertTextSp = when (overallLevel) {
-            2 -> 60f
-            1 -> 60f
-            else -> 44f
+            2 -> 74f
+            1 -> 68f
+            else -> 58f
         }
         val newAlertPaddingV = when (overallLevel) {
-            2 -> dpToPx(22)
-            1 -> dpToPx(22)
-            else -> dpToPx(14)
+            2 -> dpToPx(26)
+            1 -> dpToPx(24)
+            else -> dpToPx(22)
         }
 
         val newMetricsStroke = when (overallLevel) {
             2 -> colorAccentRed
             1 -> colorAccentOrange
             else -> android.graphics.Color.TRANSPARENT
+        }
+
+        val newAlertStroke = when (overallLevel) {
+            2 -> colorAccentRed
+            1 -> colorAccentOrange
+            else -> android.graphics.Color.TRANSPARENT
+        }
+        val newAlertStrokeWidth = when (overallLevel) {
+            2 -> dpToPx(3)
+            1 -> dpToPx(2)
+            else -> 0
         }
 
         val needsOverallAnim = lastOverallLevelUi != overallLevel
@@ -512,6 +560,9 @@ class MainActivity : ComponentActivity() {
         val alertStart = (txtAlert.background as? android.graphics.drawable.ColorDrawable)?.color ?: colorBgSafe
         val strokeStart = panelMetrics.strokeColor
 
+        val alertStrokeStart = panelAlert.strokeColor
+        val alertStrokeWidthStart = panelAlert.strokeWidth
+
         alertTransitionAnimator?.cancel()
         alertTransitionAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
             duration = 220L
@@ -522,6 +573,9 @@ class MainActivity : ComponentActivity() {
                     // Crossfade banner background + jemný fade textu.
                     txtAlert.setBackgroundColor(lerpColor(alertStart, newAlertBg, t))
                     panelMetrics.strokeColor = lerpColor(strokeStart, newMetricsStroke, t)
+
+                    panelAlert.strokeColor = lerpColor(alertStrokeStart, newAlertStroke, t)
+                    panelAlert.strokeWidth = (alertStrokeWidthStart + ((newAlertStrokeWidth - alertStrokeWidthStart) * t)).toInt()
                 }
             }
             // Text banneru měníme jednorázově s krátkým alpha přechodem.
@@ -531,6 +585,7 @@ class MainActivity : ComponentActivity() {
                         txtAlert.animate().cancel()
                         txtAlert.animate().alpha(0.0f).setDuration(90L).withEndAction {
                             txtAlert.text = newAlertText
+                            txtAlert.setTextColor(newAlertTextColor)
                             txtAlert.setTextSize(TypedValue.COMPLEX_UNIT_SP, newAlertTextSp)
                             txtAlert.setPadding(txtAlert.paddingLeft, newAlertPaddingV, txtAlert.paddingRight, newAlertPaddingV)
                             txtAlert.animate().alpha(1.0f).setDuration(120L).start()
@@ -709,6 +764,28 @@ class MainActivity : ComponentActivity() {
             else -> android.graphics.Color.parseColor("#AAB4BE")
         }
         txtWhy.setTextColor(c)
+    }
+
+    private fun updatePowerButtonUi(overallLevel: Int) {
+        // When service is stopped, keep UI calm.
+        if (!serviceRunning) {
+            btnPower.text = "START"
+            btnPower.strokeColor = android.content.res.ColorStateList.valueOf(colorAccentSafe)
+            btnPower.setTextColor(colorAccentSafe)
+            btnPower.iconTint = android.content.res.ColorStateList.valueOf(colorAccentSafe)
+            return
+        }
+
+        btnPower.text = "STOP"
+
+        val accent = when (overallLevel) {
+            2 -> colorAccentRed
+            1 -> colorAccentOrange
+            else -> colorAccentSafe
+        }
+        btnPower.strokeColor = android.content.res.ColorStateList.valueOf(accent)
+        btnPower.setTextColor(accent)
+        btnPower.iconTint = android.content.res.ColorStateList.valueOf(accent)
     }
 
     private fun formatMetric(value: Float, unit: String): String {
