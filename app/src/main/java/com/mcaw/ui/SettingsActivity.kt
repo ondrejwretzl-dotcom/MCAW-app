@@ -67,7 +67,8 @@ class SettingsActivity : ComponentActivity() {
         val etTtsRed = findViewById<EditText>(R.id.etTtsRed)
 
         val swVibration = findViewById<SwitchMaterial>(R.id.swVibration)
-        val swDebug = findViewById<SwitchMaterial>(R.id.swDebug)
+        val swDebugOverlay = findViewById<SwitchMaterial>(R.id.swDebugOverlay)
+        val swDebugSettings = findViewById<SwitchMaterial>(R.id.swDebugSettings)
         val swLaneFilter = findViewById<SwitchMaterial>(R.id.swLaneFilter)
         val swRoiStrictContainment = findViewById<SwitchMaterial>(R.id.swRoiStrictContainment)
         val swBrakeCue = findViewById<SwitchMaterial>(R.id.swBrakeCue)
@@ -101,6 +102,12 @@ class SettingsActivity : ComponentActivity() {
         // (Uživatel pak chápe jednotky a význam i když vedle není TextView.)
         etCameraMountHeight?.hint = "Výška kamery nad zemí (m)"
         etCameraPitchDownDeg?.hint = "Sklon kamery dolů (°)"
+
+// Inicializace hodnot (aby "defaulty" byly vidět hned a slider/edit odpovídal uloženému stavu)
+etCameraMountHeight?.setText(formatFloatForInput(AppPreferences.cameraMountHeightM))
+etCameraPitchDownDeg?.setText(formatFloatForInput(AppPreferences.cameraPitchDownDeg))
+
+
 
         // Info icons (optional)
         findViewById<View>(R.id.btnInfoLaneFilter)?.setOnClickListener {
@@ -203,25 +210,53 @@ Typicky 3–10°. Příliš velký sklon může zkrátit dohled; příliš malý
         }
 
 
+
+        fun syncAdvancedUiFromPrefs() {
+            // Debug-only switches
+            swLaneFilter?.isChecked = AppPreferences.laneFilter
+            swRoiStrictContainment?.isChecked = AppPreferences.roiStrictContainment
+            swQualityGating?.isChecked = AppPreferences.qualityGatingEnabled
+            swCutInProtection?.isChecked = AppPreferences.cutInProtectionEnabled
+
+            // Debug-only sliders (position + label)
+            bindLaneWidthSlider(sliderLaneWidth, txtLaneWidthValue)
+            // Calibration slider should always reflect prefs too
+            bindDistanceScaleSlider(sliderDistanceScale, txtDistanceScaleValue)
+
+            // Alert volume sliders (always visible)
+            bindAlertVolumeSlider(sliderOrangeVolume, txtOrangeVolumeValue, isRed = false)
+            bindAlertVolumeSlider(sliderRedVolume, txtRedVolumeValue, isRed = true)
+        }
+
         // Alert switches
         fun bindSwitch(sw: SwitchMaterial, getter: () -> Boolean, setter: (Boolean) -> Unit) {
             sw.isChecked = getter()
             sw.setOnCheckedChangeListener { _, checked -> setter(checked) }
         }
 
-        bindSwitch(swVibration, { AppPreferences.vibration }, { AppPreferences.vibration = it })
-        swDebug.isChecked = AppPreferences.debugOverlay
-        applyDebugVisibility(swDebug.isChecked)
-        swDebug.setOnCheckedChangeListener { _, checked ->
+                bindSwitch(swVibration, { AppPreferences.vibration }, { AppPreferences.vibration = it })
+
+        swDebugOverlay.isChecked = AppPreferences.debugOverlay
+        swDebugSettings.isChecked = AppPreferences.debugSettingsEnabled
+        applyDebugVisibility(swDebugSettings.isChecked)
+
+        swDebugOverlay.setOnCheckedChangeListener { _, checked ->
+            // Pouze overlay v preview (bbox/debug info). Nemá měnit tuning.
             AppPreferences.debugOverlay = checked
-            if (!checked) {
-                // U1: vypnutí debug musí vrátit tuning na AUTO/recommended
+        }
+
+        swDebugSettings.setOnCheckedChangeListener { _, enabled ->
+            AppPreferences.debugSettingsEnabled = enabled
+            if (!enabled) {
+                // Determinismus: vypnutí debug nastavení musí vrátit všechny overrides na doporučené hodnoty.
                 AppPreferences.resetDebugOverridesToAutoRecommended()
                 AppPreferences.resetUserThresholdsToDefault()
+                // Sync UI po resetu, ať slider/switch odpovídá skutečným hodnotám.
+                syncAdvancedUiFromPrefs()
             }
-            applyDebugVisibility(checked)
+            applyDebugVisibility(enabled)
         }
-        bindSwitch(swLaneFilter, { AppPreferences.laneFilter }, { AppPreferences.laneFilter = it })
+bindSwitch(swLaneFilter, { AppPreferences.laneFilter }, { AppPreferences.laneFilter = it })
         bindSwitch(swRoiStrictContainment, { AppPreferences.roiStrictContainment }, { AppPreferences.roiStrictContainment = it })
         bindSwitch(swBrakeCue, { AppPreferences.brakeCueEnabled }, { AppPreferences.brakeCueEnabled = it })
 
@@ -229,6 +264,26 @@ Typicky 3–10°. Příliš velký sklon může zkrátit dohled; příliš malý
         bindSwitch(swSoundRed, { AppPreferences.soundRed }, { AppPreferences.soundRed = it })
         bindSwitch(swVoiceOrange, { AppPreferences.voiceOrange }, { AppPreferences.voiceOrange = it })
         bindSwitch(swVoiceRed, { AppPreferences.voiceRed }, { AppPreferences.voiceRed = it })
+
+        // TTS texts
+        etTtsOrange.setText(AppPreferences.ttsTextOrange)
+        etTtsRed.setText(AppPreferences.ttsTextRed)
+        val ttsWatcher = object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+            override fun afterTextChanged(s: Editable?) {
+                AppPreferences.ttsTextOrange = etTtsOrange.text?.toString() ?: ""
+                AppPreferences.ttsTextRed = etTtsRed.text?.toString() ?: ""
+            }
+        }
+        etTtsOrange.addTextChangedListener(ttsWatcher)
+        etTtsRed.addTextChangedListener(ttsWatcher)
+
+        // Sliders
+        bindLaneWidthSlider(sliderLaneWidth, txtLaneWidthValue)
+        bindDistanceScaleSlider(sliderDistanceScale, txtDistanceScaleValue)
+        bindAlertVolumeSlider(sliderOrangeVolume, txtOrangeVolumeValue, isRed = false)
+        bindAlertVolumeSlider(sliderRedVolume, txtRedVolumeValue, isRed = true)
 
         // New advanced toggles
         if (swQualityGating != null) bindSwitch(swQualityGating, { AppPreferences.qualityGatingEnabled }, { AppPreferences.qualityGatingEnabled = it })
@@ -270,6 +325,8 @@ Typicky 3–10°. Příliš velký sklon může zkrátit dohled; příliš malý
         slider.valueTo = 2f
         slider.stepSize = 1f
 
+        slider.clearOnChangeListeners()
+
         val idx = when {
             AppPreferences.laneEgoMaxOffset < 0.50f -> 0f
             AppPreferences.laneEgoMaxOffset < 0.65f -> 1f
@@ -303,6 +360,8 @@ Typicky 3–10°. Příliš velký sklon může zkrátit dohled; příliš malý
         slider.valueFrom = 0f
         slider.valueTo = 2f
         slider.stepSize = 1f
+
+        slider.clearOnChangeListeners()
 
         val idx = when {
             AppPreferences.distanceScale < 0.95f -> 0f
@@ -338,6 +397,8 @@ Typicky 3–10°. Příliš velký sklon může zkrátit dohled; příliš malý
         slider.valueFrom = 0f
         slider.valueTo = 3f
         slider.stepSize = 1f
+
+        slider.clearOnChangeListeners()
 
         fun labelFor(level: Int): String = when (level.coerceIn(0, 3)) {
             0 -> "Normální"
@@ -410,7 +471,15 @@ private fun resetRecommended() {
         if (editText == null) return fallback
         val value = editText.text?.toString()?.trim()
         return value?.toFloatOrNull() ?: fallback
-    }
+    
+
+private fun formatFloatForInput(v: Float): String {
+    // Stabilní zápis s tečkou jako desetinným oddělovačem (EditText numberDecimal očekává '.')
+    return java.lang.String.format(java.util.Locale.US, "%.2f", v)
+        .trimEnd('0')
+        .trimEnd('.')
+}
+}
 
     private fun modeSummary(mode: Int): String {
         return when (mode) {

@@ -277,16 +277,24 @@ var voiceRed: Boolean
     set(v) = prefs.edit().putBoolean("voice_red", v).apply()
 
 var ttsTextOrange: String
-    get() = prefs.getString("tts_orange_text", "Varování") ?: "Varování"
+    get() = prefs.getString("tts_orange_text", "Koukej") ?: "Koukej"
     set(v) = prefs.edit().putString("tts_orange_text", v).apply()
 
 var ttsTextRed: String
-    get() = prefs.getString("tts_red_text", "Brzdi") ?: "Brzdi"
+    get() = prefs.getString("tts_red_text", "Varování") ?: "Varování"
     set(v) = prefs.edit().putString("tts_red_text", v).apply()
 
     var debugOverlay: Boolean
         get() = prefs.getBoolean("debugOverlay", false)
         set(v) = prefs.edit().putBoolean("debugOverlay", v).apply()
+
+    /**
+     * U2/M1: samostatný přepínač pro zobrazení debug-only nastavení.
+     * Vypnutí musí vrátit všechny debug overrides na AUTO/recommended kvůli determinismu testů.
+     */
+    var debugSettingsEnabled: Boolean
+        get() = prefs.getBoolean("debugSettingsEnabled", false)
+        set(v) = prefs.edit().putBoolean("debugSettingsEnabled", v).apply()
 
     var laneFilter: Boolean
         get() = prefs.getBoolean("laneFilter", false)
