@@ -32,6 +32,7 @@ import com.mcaw.util.PublicLogWriter
 import com.mcaw.util.SessionLogFile
 import com.mcaw.util.LabelMapper
 import com.mcaw.util.ReasonTextMapper
+import com.mcaw.config.ProfileManager
 
 class MainActivity : ComponentActivity() {
 
@@ -47,6 +48,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var txtDetectedObject: TextView
     private lateinit var txtActivityLog: TextView
     private lateinit var txtBuildInfo: TextView
+    private lateinit var txtProfileInfo: TextView
     private lateinit var root: View
     private lateinit var panelMetrics: MaterialCardView
     private lateinit var brakeLamp: TextView
@@ -217,6 +219,7 @@ class MainActivity : ComponentActivity() {
         txtDetectedObject = findViewById(R.id.txtDetectedObject)
         txtActivityLog = findViewById(R.id.txtActivityLog)
         txtBuildInfo = findViewById(R.id.txtBuildInfo)
+        txtProfileInfo = findViewById(R.id.txtProfileInfo)
         root = findViewById(R.id.root)
         panelMetrics = findViewById(R.id.panelMetrics)
         brakeLamp = findViewById(R.id.brakeLamp)
@@ -283,6 +286,19 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        // Show active mount/profile (if any) so user can trust Service mode behavior.
+        try {
+            ProfileManager.ensureInit(this)
+            val activeId = ProfileManager.getActiveProfileIdOrNull()
+            val name = if (activeId != null) {
+                ProfileManager.findById(activeId)?.name ?: "Default"
+            } else {
+                "Default"
+            }
+            txtProfileInfo.text = "Profil: $name"
+        } catch (_: Throwable) {
+            txtProfileInfo.text = "Profil: Default"
+        }
         // Mini preview is debug-oriented and must never compete with the running service.
         refreshMiniPreviewVisibility()
         maybeStartMiniPreview()

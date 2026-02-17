@@ -52,14 +52,34 @@
             android:layout_height="1dp"
             android:layout_weight="1" />
 
-        <TextView
-            android:id="@+id/txtBuildInfo"
+        <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:gravity="end"
-            android:text="Build: -"
-            android:textColor="#6B7280"
-            android:textSize="12sp" />
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/txtBuildInfo"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:gravity="end"
+                android:text="Build: -"
+                android:textColor="#6B7280"
+                android:textSize="12sp" />
+
+            <TextView
+                android:id="@+id/txtProfileInfo"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:gravity="end"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:text="Profil: Default"
+                android:textColor="#9CA3AF"
+                android:textSize="12sp" />
+
+        </LinearLayout>
 
     </LinearLayout>
 
@@ -495,11 +515,18 @@
                     android:layout_height="56dp"
                     android:layout_marginBottom="10dp"
                     android:text="KAMERA"
+                    android:maxLines="1"
+                    android:ellipsize="end"
                     android:textAllCaps="false"
                     android:textColor="#C9D1D9"
-                    android:textSize="13sp"
+                    android:textSize="12sp"
+                    app:autoSizeTextType="uniform"
+                    app:autoSizeMinTextSize="10sp"
+                    app:autoSizeMaxTextSize="12sp"
+                    app:autoSizeStepGranularity="1sp"
                     app:cornerRadius="16dp"
                     app:icon="@drawable/ic_camera"
+                    app:iconGravity="textStart"
                     app:iconPadding="8dp"
                     app:iconTint="#C9D1D9"
                     app:iconSize="22dp"
@@ -510,11 +537,18 @@
                     android:layout_width="match_parent"
                     android:layout_height="56dp"
                     android:text="NASTAVENÍ"
+                    android:maxLines="1"
+                    android:ellipsize="end"
                     android:textAllCaps="false"
                     android:textColor="#C9D1D9"
-                    android:textSize="13sp"
+                    android:textSize="12sp"
+                    app:autoSizeTextType="uniform"
+                    app:autoSizeMinTextSize="10sp"
+                    app:autoSizeMaxTextSize="12sp"
+                    app:autoSizeStepGranularity="1sp"
                     app:cornerRadius="16dp"
                     app:icon="@drawable/ic_settings"
+                    app:iconGravity="textStart"
                     app:iconPadding="8dp"
                     app:iconTint="#C9D1D9"
                     app:iconSize="22dp"
