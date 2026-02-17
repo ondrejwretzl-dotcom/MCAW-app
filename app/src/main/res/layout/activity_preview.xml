@@ -39,6 +39,20 @@
         android:layout_marginStart="12dp"
         android:layout_marginTop="48dp" />
 
+    <TextView
+        android:id="@+id/txtActiveProfile"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Profil: Default"
+        android:textColor="#FFFFFF"
+        android:textSize="12sp"
+        android:padding="8dp"
+        android:background="#80000000"
+        android:layout_gravity="top|start"
+        android:layout_marginStart="12dp"
+        android:layout_marginTop="84dp" />
+
+
     <!-- ROI edit toggle (click) + reset (long press) -->
     <TextView
         android:id="@+id/btnRoi"
@@ -51,6 +65,21 @@
         android:background="#80AA0000"
         android:layout_gravity="top|end"
         android:layout_margin="12dp" />
+
+
+    <TextView
+        android:id="@+id/btnSaveProfile"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="PROFIL: ULOŽIT"
+        android:textColor="#FFFFFF"
+        android:textSize="12sp"
+        android:padding="8dp"
+        android:background="#803B82F6"
+        android:layout_gravity="top|end"
+        android:layout_marginEnd="12dp"
+        android:layout_marginTop="48dp" />
+
 
     <TextView
         android:id="@+id/txtPreviewBuild"

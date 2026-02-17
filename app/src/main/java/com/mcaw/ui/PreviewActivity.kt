@@ -10,6 +10,9 @@ import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.os.Build
 import android.os.Bundle
+import android.app.AlertDialog
+import android.widget.EditText
+import android.widget.Toast
 import android.os.Handler
 import android.os.Looper
 import android.widget.TextView
@@ -48,6 +51,8 @@ class PreviewActivity : ComponentActivity() {
     private lateinit var txtDetectionLabel: TextView
     private lateinit var btnRoi: TextView
     private lateinit var txtPreviewStatus: TextView
+    private lateinit var txtActiveProfile: TextView
+    private lateinit var btnSaveProfile: TextView
 
     private val searchHandler = Handler(Looper.getMainLooper())
     private var searching = true
@@ -126,10 +131,10 @@ class PreviewActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Apply mount profile (if active) before reading prefs-driven UI state.
-        ProfileManager.ensureInit(this)
-        ProfileManager.applyActiveProfileToPreferences()
         AppPreferences.ensureInit(this)
+        ProfileManager.ensureInit(this)
+        // Apply active profile (if any) before we load ROI and camera params.
+        ProfileManager.applyActiveProfileToPreferences()
         AppPreferences.previewActive = true
 
         setContentView(R.layout.activity_preview)
@@ -141,12 +146,15 @@ class PreviewActivity : ComponentActivity() {
         txtDetectionLabel = findViewById(R.id.txtDetectionLabel)
         btnRoi = findViewById(R.id.btnRoi)
         txtPreviewStatus = findViewById(R.id.txtPreviewStatus)
+        txtActiveProfile = findViewById(R.id.txtActiveProfile)
+        btnSaveProfile = findViewById(R.id.btnSaveProfile)
 
         speedProvider = SpeedProvider(this)
         speedMonitor = SpeedMonitor(speedProvider)
         SessionLogFile.init(this)
 
         overlay.showTelemetry = AppPreferences.debugOverlay
+        updateActiveProfileLabel()
 
         applyRoiFromPrefs()
         overlay.onRoiChanged = { topY, bottomY, topHalfW, bottomHalfW, centerX, isFinal ->
@@ -173,6 +181,10 @@ class PreviewActivity : ComponentActivity() {
             applyRoiFromPrefs()
             logActivity("roi_reset_default")
             true
+        }
+
+        btnSaveProfile.setOnClickListener {
+            showSaveProfileDialog()
         }
 
         txtPreviewBuild.text =
@@ -419,6 +431,38 @@ class PreviewActivity : ComponentActivity() {
         val clean = msg.replace("\n", " ").replace("\r", " ").trim()
         val escaped = "\"" + clean.replace("\"", "\"\"") + "\""
         PublicLogWriter.appendLogLine(this, SessionLogFile.fileName, "S,$tsMs,$escaped")
+    }
+
+
+    private fun updateActiveProfileLabel() {
+        val id = ProfileManager.getActiveProfileIdOrNull()
+        val name = if (id == null) {
+            "Default"
+        } else {
+            ProfileManager.findById(id)?.name ?: "?"
+        }
+        txtActiveProfile.text = "Profil: $name"
+    }
+
+    private fun showSaveProfileDialog() {
+        val input = EditText(this).apply {
+            hint = "Název profilu"
+            setSingleLine()
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Uložit profil")
+            .setMessage("Uloží aktuální ROI + kalibraci (výška, sklon, distance scale, lane offset).")
+            .setView(input)
+            .setPositiveButton("Uložit") { _, _ ->
+                val name = input.text?.toString()?.trim().orEmpty()
+                val p = ProfileManager.saveProfileFromCurrentPrefs(name)
+                ProfileManager.setActiveProfileId(p.id)
+                updateActiveProfileLabel()
+                Toast.makeText(this, "Profil uložen: ${p.name}", Toast.LENGTH_SHORT).show()
+                logActivity("profile_saved id=${p.id} name=${p.name}")
+            }
+            .setNegativeButton("Zrušit", null)
+            .show()
     }
 
 }

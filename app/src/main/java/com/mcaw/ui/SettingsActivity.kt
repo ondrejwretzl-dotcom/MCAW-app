@@ -13,11 +13,14 @@ import android.widget.ArrayAdapter
 import android.widget.EditText
 import android.widget.Spinner
 import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import com.google.android.material.slider.Slider
 import com.google.android.material.switchmaterial.SwitchMaterial
 import com.mcaw.app.R
 import com.mcaw.config.AppPreferences
+import com.mcaw.config.ProfileManager
+import com.mcaw.config.MountProfile
 import com.mcaw.util.PublicLogWriter
 
 class SettingsActivity : ComponentActivity() {
@@ -42,8 +45,103 @@ class SettingsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AppPreferences.ensureInit(this)
+        ProfileManager.ensureInit(this)
         setContentView(R.layout.activity_settings)
         writeSessionLog("Settings opened")
+
+
+        // Profiles
+        val spProfileSelect = findViewById<Spinner?>(R.id.spProfileSelect)
+        val btnProfileCreate = findViewById<View?>(R.id.btnProfileCreate)
+        val btnProfileDelete = findViewById<View?>(R.id.btnProfileDelete)
+        val btnProfileClear = findViewById<View?>(R.id.btnProfileClear)
+
+        fun refreshProfilesAndSelection() {
+            val profiles = ProfileManager.listProfiles().sortedBy { it.name.lowercase() }
+            val names = ArrayList<String>(profiles.size + 1)
+            val ids = ArrayList<String?>(profiles.size + 1)
+            names.add("Default (bez profilu)")
+            ids.add(null)
+            for (p in profiles) {
+                names.add(p.name)
+                ids.add(p.id)
+            }
+            spProfileSelect?.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, names).apply {
+                setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+            }
+            val activeId = ProfileManager.getActiveProfileIdOrNull()
+            val sel = ids.indexOf(activeId).takeIf { it >= 0 } ?: 0
+            spProfileSelect?.setSelection(sel, false)
+            spProfileSelect?.tag = ids // store ids list for listener
+        }
+
+        spProfileSelect?.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>, view: View?, position: Int, id: Long) {
+                val ids = parent.tag as? List<*> ?: return
+                val selectedId = ids.getOrNull(position) as? String
+                // Avoid redundant apply
+                if (selectedId == ProfileManager.getActiveProfileIdOrNull()) return
+                ProfileManager.setActiveProfileId(selectedId)
+                if (selectedId == null) {
+                    Toast.makeText(this@SettingsActivity, "Použit Default (bez profilu)", Toast.LENGTH_SHORT).show()
+                    writeSessionLog("Profile set to default")
+                } else {
+                    ProfileManager.applyActiveProfileToPreferences()
+                    val name = ProfileManager.findById(selectedId)?.name ?: "?"
+                    Toast.makeText(this@SettingsActivity, "Aktivní profil: $name", Toast.LENGTH_SHORT).show()
+                    writeSessionLog("Profile set id=$selectedId name=$name")
+                }
+            }
+            override fun onNothingSelected(parent: AdapterView<*>) = Unit
+        }
+
+        btnProfileCreate?.setOnClickListener {
+            val input = EditText(this).apply { hint = "Název profilu"; setSingleLine() }
+            AlertDialog.Builder(this)
+                .setTitle("Uložit profil")
+                .setMessage("Uloží aktuální ROI + kalibraci jako nový profil.")
+                .setView(input)
+                .setPositiveButton("Uložit") { _, _ ->
+                    val name = input.text?.toString()?.trim().orEmpty()
+                    val p = ProfileManager.saveProfileFromCurrentPrefs(name)
+                    ProfileManager.setActiveProfileId(p.id)
+                    ProfileManager.applyActiveProfileToPreferences()
+                    refreshProfilesAndSelection()
+                    Toast.makeText(this, "Profil uložen: ${p.name}", Toast.LENGTH_SHORT).show()
+                    writeSessionLog("Profile saved id=${p.id} name=${p.name}")
+                }
+                .setNegativeButton("Zrušit", null)
+                .show()
+        }
+
+        btnProfileDelete?.setOnClickListener {
+            val activeId = ProfileManager.getActiveProfileIdOrNull()
+            if (activeId.isNullOrBlank()) {
+                showInfo("Smazat profil", "Není vybraný žádný profil. Vyber profil ve spinneru.")
+                return@setOnClickListener
+            }
+            val name = ProfileManager.findById(activeId)?.name ?: "?"
+            AlertDialog.Builder(this)
+                .setTitle("Smazat profil")
+                .setMessage("Opravdu smazat profil „$name“?")
+                .setPositiveButton("Smazat") { _, _ ->
+                    ProfileManager.delete(activeId)
+                    refreshProfilesAndSelection()
+                    Toast.makeText(this, "Profil smazán", Toast.LENGTH_SHORT).show()
+                    writeSessionLog("Profile deleted id=$activeId")
+                }
+                .setNegativeButton("Zrušit", null)
+                .show()
+        }
+
+        btnProfileClear?.setOnClickListener {
+            ProfileManager.setActiveProfileId(null)
+            refreshProfilesAndSelection()
+            Toast.makeText(this, "Použit Default (bez profilu)", Toast.LENGTH_SHORT).show()
+            writeSessionLog("Profile cleared to default")
+        }
+
+        refreshProfilesAndSelection()
 
         // Top actions
         findViewById<View>(R.id.btnOpenHelp)?.setOnClickListener {
