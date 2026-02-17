@@ -143,7 +143,7 @@
                     android:background="@drawable/bg_metric_tile"
                     android:gravity="center"
                     android:orientation="vertical"
-                    android:padding="10dp">
+                    android:padding="8dp">
 
                     <TextView
                         android:layout_width="wrap_content"
@@ -152,6 +152,12 @@
                         android:text="TTC"
                         android:textColor="#9CA3AF"
                         android:textSize="12sp"
+                        android:autoSizeTextType="uniform"
+                        android:autoSizeMinTextSize="10sp"
+                        android:autoSizeMaxTextSize="12sp"
+                        android:autoSizeStepGranularity="1sp"
+                        android:maxLines="1"
+                        android:ellipsize="end"
                         android:textStyle="bold" />
 
                     <TextView
@@ -178,7 +184,7 @@
                     android:background="@drawable/bg_metric_tile"
                     android:gravity="center"
                     android:orientation="vertical"
-                    android:padding="10dp">
+                    android:padding="8dp">
 
                     <TextView
                         android:layout_width="wrap_content"
@@ -187,6 +193,12 @@
                         android:text="VZDÁL"
                         android:textColor="#9CA3AF"
                         android:textSize="12sp"
+                        android:autoSizeTextType="uniform"
+                        android:autoSizeMinTextSize="10sp"
+                        android:autoSizeMaxTextSize="12sp"
+                        android:autoSizeStepGranularity="1sp"
+                        android:maxLines="1"
+                        android:ellipsize="end"
                         android:textStyle="bold" />
 
                     <TextView
@@ -213,7 +225,7 @@
                     android:background="@drawable/bg_metric_tile"
                     android:gravity="center"
                     android:orientation="vertical"
-                    android:padding="10dp">
+                    android:padding="8dp">
 
                     <TextView
                         android:layout_width="wrap_content"
@@ -222,6 +234,12 @@
                         android:text="TY"
                         android:textColor="#9CA3AF"
                         android:textSize="12sp"
+                        android:autoSizeTextType="uniform"
+                        android:autoSizeMinTextSize="10sp"
+                        android:autoSizeMaxTextSize="12sp"
+                        android:autoSizeStepGranularity="1sp"
+                        android:maxLines="1"
+                        android:ellipsize="end"
                         android:textStyle="bold" />
 
                     <TextView
@@ -248,7 +266,7 @@
                     android:background="@drawable/bg_metric_tile"
                     android:gravity="center"
                     android:orientation="vertical"
-                    android:padding="10dp">
+                    android:padding="8dp">
 
                     <TextView
                         android:layout_width="wrap_content"
@@ -257,6 +275,12 @@
                         android:text="REL"
                         android:textColor="#9CA3AF"
                         android:textSize="12sp"
+                        android:autoSizeTextType="uniform"
+                        android:autoSizeMinTextSize="10sp"
+                        android:autoSizeMaxTextSize="12sp"
+                        android:autoSizeStepGranularity="1sp"
+                        android:maxLines="1"
+                        android:ellipsize="end"
                         android:textStyle="bold" />
 
                     <TextView
@@ -283,7 +307,7 @@
                     android:background="@drawable/bg_metric_tile"
                     android:gravity="center"
                     android:orientation="vertical"
-                    android:padding="10dp">
+                    android:padding="8dp">
 
                     <TextView
                         android:layout_width="wrap_content"
@@ -292,6 +316,12 @@
                         android:text="OBJ"
                         android:textColor="#9CA3AF"
                         android:textSize="12sp"
+                        android:autoSizeTextType="uniform"
+                        android:autoSizeMinTextSize="10sp"
+                        android:autoSizeMaxTextSize="12sp"
+                        android:autoSizeStepGranularity="1sp"
+                        android:maxLines="1"
+                        android:ellipsize="end"
                         android:textStyle="bold" />
 
                     <TextView
@@ -318,7 +348,7 @@
                     android:background="@drawable/bg_metric_tile"
                     android:gravity="center"
                     android:orientation="vertical"
-                    android:padding="10dp">
+                    android:padding="8dp">
 
                     <TextView
                         android:layout_width="wrap_content"
@@ -327,6 +357,12 @@
                         android:text="OBJEKT"
                         android:textColor="#9CA3AF"
                         android:textSize="12sp"
+                        android:autoSizeTextType="uniform"
+                        android:autoSizeMinTextSize="10sp"
+                        android:autoSizeMaxTextSize="12sp"
+                        android:autoSizeStepGranularity="1sp"
+                        android:maxLines="1"
+                        android:ellipsize="end"
                         android:textStyle="bold" />
 
                     <TextView
@@ -416,6 +452,12 @@
                 android:textAllCaps="false"
                 android:textColor="#E5E7EB"
                 android:textSize="12sp"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:autoSizeTextType="uniform"
+                android:autoSizeMinTextSize="10sp"
+                android:autoSizeMaxTextSize="12sp"
+                android:autoSizeStepGranularity="1sp"
                 app:backgroundTint="#1E222A"
                 app:cornerRadius="16dp"
                 app:strokeWidth="1dp"
@@ -532,44 +574,36 @@
                     android:layout_width="match_parent"
                     android:layout_height="56dp"
                     android:layout_marginBottom="10dp"
-                    android:text="KAMERA"
-                    android:maxLines="1"
-                    android:ellipsize="end"
+                    android:contentDescription="Kamera"
+                    android:text=""
                     android:textAllCaps="false"
-                    android:textColor="#C9D1D9"
-                    android:textSize="12sp"
-                    app:autoSizeTextType="uniform"
-                    app:autoSizeMinTextSize="10sp"
-                    app:autoSizeMaxTextSize="12sp"
-                    app:autoSizeStepGranularity="1sp"
-                    app:cornerRadius="16dp"
+                    app:cornerRadius="18dp"
+                    android:padding="0dp"
+                    android:insetLeft="0dp"
+                    android:insetRight="0dp"
                     app:icon="@drawable/ic_camera"
-                    app:iconGravity="textStart"
-                    app:iconPadding="8dp"
-                    app:iconTint="#C9D1D9"
-                    app:iconSize="22dp"
+                    app:iconGravity="textTop"
+                    app:iconPadding="0dp"
+                    app:iconTint="#E5E7EB"
+                    app:iconSize="26dp"
                     app:backgroundTint="#1E222A" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnSettings"
                     android:layout_width="match_parent"
                     android:layout_height="56dp"
-                    android:text="NASTAVENÍ"
-                    android:maxLines="1"
-                    android:ellipsize="end"
+                    android:contentDescription="Nastavení"
+                    android:text=""
                     android:textAllCaps="false"
-                    android:textColor="#C9D1D9"
-                    android:textSize="12sp"
-                    app:autoSizeTextType="uniform"
-                    app:autoSizeMinTextSize="10sp"
-                    app:autoSizeMaxTextSize="12sp"
-                    app:autoSizeStepGranularity="1sp"
-                    app:cornerRadius="16dp"
+                    app:cornerRadius="18dp"
+                    android:padding="0dp"
+                    android:insetLeft="0dp"
+                    android:insetRight="0dp"
                     app:icon="@drawable/ic_settings"
-                    app:iconGravity="textStart"
-                    app:iconPadding="8dp"
-                    app:iconTint="#C9D1D9"
-                    app:iconSize="22dp"
+                    app:iconGravity="textTop"
+                    app:iconPadding="0dp"
+                    app:iconTint="#E5E7EB"
+                    app:iconSize="26dp"
                     app:backgroundTint="#1E222A" />
 
             </LinearLayout>
@@ -598,10 +632,16 @@
             android:textAllCaps="false"
             android:textColor="#E5E7EB"
             android:textSize="13sp"
+            android:autoSizeTextType="uniform"
+            android:autoSizeMinTextSize="10sp"
+            android:autoSizeMaxTextSize="13sp"
+            android:autoSizeStepGranularity="1sp"
+            android:maxLines="1"
+            android:ellipsize="end"
             app:backgroundTint="#1E222A"
             app:cornerRadius="14dp"
             app:icon="@android:drawable/ic_menu_help"
-            app:iconPadding="6dp"
+            app:iconPadding="4dp"
             app:iconTint="#E5E7EB"
             app:iconSize="18dp" />
 
@@ -615,10 +655,16 @@
             android:textAllCaps="false"
             android:textColor="#E5E7EB"
             android:textSize="13sp"
+            android:autoSizeTextType="uniform"
+            android:autoSizeMinTextSize="10sp"
+            android:autoSizeMaxTextSize="13sp"
+            android:autoSizeStepGranularity="1sp"
+            android:maxLines="1"
+            android:ellipsize="end"
             app:backgroundTint="#1E222A"
             app:cornerRadius="14dp"
             app:icon="@android:drawable/ic_menu_recent_history"
-            app:iconPadding="6dp"
+            app:iconPadding="4dp"
             app:iconTint="#E5E7EB"
             app:iconSize="18dp" />
 
@@ -631,10 +677,16 @@
             android:textAllCaps="false"
             android:textColor="#E5E7EB"
             android:textSize="13sp"
+            android:autoSizeTextType="uniform"
+            android:autoSizeMinTextSize="10sp"
+            android:autoSizeMaxTextSize="13sp"
+            android:autoSizeStepGranularity="1sp"
+            android:maxLines="1"
+            android:ellipsize="end"
             app:backgroundTint="#1E222A"
             app:cornerRadius="14dp"
             app:icon="@android:drawable/ic_menu_info_details"
-            app:iconPadding="6dp"
+            app:iconPadding="4dp"
             app:iconTint="#E5E7EB"
             app:iconSize="18dp" />
 
