@@ -365,6 +365,7 @@ class PreviewActivity : ComponentActivity() {
         }
         if (sensorSize != null) {
             AppPreferences.cameraSensorHeightMm = sensorSize.height
+            AppPreferences.cameraSensorWidthMm = sensorSize.width
         }
     }
 

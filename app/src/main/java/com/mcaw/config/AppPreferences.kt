@@ -18,6 +18,9 @@ object AppPreferences {
     @Volatile
     var cameraSensorHeightMm: Float = Float.NaN
 
+    @Volatile
+    var cameraSensorWidthMm: Float = Float.NaN
+
 
     // ---- Calibration / robustness knobs ----
     /**

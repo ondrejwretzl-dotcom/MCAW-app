@@ -440,12 +440,12 @@ if (AppPreferences.debugOverlay) {
 
             
 // Distance estimation: blend bbox-height monocular + ground-plane (height + pitch) for robustness.
-val focalPx = estimateFocalLengthPx(frameHRotI)
+val focalPx = estimateFocalLengthPx(frameWRotI, frameHRotI)
 val distFromHeight = DetectionPhysics.estimateDistanceMeters(
     bbox = bestBox,
     frameHeightPx = frameHRotI,
     focalPx = focalPx,
-    realHeightM = if (label == "motorcycle" || label == "bicycle") 1.3f else 1.5f
+    realHeightM = vehicleHeightM(label)
 )
 
 val distFromGround = DetectionPhysics.estimateDistanceGroundPlaneMeters(
@@ -1579,17 +1579,59 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
 
 
     
-    private fun estimateFocalLengthPx(frameHeightPx: Int): Float {
+    private fun estimateFocalLengthPx(frameWidthPx: Int, frameHeightPx: Int): Float {
         val focalMm = AppPreferences.cameraFocalLengthMm
         val sensorHeightMm = AppPreferences.cameraSensorHeightMm
-        if (focalMm.isFinite() && sensorHeightMm.isFinite() && sensorHeightMm > 0f) {
-            return (focalMm / sensorHeightMm) * frameHeightPx
+        val sensorWidthMm = AppPreferences.cameraSensorWidthMm
+
+        // Prefer a physically grounded estimate but compensate for center-crop/aspect-ratio differences
+        // between the sensor and the analysis frame (common with CameraX + EIS).
+        if (focalMm.isFinite() && sensorHeightMm.isFinite() && sensorWidthMm.isFinite()
+            && sensorHeightMm > 0f && sensorWidthMm > 0f && frameWidthPx > 0 && frameHeightPx > 0
+        ) {
+            val frameAspect = frameWidthPx.toFloat() / frameHeightPx.toFloat()
+            val sensorAspect = sensorWidthMm / sensorHeightMm
+
+            // Assume center-crop to match the delivered frame aspect.
+            var usedSensorHeightMm = sensorHeightMm
+            var usedSensorWidthMm = sensorWidthMm
+
+            if (frameAspect > sensorAspect) {
+                // Frame is wider => crop sensor vertically.
+                usedSensorHeightMm = sensorWidthMm / frameAspect
+            } else if (frameAspect < sensorAspect) {
+                // Frame is taller => crop sensor horizontally.
+                usedSensorWidthMm = sensorHeightMm * frameAspect
+            }
+
+            // Use vertical focal (fy) approximation in pixel units.
+            return (focalMm / usedSensorHeightMm) * frameHeightPx.toFloat()
+        }
+
+        // Fallback: legacy approximation with only sensor height.
+        if (focalMm.isFinite() && sensorHeightMm.isFinite() && sensorHeightMm > 0f && frameHeightPx > 0) {
+            return (focalMm / sensorHeightMm) * frameHeightPx.toFloat()
         }
         return 1000f
     }
 
     
-    private data class BrakeCueResult(
+    
+    private fun vehicleHeightM(label: String): Float {
+        // Canonical labels from DetectionLabelMapper (rear-end scenario).
+        // Use conservative typical heights to reduce systematic distance bias.
+        return when (label) {
+            "car" -> 1.45f
+            "van" -> 1.95f
+            "truck" -> 3.00f
+            "bus" -> 3.20f
+            "person" -> 1.70f
+            "motorcycle", "bicycle" -> 1.30f
+            else -> 1.50f // unknown/other: keep prior default
+        }
+    }
+
+private data class BrakeCueResult(
         val active: Boolean,
         val strength: Float,
         val redRatio: Float,
