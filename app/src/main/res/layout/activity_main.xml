@@ -419,11 +419,7 @@
                 app:backgroundTint="#1E222A"
                 app:cornerRadius="16dp"
                 app:strokeWidth="1dp"
-                app:strokeColor="#2F3742"
-                app:insetLeft="0dp"
-                app:insetRight="0dp"
-                app:insetTop="0dp"
-                app:insetBottom="0dp" />
+                app:strokeColor="#2F3742" />
 
             <TextView
                 android:id="@+id/txtWhy"
