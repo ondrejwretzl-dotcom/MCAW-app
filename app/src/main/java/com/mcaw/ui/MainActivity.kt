@@ -13,7 +13,6 @@ import android.view.animation.DecelerateInterpolator
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import android.widget.TextView
-import android.widget.Toast
 import android.util.TypedValue
 import androidx.activity.ComponentActivity
 import androidx.core.app.ActivityCompat
@@ -151,9 +150,9 @@ class MainActivity : ComponentActivity() {
             if (!hasTarget) {
                 applyNoTargetUi()
             } else {
-                // U2: v mřížce chceme reálné hodnoty (bez dlouhých popisků). Popisky jsou v layoutu.
-                txtTtc.text = if (ttc.isFinite()) "%.2f s".format(ttc) else "--.- s"
-                txtDistance.text = if (distance.isFinite()) "%.1f m".format(distance) else "--.- m"
+                // Units are rendered on a separate line in the layout for readability in sunlight.
+                txtTtc.text = if (ttc.isFinite()) "%.2f".format(ttc) else "--.-"
+                txtDistance.text = if (distance.isFinite()) "%.1f".format(distance) else "--.-"
             }
 
             // Rider speed from analyzer (primary)
@@ -164,14 +163,14 @@ class MainActivity : ComponentActivity() {
             val objKmh = if (objectSpeed.isFinite()) objectSpeed * 3.6f else Float.POSITIVE_INFINITY
 
             if (hasTarget) {
-                txtSpeed.text = if (speedKmh.isFinite()) "%.1f km/h".format(speedKmh) else "--.- km/h"
-                txtObjectSpeed.text = if (objKmh.isFinite()) "%.1f km/h".format(objKmh) else "--.- km/h"
+                txtSpeed.text = if (speedKmh.isFinite()) "%.1f".format(speedKmh) else "--.-"
+                txtObjectSpeed.text = if (objKmh.isFinite()) "%.1f".format(objKmh) else "--.-"
                 txtDetectedObject.text = if (mappedLabel.isNotBlank()) mappedLabel else "--"
             }
 
             // UI pravidlo U2: TTC se nemá barvit podle alertů. Vždy klidná, neutrální barva.
             val ttcLevel = ttcLevelForUi(ttc)
-            txtTtc.setTextColor(android.graphics.Color.parseColor("#C9D1D9"))
+            txtTtc.setTextColor(android.graphics.Color.parseColor("#FFFFFF"))
 
             val riderKmhForUi = if (riderSpeed.isFinite()) riderSpeed * 3.6f else Float.POSITIVE_INFINITY
             applyVisualAlert(disp.level, ttcLevel, riderKmhForUi)
@@ -197,10 +196,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun applyNoTargetUi() {
-        txtTtc.text = "--.- s"
-        txtDistance.text = "--.- m"
-        txtSpeed.text = "--.- km/h"
-        txtObjectSpeed.text = "--.- km/h"
+        txtTtc.text = "--.-"
+        txtDistance.text = "--.-"
+        txtSpeed.text = "--.-"
+        txtObjectSpeed.text = "--.-"
         txtDetectedObject.text = "--"
     }
 
@@ -924,13 +923,13 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun formatRiderSpeedFromMps(speedMps: Float): String {
-        if (!speedMps.isFinite() || speedMps < 0f) return "--.- km/h"
+        if (!speedMps.isFinite() || speedMps < 0f) return "--.-"
 
         // deadband (GPS jitter at low speeds)
         val deadbandMps = 0.5f // ~1.8 km/h
         val v = if (speedMps < deadbandMps) 0f else speedMps.coerceIn(0f, 80f)
         val kmh = v * 3.6f
-        return "%.1f km/h".format(kmh)
+        return "%.1f".format(kmh)
     }
 
     private fun applyRiderSpeedText(text: String, fromMetrics: Boolean) {
