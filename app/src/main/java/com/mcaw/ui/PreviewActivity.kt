@@ -28,6 +28,7 @@ import com.mcaw.ai.YoloOnnxDetector
 import com.mcaw.app.BuildConfig
 import com.mcaw.app.R
 import com.mcaw.config.AppPreferences
+import com.mcaw.config.ProfileManager
 import com.mcaw.location.SpeedMonitor
 import com.mcaw.location.SpeedProvider
 import com.mcaw.util.LabelMapper
@@ -125,6 +126,9 @@ class PreviewActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Apply mount profile (if active) before reading prefs-driven UI state.
+        ProfileManager.ensureInit(this)
+        ProfileManager.applyActiveProfileToPreferences()
         AppPreferences.ensureInit(this)
         AppPreferences.previewActive = true
 
@@ -365,7 +369,6 @@ class PreviewActivity : ComponentActivity() {
         }
         if (sensorSize != null) {
             AppPreferences.cameraSensorHeightMm = sensorSize.height
-            AppPreferences.cameraSensorWidthMm = sensorSize.width
         }
     }
 

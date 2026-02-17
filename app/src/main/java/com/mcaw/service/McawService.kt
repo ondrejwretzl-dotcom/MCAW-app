@@ -24,6 +24,7 @@ import com.mcaw.ai.DetectionAnalyzer
 import com.mcaw.ai.EfficientDetTFLiteDetector
 import com.mcaw.ai.YoloOnnxDetector
 import com.mcaw.config.AppPreferences
+import com.mcaw.config.ProfileManager
 import com.mcaw.location.SpeedMonitor
 import com.mcaw.location.SpeedProvider
 import com.mcaw.util.PublicLogWriter
@@ -60,6 +61,9 @@ class McawService : LifecycleService() {
     override fun onCreate() {
         super.onCreate()
         AppPreferences.init(this)
+        // Apply active mount profile (if any) for background service sessions.
+        ProfileManager.ensureInit(this)
+        ProfileManager.applyActiveProfileToPreferences()
         initUnifiedSessionLog()
         speedProvider = SpeedProvider(this)
         speedMonitor = SpeedMonitor(speedProvider)

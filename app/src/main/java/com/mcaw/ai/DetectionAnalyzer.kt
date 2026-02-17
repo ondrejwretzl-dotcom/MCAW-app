@@ -22,6 +22,7 @@ import com.mcaw.util.SessionEventLogger
 import com.mcaw.util.SessionTraceLogger
 import java.util.Locale
 import kotlin.math.abs
+import kotlin.math.pow
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -440,12 +441,12 @@ if (AppPreferences.debugOverlay) {
 
             
 // Distance estimation: blend bbox-height monocular + ground-plane (height + pitch) for robustness.
-val focalPx = estimateFocalLengthPx(frameWRotI, frameHRotI)
+val focalPx = estimateFocalLengthPx(frameHRotI)
 val distFromHeight = DetectionPhysics.estimateDistanceMeters(
     bbox = bestBox,
     frameHeightPx = frameHRotI,
     focalPx = focalPx,
-    realHeightM = vehicleHeightM(label)
+    realHeightM = if (label == "motorcycle" || label == "bicycle") 1.3f else 1.5f
 )
 
 val distFromGround = DetectionPhysics.estimateDistanceGroundPlaneMeters(
@@ -1214,16 +1215,25 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
         }
 
 
+        val roiN = AppPreferences.getRoiTrapezoidNormalized()
+        val roiCenterX = roiN.centerX
+
         fun priority(t: TemporalTracker.TrackedDetection): Float {
             val d = t.detection
             val b = d.box
             val areaNorm = (b.area / (frameW * frameH)).coerceIn(0f, 1f)
             val cxN = (b.cx / frameW).coerceIn(0f, 1f)
             val cyN = (b.cy / frameH).coerceIn(0f, 1f)
-            val dx = abs(cxN - 0.5f)
+            val dx = abs(cxN - roiCenterX)
             val dy = abs(cyN - 0.55f)
             val centerScore = (1f - (dx * 1.4f + dy * 1.0f)).coerceIn(0f, 1f)
             val score = d.score.coerceIn(0f, 1f)
+
+            // Stronger ROI influence for target selection (still soft; never a hard gate).
+            // Rationale: user moves ROI above dashboard and aligns it with their lane.
+            val roiContain = containmentRatioInTrapezoid(b, _roiTrap.pts).coerceIn(0f, 1f)
+            val roiWeight = ((0.10f + 0.90f * roiContain).toDouble().pow(1.8)).toFloat()
+
             val egoScore = if (AppPreferences.laneFilter) {
                 val maxOff = dynamicEgoMaxOffset(tsMs)
                 val off = egoOffsetInRoiN(b, frameW, frameH)
@@ -1231,7 +1241,8 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
             } else {
                 0.5f
             }
-            return (areaNorm * 0.45f) + (centerScore * 0.25f) + (score * 0.15f) + (egoScore * 0.15f)
+            val base = (areaNorm * 0.45f) + (centerScore * 0.25f) + (score * 0.15f) + (egoScore * 0.15f)
+            return (base * roiWeight).coerceIn(0f, 1f)
         }
 
         val bestNow = poolEgo.maxByOrNull { priority(it) } ?: return null
@@ -1579,59 +1590,17 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
 
 
     
-    private fun estimateFocalLengthPx(frameWidthPx: Int, frameHeightPx: Int): Float {
+    private fun estimateFocalLengthPx(frameHeightPx: Int): Float {
         val focalMm = AppPreferences.cameraFocalLengthMm
         val sensorHeightMm = AppPreferences.cameraSensorHeightMm
-        val sensorWidthMm = AppPreferences.cameraSensorWidthMm
-
-        // Prefer a physically grounded estimate but compensate for center-crop/aspect-ratio differences
-        // between the sensor and the analysis frame (common with CameraX + EIS).
-        if (focalMm.isFinite() && sensorHeightMm.isFinite() && sensorWidthMm.isFinite()
-            && sensorHeightMm > 0f && sensorWidthMm > 0f && frameWidthPx > 0 && frameHeightPx > 0
-        ) {
-            val frameAspect = frameWidthPx.toFloat() / frameHeightPx.toFloat()
-            val sensorAspect = sensorWidthMm / sensorHeightMm
-
-            // Assume center-crop to match the delivered frame aspect.
-            var usedSensorHeightMm = sensorHeightMm
-            var usedSensorWidthMm = sensorWidthMm
-
-            if (frameAspect > sensorAspect) {
-                // Frame is wider => crop sensor vertically.
-                usedSensorHeightMm = sensorWidthMm / frameAspect
-            } else if (frameAspect < sensorAspect) {
-                // Frame is taller => crop sensor horizontally.
-                usedSensorWidthMm = sensorHeightMm * frameAspect
-            }
-
-            // Use vertical focal (fy) approximation in pixel units.
-            return (focalMm / usedSensorHeightMm) * frameHeightPx.toFloat()
-        }
-
-        // Fallback: legacy approximation with only sensor height.
-        if (focalMm.isFinite() && sensorHeightMm.isFinite() && sensorHeightMm > 0f && frameHeightPx > 0) {
-            return (focalMm / sensorHeightMm) * frameHeightPx.toFloat()
+        if (focalMm.isFinite() && sensorHeightMm.isFinite() && sensorHeightMm > 0f) {
+            return (focalMm / sensorHeightMm) * frameHeightPx
         }
         return 1000f
     }
 
     
-    
-    private fun vehicleHeightM(label: String): Float {
-        // Canonical labels from DetectionLabelMapper (rear-end scenario).
-        // Use conservative typical heights to reduce systematic distance bias.
-        return when (label) {
-            "car" -> 1.45f
-            "van" -> 1.95f
-            "truck" -> 3.00f
-            "bus" -> 3.20f
-            "person" -> 1.70f
-            "motorcycle", "bicycle" -> 1.30f
-            else -> 1.50f // unknown/other: keep prior default
-        }
-    }
-
-private data class BrakeCueResult(
+    private data class BrakeCueResult(
         val active: Boolean,
         val strength: Float,
         val redRatio: Float,
