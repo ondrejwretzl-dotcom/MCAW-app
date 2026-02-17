@@ -64,6 +64,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var previewThumb: PreviewView
     private lateinit var btnPower: MaterialButton
     private lateinit var btnHelp: MaterialButton
+    private lateinit var btnCalibration: MaterialButton
     private lateinit var btnLegal: MaterialButton
     private lateinit var btnActivities: MaterialButton
     private var cameraProvider: ProcessCameraProvider? = null
@@ -236,11 +237,16 @@ class MainActivity : ComponentActivity() {
         previewThumb = findViewById(R.id.previewThumb)
         btnPower = findViewById(R.id.btnPower)
         btnHelp = findViewById(R.id.btnHelp)
+        btnCalibration = findViewById(R.id.btnCalibration)
         btnActivities = findViewById(R.id.btnActivities)
         btnLegal = findViewById(R.id.btnLegal)
 
         btnActivities.setOnClickListener {
             showActivitiesPopup()
+        }
+
+        btnCalibration.setOnClickListener {
+            startActivity(Intent(this, CalibrationActivity::class.java))
         }
         updateWhy(0, "")
         updateBrakeLamp(false)

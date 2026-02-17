@@ -1,0 +1,476 @@
+package com.mcaw.ui
+
+import android.content.Context
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraManager
+import android.os.Bundle
+import android.text.InputType
+import android.widget.TextView
+import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
+import androidx.core.content.ContextCompat
+import androidx.core.widget.doAfterTextChanged
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.textfield.TextInputEditText
+import com.google.android.material.textfield.TextInputLayout
+import com.mcaw.ai.DetectionPhysics
+import com.mcaw.app.R
+import com.mcaw.config.AppPreferences
+import com.mcaw.config.ProfileManager
+import com.mcaw.config.MountProfile
+import androidx.camera.camera2.interop.Camera2CameraInfo
+
+/**
+ * Camera distance calibration wizard (A1).
+ *
+ * Collects 3 ground points with known distances (3–4m, 7–8m, 12–14m),
+ * fits (cameraHeightM, pitchDownDeg) for DetectionPhysics ground-plane model,
+ * and then shows a final "sanity" step where the user verifies the estimated distance.
+ */
+class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener {
+
+    private enum class Stage {
+        INTRO,
+        P1,
+        P2,
+        P3,
+        VERIFY
+    }
+
+    private data class Sample(
+        val xNorm: Float,
+        val yNorm: Float,
+        val distanceM: Float
+    )
+
+    private lateinit var previewView: PreviewView
+    private lateinit var overlay: CalibrationOverlayView
+    private lateinit var txtStep: TextView
+    private lateinit var txtInstruction: TextView
+    private lateinit var txtHint: TextView
+
+    private lateinit var btnBack: com.google.android.material.button.MaterialButton
+    private lateinit var btnConfirm: com.google.android.material.button.MaterialButton
+
+    private var cameraProvider: ProcessCameraProvider? = null
+    private var previewUseCase: Preview? = null
+
+    private var stage: Stage = Stage.INTRO
+    private val samples: ArrayList<Sample> = ArrayList(3)
+
+    // Fitted values (preview only until user confirms save)
+    private var fittedHeightM: Float = AppPreferences.cameraMountHeightM
+    private var fittedPitchDeg: Float = AppPreferences.cameraPitchDownDeg
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        ProfileManager.ensureInit(this)
+        setContentView(R.layout.activity_calibration)
+
+        previewView = findViewById(R.id.previewView)
+        overlay = findViewById(R.id.overlay)
+        txtStep = findViewById(R.id.txtStep)
+        txtInstruction = findViewById(R.id.txtInstruction)
+        txtHint = findViewById(R.id.txtHint)
+        btnBack = findViewById(R.id.btnBack)
+        btnConfirm = findViewById(R.id.btnConfirm)
+
+        overlay.listener = this
+        overlay.crosshairEnabled = false
+
+        btnBack.setOnClickListener { onBackPressedDispatcher.onBackPressed() }
+        btnConfirm.setOnClickListener { onConfirmClicked() }
+
+        updateUiForStage()
+        startCamera()
+    }
+
+    override fun onDestroy() {
+        runCatching { cameraProvider?.unbindAll() }
+        super.onDestroy()
+    }
+
+    override fun onPointChanged(xNorm: Float, yNorm: Float, fromUser: Boolean) {
+        if (stage == Stage.VERIFY) {
+            // Update estimate in header (no dialogs / no allocations).
+            val est = estimateDistanceForPoint(yNorm)
+            if (est != null) {
+                txtHint.text = "Odhad aplikace: %.1f m".format(est)
+            } else {
+                txtHint.text = "Odhad aplikace: --"
+            }
+        }
+    }
+
+    private fun onConfirmClicked() {
+        when (stage) {
+            Stage.INTRO -> {
+                samples.clear()
+                stage = Stage.P1
+                overlay.crosshairEnabled = true
+                overlay.setPointNormalized(0.5f, 0.78f)
+                updateUiForStage()
+            }
+            Stage.P1, Stage.P2, Stage.P3 -> {
+                requestDistanceForCurrentStage()
+            }
+            Stage.VERIFY -> {
+                // Save fitted values and finish.
+                applyCalibrationToPreferencesAndProfile()
+                Toast.makeText(this, "Kalibrace uložena", Toast.LENGTH_SHORT).show()
+                finish()
+            }
+        }
+    }
+
+    override fun onBackPressed() {
+        when (stage) {
+            Stage.INTRO -> super.onBackPressed()
+            Stage.P1 -> {
+                stage = Stage.INTRO
+                overlay.crosshairEnabled = false
+                updateUiForStage()
+            }
+            Stage.P2 -> {
+                // step back to P1
+                if (samples.isNotEmpty()) samples.removeAt(samples.size - 1)
+                stage = Stage.P1
+                updateUiForStage()
+            }
+            Stage.P3 -> {
+                if (samples.isNotEmpty()) samples.removeAt(samples.size - 1)
+                stage = Stage.P2
+                updateUiForStage()
+            }
+            Stage.VERIFY -> {
+                // User says it's wrong -> restart.
+                samples.clear()
+                stage = Stage.P1
+                overlay.crosshairEnabled = true
+                overlay.setPointNormalized(0.5f, 0.78f)
+                updateUiForStage()
+            }
+        }
+    }
+
+    private fun updateUiForStage() {
+        when (stage) {
+            Stage.INTRO -> {
+                txtStep.text = "Kalibrace vzdálenosti"
+                txtInstruction.text = "Upevni telefon do držáku a stůj na rovině. Kamera musí vidět vozovku."
+                txtHint.text = "Během kalibrace s telefonem nehýbej. Vybírej vždy bod na ZEMI (kontakt se zemí)."
+                btnBack.text = "ZRUŠIT"
+                btnConfirm.text = "ZAČÍT"
+            }
+            Stage.P1 -> {
+                txtStep.text = "Krok 1/3"
+                txtInstruction.text = "Umísti modrý bod na zem ve vzdálenosti 3–4 m."
+                txtHint.text = "Tip: měř co nejpřesněji (metr je nejlepší)."
+                btnBack.text = "ZPĚT"
+                btnConfirm.text = "POTVRDIT BOD"
+            }
+            Stage.P2 -> {
+                txtStep.text = "Krok 2/3"
+                txtInstruction.text = "Umísti modrý bod na zem ve vzdálenosti 7–8 m."
+                txtHint.text = "Neoznačuj strom/zeď – jen bod na zemi."
+                btnBack.text = "ZPĚT"
+                btnConfirm.text = "POTVRDIT BOD"
+            }
+            Stage.P3 -> {
+                txtStep.text = "Krok 3/3"
+                txtInstruction.text = "Umísti modrý bod na zem ve vzdálenosti 12–14 m."
+                txtHint.text = "Čím přesnější zadání, tím méně bude distance „halucinovat“." 
+                btnBack.text = "ZPĚT"
+                btnConfirm.text = "POTVRDIT BOD"
+            }
+            Stage.VERIFY -> {
+                txtStep.text = "Kontrola"
+                txtInstruction.text = "Posuň bod na jiné místo na zemi. Zkontroluj, jestli odhad sedí."
+                // txtHint is updated live by onPointChanged()
+                btnBack.text = "ŠPATNĚ"
+                btnConfirm.text = "ULOŽIT"
+            }
+        }
+    }
+
+    private fun requestDistanceForCurrentStage() {
+        val (minM, maxM) = when (stage) {
+            Stage.P1 -> 2.5f to 6.0f
+            Stage.P2 -> 6.0f to 10.0f
+            Stage.P3 -> 10.0f to 18.0f
+            else -> 0.5f to 200f
+        }
+
+        val til = TextInputLayout(this).apply {
+            hint = "Vzdálenost (m)"
+            setPadding(0, 6, 0, 0)
+        }
+        val edit = TextInputEditText(til.context).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            setText("")
+        }
+        til.addView(edit)
+
+        var parsed: Float? = null
+        fun validateNow(): Boolean {
+            val raw = edit.text?.toString()?.trim().orEmpty().replace(',', '.')
+            parsed = raw.toFloatOrNull()
+            val v = parsed
+            return if (v == null || !v.isFinite()) {
+                til.error = "Zadej číslo v metrech"
+                false
+            } else if (v < minM || v > maxM) {
+                til.error = "Doporučený rozsah je %.1f–%.1f m".format(minM, maxM)
+                false
+            } else {
+                til.error = null
+                true
+            }
+        }
+
+        edit.doAfterTextChanged { validateNow() }
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Zadej vzdálenost")
+            .setMessage("Zadej co nejpřesněji vzdálenost k označenému bodu na zemi.")
+            .setView(til)
+            .setNegativeButton("ZRUŠIT") { d, _ -> d.dismiss() }
+            .setPositiveButton("OK") { d, _ ->
+                if (!validateNow()) {
+                    // Keep dialog open: MaterialAlertDialog doesn't support this directly.
+                    // We just show a toast and let user re-open.
+                    Toast.makeText(this, til.error ?: "Neplatná hodnota", Toast.LENGTH_SHORT).show()
+                } else {
+                    d.dismiss()
+                    val dist = parsed ?: return@setPositiveButton
+                    onDistanceConfirmed(dist)
+                }
+            }
+            .show()
+    }
+
+    private fun onDistanceConfirmed(distanceM: Float) {
+        val s = Sample(
+            xNorm = overlay.xNorm,
+            yNorm = overlay.yNorm,
+            distanceM = distanceM
+        )
+        samples.add(s)
+
+        when (stage) {
+            Stage.P1 -> {
+                stage = Stage.P2
+                overlay.setPointNormalized(0.5f, 0.72f)
+                updateUiForStage()
+            }
+            Stage.P2 -> {
+                stage = Stage.P3
+                overlay.setPointNormalized(0.5f, 0.66f)
+                updateUiForStage()
+            }
+            Stage.P3 -> {
+                // Fit parameters from 3 samples.
+                if (!fitCalibration()) {
+                    Toast.makeText(this, "Kalibrace selhala (bod je blízko horizontu?). Zkus znovu.", Toast.LENGTH_LONG).show()
+                    samples.clear()
+                    stage = Stage.P1
+                    overlay.setPointNormalized(0.5f, 0.78f)
+                    updateUiForStage()
+                    return
+                }
+                stage = Stage.VERIFY
+                overlay.setPointNormalized(0.5f, 0.70f)
+                updateUiForStage()
+                // Trigger first estimate
+                onPointChanged(overlay.xNorm, overlay.yNorm, fromUser = false)
+            }
+            else -> Unit
+        }
+    }
+
+    /**
+     * Fits (cameraHeightM, pitchDownDeg) by coarse-to-fine grid search.
+     * Keeps computation deterministic and small (runs only once per calibration).
+     */
+    private fun fitCalibration(): Boolean {
+        if (samples.size < 3) return false
+        val frameH = previewView.height.takeIf { it > 0 } ?: return false
+
+        // Reuse the same focalPx estimation logic as DetectionAnalyzer.
+        val focalMm = AppPreferences.cameraFocalLengthMm
+        val sensorH = AppPreferences.cameraSensorHeightMm
+        val focalPx = if (focalMm.isFinite() && sensorH.isFinite() && sensorH > 0f) {
+            (focalMm / sensorH) * frameH
+        } else {
+            1000f
+        }
+
+        fun score(heightM: Float, pitchDeg: Float): Float {
+            var sse = 0f
+            var n = 0
+            for (sm in samples) {
+                val box = com.mcaw.model.Box(
+                    x1 = 0f, y1 = 0f, x2 = 0f, y2 = sm.yNorm
+                )
+                val pred = DetectionPhysics.estimateDistanceGroundPlaneMeters(
+                    bbox = box,
+                    frameHeightPx = frameH,
+                    focalPx = focalPx,
+                    camHeightM = heightM,
+                    pitchDownDeg = pitchDeg
+                )
+                if (pred != null && pred.isFinite()) {
+                    val e = (pred - sm.distanceM)
+                    sse += e * e
+                    n++
+                }
+            }
+            return if (n >= 2) sse / n.toFloat() else Float.POSITIVE_INFINITY
+        }
+
+        var bestH = AppPreferences.cameraMountHeightM.coerceIn(0.6f, 2.0f)
+        var bestP = AppPreferences.cameraPitchDownDeg.coerceIn(0f, 20f)
+        var bestScore = Float.POSITIVE_INFINITY
+
+        // Coarse search
+        run {
+            var h = 0.7f
+            while (h <= 2.0f) {
+                var p = 0.0f
+                while (p <= 20.0f) {
+                    val sc = score(h, p)
+                    if (sc < bestScore) {
+                        bestScore = sc
+                        bestH = h
+                        bestP = p
+                    }
+                    p += 0.5f
+                }
+                h += 0.05f
+            }
+        }
+
+        if (!bestScore.isFinite() || bestScore.isInfinite()) return false
+
+        // Refinement around best
+        run {
+            val h0 = bestH
+            val p0 = bestP
+            var h = (h0 - 0.10f).coerceAtLeast(0.6f)
+            while (h <= (h0 + 0.10f).coerceAtMost(2.2f)) {
+                var p = (p0 - 1.5f).coerceAtLeast(-2f)
+                while (p <= (p0 + 1.5f).coerceAtMost(25f)) {
+                    val sc = score(h, p)
+                    if (sc < bestScore) {
+                        bestScore = sc
+                        bestH = h
+                        bestP = p
+                    }
+                    p += 0.1f
+                }
+                h += 0.01f
+            }
+        }
+
+        // Basic sanity: pitch must be positive-ish and not extreme.
+        if (bestP < -5f || bestP > 25f) return false
+
+        fittedHeightM = bestH
+        fittedPitchDeg = bestP
+        return true
+    }
+
+    private fun estimateDistanceForPoint(yNorm: Float): Float? {
+        val frameH = previewView.height.takeIf { it > 0 } ?: return null
+        val focalMm = AppPreferences.cameraFocalLengthMm
+        val sensorH = AppPreferences.cameraSensorHeightMm
+        val focalPx = if (focalMm.isFinite() && sensorH.isFinite() && sensorH > 0f) {
+            (focalMm / sensorH) * frameH
+        } else {
+            1000f
+        }
+        val box = com.mcaw.model.Box(0f, 0f, 0f, yNorm)
+        return DetectionPhysics.estimateDistanceGroundPlaneMeters(
+            bbox = box,
+            frameHeightPx = frameH,
+            focalPx = focalPx,
+            camHeightM = fittedHeightM,
+            pitchDownDeg = fittedPitchDeg
+        )
+    }
+
+    private fun applyCalibrationToPreferencesAndProfile() {
+        // Apply to prefs
+        AppPreferences.cameraMountHeightM = fittedHeightM
+        AppPreferences.cameraPitchDownDeg = fittedPitchDeg
+        // Keep distanceScale unchanged unless user explicitly tunes it elsewhere.
+
+        // If there is an active profile, persist to it as well (single source of truth).
+        val activeId = ProfileManager.getActiveProfileIdOrNull()
+        if (!activeId.isNullOrBlank()) {
+            val p = ProfileManager.findById(activeId)
+            if (p != null) {
+                val updated = MountProfile(
+                    id = p.id,
+                    name = p.name,
+                    cameraHeightM = AppPreferences.cameraMountHeightM,
+                    cameraPitchDownDeg = AppPreferences.cameraPitchDownDeg,
+                    distanceScale = AppPreferences.distanceScale,
+                    laneEgoMaxOffset = p.laneEgoMaxOffset,
+                    roiTopY = p.roiTopY,
+                    roiBottomY = p.roiBottomY,
+                    roiTopHalfW = p.roiTopHalfW,
+                    roiBottomHalfW = p.roiBottomHalfW,
+                    roiCenterX = p.roiCenterX
+                )
+                ProfileManager.upsert(updated)
+            }
+        }
+    }
+
+    private fun startCamera() {
+        val future = ProcessCameraProvider.getInstance(this)
+        future.addListener({
+            cameraProvider = future.get()
+            bindPreview()
+        }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun bindPreview() {
+        val provider = cameraProvider ?: return
+        provider.unbindAll()
+
+        previewUseCase = Preview.Builder().build().also {
+            it.setSurfaceProvider(previewView.surfaceProvider)
+        }
+
+        val camera = provider.bindToLifecycle(
+            this,
+            CameraSelector.DEFAULT_BACK_CAMERA,
+            previewUseCase!!
+        )
+        updateCameraCalibration(camera)
+    }
+
+    private fun updateCameraCalibration(camera: androidx.camera.core.Camera) {
+        val camInfo = camera.cameraInfo
+        val cam2 = Camera2CameraInfo.from(camInfo)
+        val manager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+        val id = cam2.cameraId
+        val chars = manager.getCameraCharacteristics(id)
+        val focalLengths = chars.get(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS)
+        val sensorSize = chars.get(CameraCharacteristics.SENSOR_INFO_PHYSICAL_SIZE)
+
+        if (focalLengths != null && focalLengths.isNotEmpty()) {
+            AppPreferences.cameraFocalLengthMm = focalLengths[0]
+        }
+        if (sensorSize != null) {
+            AppPreferences.cameraSensorHeightMm = sensorSize.height
+            AppPreferences.cameraSensorWidthMm = sensorSize.width
+        }
+    }
+}

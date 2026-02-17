@@ -704,20 +704,20 @@
             app:iconPadding="6dp"
             app:iconTint="#E5E7EB"
             app:iconSize="18dp" />
-        
+
         <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnLegal"
+            android:id="@+id/btnCalibration"
             android:layout_width="0dp"
             android:layout_height="40dp"
             android:layout_weight="1"
             android:minWidth="0dp"
-            android:text="Kalibrace"
+            android:text="KALIBRACE"
             android:textAllCaps="false"
             android:textColor="#E5E7EB"
             android:textSize="13sp"
             app:backgroundTint="#1E222A"
             app:cornerRadius="14dp"
-            app:icon="@android:drawable/ic_menu_info_details"
+            app:icon="@android:drawable/ic_menu_compass"
             app:iconPadding="6dp"
             app:iconTint="#E5E7EB"
             app:iconSize="18dp" />

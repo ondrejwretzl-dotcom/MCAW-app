@@ -39,6 +39,11 @@
             android:name="com.mcaw.ui.PreviewActivity"
             android:exported="false" />
 
+        <!-- Camera distance calibration wizard -->
+        <activity
+            android:name="com.mcaw.ui.CalibrationActivity"
+            android:exported="false" />
+
         <!-- Settings -->
         <activity
             android:name="com.mcaw.ui.SettingsActivity"
