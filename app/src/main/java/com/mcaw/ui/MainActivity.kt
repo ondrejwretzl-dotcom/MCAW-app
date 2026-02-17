@@ -13,7 +13,6 @@ import android.view.animation.DecelerateInterpolator
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import android.widget.TextView
-import android.widget.Toast
 import android.util.TypedValue
 import androidx.activity.ComponentActivity
 import androidx.core.app.ActivityCompat
@@ -52,7 +51,7 @@ class MainActivity : ComponentActivity() {
     private var activityDialogText: TextView? = null
     private lateinit var txtBuildInfo: TextView
     private lateinit var txtProfileInfo: TextView
-    private lateinit var btnProfileInline: MaterialButton
+    private lateinit var btnProfileInline: com.google.android.material.button.MaterialButton
     private lateinit var root: View
     private lateinit var panelMetrics: MaterialCardView
     private lateinit var brakeLamp: TextView
@@ -204,64 +203,7 @@ class MainActivity : ComponentActivity() {
         txtDetectedObject.text = "--"
     }
 
-    
-private fun updateProfileUi() {
-    try {
-        ProfileManager.ensureInit(this)
-        val activeId = ProfileManager.getActiveProfileIdOrNull()
-        val name = if (activeId != null) {
-            ProfileManager.findById(activeId)?.name ?: "Default"
-        } else {
-            "Default"
-        }
-        txtProfileInfo.text = "Profil: $name" // top text is hidden in layout but kept for backwards compatibility
-        btnProfileInline.text = "Profil: $name ▾"
-    } catch (_: Throwable) {
-        txtProfileInfo.text = "Profil: Default"
-        btnProfileInline.text = "Profil: Default ▾"
-    }
-}
-
-private fun showProfilePicker() {
-    try {
-        ProfileManager.ensureInit(this)
-        val profiles = ProfileManager.listProfiles()
-        val items = ArrayList<String>(profiles.size + 1)
-        items.add("Default")
-        for (p in profiles) items.add(p.name)
-
-        val activeId = ProfileManager.getActiveProfileIdOrNull()
-        val activeIndex = if (activeId == null) 0 else {
-            val idx = profiles.indexOfFirst { it.id == activeId }
-            if (idx >= 0) idx + 1 else 0
-        }
-
-        val builder = androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle("Vybrat profil")
-            .setSingleChoiceItems(items.toTypedArray(), activeIndex) { dialog, which ->
-                if (which == 0) {
-                    ProfileManager.setActiveProfileId(null)
-                } else {
-                    val p = profiles[which - 1]
-                    ProfileManager.setActiveProfileId(p.id)
-                    // Apply immediately to preferences so Preview/next Service run uses it.
-                    ProfileManager.applyActiveProfileToPreferences()
-                }
-                updateProfileUi()
-                logActivity("profile_select idx=$which name=${items[which]}")
-                if (serviceRunning) {
-                    Toast.makeText(this, "Profil se projeví po restartu služby", Toast.LENGTH_SHORT).show()
-                }
-                dialog.dismiss()
-            }
-            .setNegativeButton("Zavřít", null)
-        builder.show()
-    } catch (_: Throwable) {
-        Toast.makeText(this, "Profil nelze načíst", Toast.LENGTH_SHORT).show()
-    }
-}
-
-private val requiredPerms = arrayOf(
+    private val requiredPerms = arrayOf(
         Manifest.permission.CAMERA,
         Manifest.permission.ACCESS_FINE_LOCATION
     )
@@ -329,11 +271,10 @@ private val requiredPerms = arrayOf(
             }
         }
 
-
-// Inline profile switcher (quick access on main screen).
-btnProfileInline.setOnClickListener {
-    showProfilePicker()
-}
+        // Inline profile switcher (quick access on main screen).
+        btnProfileInline.setOnClickListener {
+            showProfilePicker()
+        }
 
         findViewById<MaterialButton>(R.id.btnSettings).setOnClickListener {
             logActivity("open_settings")
@@ -358,20 +299,68 @@ btnProfileInline.setOnClickListener {
     }
 
     override fun onResume() {
-    super.onResume()
-    // Show active mount/profile (if any) so user can trust Service mode behavior.
-    updateProfileUi()
-    // Mini preview is debug-oriented and must never compete with the running service.
-    refreshMiniPreviewVisibility()
-    maybeStartMiniPreview()
-    startMetricsWatchdog()
-}
+        super.onResume()        // Show active mount/profile (if any) so user can trust Service mode behavior.
+        updateProfileUi()
         // Mini preview is debug-oriented and must never compete with the running service.
         refreshMiniPreviewVisibility()
         maybeStartMiniPreview()
         startMetricsWatchdog()
     }
 
+
+
+    private fun updateProfileUi() {
+        try {
+            ProfileManager.ensureInit(this)
+            val activeId = ProfileManager.getActiveProfileIdOrNull()
+            val name = if (activeId != null) {
+                ProfileManager.findById(activeId)?.name ?: "Default"
+            } else {
+                "Default"
+            }
+            txtProfileInfo.text = "Profil: $name"
+            btnProfileInline.text = "Profil: $name ▾"
+        } catch (_: Throwable) {
+            txtProfileInfo.text = "Profil: Default"
+            btnProfileInline.text = "Profil: Default ▾"
+        }
+    }
+
+    private fun showProfilePicker() {
+        try {
+            ProfileManager.ensureInit(this)
+            val profiles = ProfileManager.listProfiles()
+            val items = ArrayList<String>(profiles.size + 1)
+            items.add("Default")
+            items.addAll(profiles.map { it.name })
+
+            val activeId = ProfileManager.getActiveProfileIdOrNull()
+            val activeName = if (activeId != null) ProfileManager.findById(activeId)?.name else null
+            val checked = if (activeName == null) 0 else (items.indexOf(activeName).takeIf { it >= 0 } ?: 0)
+
+            android.app.AlertDialog.Builder(this)
+                .setTitle("Vybrat profil")
+                .setSingleChoiceItems(items.toTypedArray(), checked) { dialog, which ->
+                    if (which == 0) {
+                        ProfileManager.setActiveProfileId(null)
+                    } else {
+                        val selectedName = items[which]
+                        val selected = profiles.firstOrNull { it.name == selectedName }
+                        ProfileManager.setActiveProfileId(selected?.id)
+                    }
+                    updateProfileUi()
+                    logActivity("profile_select idx=$which name=${items[which]}")
+                    if (serviceRunning) {
+                        Toast.makeText(this, "Profil se projeví po restartu služby", Toast.LENGTH_SHORT).show()
+                    }
+                    dialog.dismiss()
+                }
+                .setNegativeButton("Zavřít", null)
+                .show()
+        } catch (_: Throwable) {
+            Toast.makeText(this, "Profil nelze načíst", Toast.LENGTH_SHORT).show()
+        }
+    }
     override fun onPause() {
         super.onPause()
         stopMiniPreview()
