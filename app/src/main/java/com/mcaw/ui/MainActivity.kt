@@ -46,7 +46,9 @@ class MainActivity : ComponentActivity() {
     private lateinit var txtObjectSpeed: TextView
     private lateinit var txtRiderSpeed: TextView
     private lateinit var txtDetectedObject: TextView
-    private lateinit var txtActivityLog: TextView
+    // Activities are shown on demand (popup) to keep the main screen compact.
+    private var activityDialog: androidx.appcompat.app.AlertDialog? = null
+    private var activityDialogText: TextView? = null
     private lateinit var txtBuildInfo: TextView
     private lateinit var txtProfileInfo: TextView
     private lateinit var root: View
@@ -61,6 +63,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var btnPower: MaterialButton
     private lateinit var btnHelp: MaterialButton
     private lateinit var btnLegal: MaterialButton
+    private lateinit var btnActivities: MaterialButton
     private var cameraProvider: ProcessCameraProvider? = null
     private var previewUseCase: Preview? = null
     private var miniPreviewBound: Boolean = false
@@ -217,7 +220,6 @@ class MainActivity : ComponentActivity() {
         txtObjectSpeed = findViewById(R.id.txtObjectSpeed)
         txtRiderSpeed = findViewById(R.id.txtRiderSpeed)
         txtDetectedObject = findViewById(R.id.txtDetectedObject)
-        txtActivityLog = findViewById(R.id.txtActivityLog)
         txtBuildInfo = findViewById(R.id.txtBuildInfo)
         txtProfileInfo = findViewById(R.id.txtProfileInfo)
         root = findViewById(R.id.root)
@@ -231,7 +233,12 @@ class MainActivity : ComponentActivity() {
         previewThumb = findViewById(R.id.previewThumb)
         btnPower = findViewById(R.id.btnPower)
         btnHelp = findViewById(R.id.btnHelp)
+        btnActivities = findViewById(R.id.btnActivities)
         btnLegal = findViewById(R.id.btnLegal)
+
+        btnActivities.setOnClickListener {
+            showActivitiesPopup()
+        }
         updateWhy(0, "")
         updateBrakeLamp(false)
 
@@ -444,7 +451,7 @@ class MainActivity : ComponentActivity() {
         while (logLines.size > 80) {
             logLines.removeLast()
         }
-        txtActivityLog.text = buildString {
+        val text = buildString {
             append("Aktivity:\n")
             logLines.forEach { line ->
                 append("• ")
@@ -452,7 +459,44 @@ class MainActivity : ComponentActivity() {
                 append('\n')
             }
         }.trimEnd()
+        activityDialogText?.text = text
         logActivity("ui_log $message")
+    }
+
+    private fun showActivitiesPopup() {
+        val existing = activityDialog
+        if (existing != null && existing.isShowing) return
+
+        val scroll = androidx.core.widget.NestedScrollView(this).apply {
+            isFillViewport = true
+            setPadding(24, 18, 24, 18)
+        }
+
+        val tv = TextView(this).apply {
+            setTextColor(android.graphics.Color.parseColor("#C9D1D9"))
+            textSize = 13f
+            typeface = android.graphics.Typeface.MONOSPACE
+            text = buildString {
+                append("Aktivity:\n")
+                logLines.forEach { line ->
+                    append("• ")
+                    append(line)
+                    append('\n')
+                }
+            }.trimEnd()
+        }
+        scroll.addView(tv)
+        activityDialogText = tv
+
+        activityDialog = androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Aktivity")
+            .setView(scroll)
+            .setPositiveButton("ZAVŘÍT") { d, _ -> d.dismiss() }
+            .setOnDismissListener {
+                activityDialogText = null
+                activityDialog = null
+            }
+            .show()
     }
 
     private data class AlertThresholds(
@@ -783,8 +827,9 @@ class MainActivity : ComponentActivity() {
         if (!serviceRunning) {
             btnPower.text = "START"
             btnPower.setBackgroundResource(R.drawable.bg_power_stopped)
-            btnPower.setTextColor(colorAccentSafe)
-            btnPower.iconTint = android.content.res.ColorStateList.valueOf(colorAccentSafe)
+            val neutral = android.graphics.Color.parseColor("#9CA3AF")
+            btnPower.setTextColor(neutral)
+            btnPower.iconTint = android.content.res.ColorStateList.valueOf(neutral)
             return
         }
 

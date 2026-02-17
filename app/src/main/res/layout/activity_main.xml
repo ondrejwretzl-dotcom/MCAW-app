@@ -7,7 +7,7 @@
     android:background="@drawable/bg_main_screen"
     android:orientation="vertical"
     android:paddingLeft="16dp"
-    android:paddingTop="14dp"
+    android:paddingTop="12dp"
     android:paddingRight="16dp"
     android:paddingBottom="14dp">
 
@@ -15,7 +15,7 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="12dp"
+        android:layout_marginBottom="8dp"
         android:gravity="center_vertical"
         android:orientation="horizontal">
 
@@ -88,7 +88,7 @@
         android:id="@+id/panelAlert"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="12dp"
+        android:layout_marginBottom="8dp"
         app:cardCornerRadius="26dp"
         app:cardElevation="2dp"
         app:cardUseCompatPadding="true">
@@ -113,7 +113,7 @@
         android:id="@+id/panelMetrics"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="12dp"
+        android:layout_marginBottom="8dp"
         app:cardCornerRadius="22dp"
         app:cardElevation="1dp"
         app:cardUseCompatPadding="true">
@@ -354,7 +354,7 @@
         android:id="@+id/panelStatusLine"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="12dp"
+        android:layout_marginBottom="8dp"
         app:cardCornerRadius="22dp"
         app:cardElevation="1dp"
         app:cardUseCompatPadding="true">
@@ -366,9 +366,9 @@
             android:gravity="center_vertical"
             android:orientation="horizontal"
             android:paddingLeft="14dp"
-            android:paddingTop="12dp"
+            android:paddingTop="10dp"
             android:paddingRight="14dp"
-            android:paddingBottom="12dp">
+            android:paddingBottom="10dp">
 
             <TextView
                 android:id="@+id/brakeLamp"
@@ -426,7 +426,7 @@
         android:id="@+id/panelControls"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="12dp"
+        android:layout_marginBottom="8dp"
         app:cardCornerRadius="22dp"
         app:cardElevation="1dp"
         app:cardUseCompatPadding="true">
@@ -440,16 +440,15 @@
 
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/panelMiniPreview"
-                android:layout_width="0dp"
-                android:layout_height="110dp"
+                android:layout_width="112dp"
+                android:layout_height="112dp"
                 app:cardCornerRadius="18dp"
                 app:cardElevation="1dp"
                 app:cardUseCompatPadding="true"
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintTop_toTopOf="parent"
                 app:layout_constraintBottom_toBottomOf="parent"
-                app:layout_constraintEnd_toStartOf="@id/btnPower"
-                android:layout_marginEnd="12dp">
+                android:layout_marginEnd="8dp">
 
                 <FrameLayout
                     android:layout_width="match_parent"
@@ -481,20 +480,20 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnPower"
-                android:layout_width="150dp"
-                android:layout_height="150dp"
+                android:layout_width="128dp"
+                android:layout_height="128dp"
                 android:contentDescription="Start / Stop"
-                android:text="STOP"
+                android:text="START"
                 android:textAllCaps="false"
-                android:textColor="#A7F3DD"
-                android:textSize="22sp"
+                android:textColor="#9CA3AF"
+                android:textSize="18sp"
                 android:textStyle="bold"
-                android:background="@drawable/bg_power_running"
+                android:background="@drawable/bg_power_stopped"
                 app:icon="@drawable/ic_power"
                 app:iconGravity="textTop"
                 app:iconPadding="6dp"
-                app:iconTint="#A7F3DD"
-                app:iconSize="40dp"
+                app:iconTint="#9CA3AF"
+                app:iconSize="34dp"
                 app:layout_constraintTop_toTopOf="parent"
                 app:layout_constraintBottom_toBottomOf="parent"
                 app:layout_constraintStart_toStartOf="parent"
@@ -505,9 +504,10 @@
                 android:layout_width="120dp"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                app:layout_constraintEnd_toEndOf="parent"
-                app:layout_constraintTop_toTopOf="parent"
-                app:layout_constraintBottom_toBottomOf="parent">
+                app:layout_constraintStart_toEndOf="@id/btnPower"
+                android:layout_marginStart="8dp"
+                app:layout_constraintTop_toTopOf="@id/btnPower"
+                app:layout_constraintBottom_toBottomOf="@id/btnPower">
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnCamera"
@@ -559,67 +559,21 @@
         </androidx.constraintlayout.widget.ConstraintLayout>
     </com.google.android.material.card.MaterialCardView>
 
-    <!-- Activities -->
-    <com.google.android.material.card.MaterialCardView
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        app:cardCornerRadius="22dp"
-        app:cardElevation="1dp"
-        app:cardUseCompatPadding="true">
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:background="@drawable/bg_panel_glass"
-            android:orientation="vertical"
-            android:padding="14dp">
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="8dp"
-                android:text="Aktivity:"
-                android:textColor="#FFFFFF"
-                android:textSize="18sp"
-                android:textStyle="bold" />
-
-            <androidx.core.widget.NestedScrollView
-                android:id="@+id/scrollActivities"
-                android:layout_width="match_parent"
-                android:layout_height="0dp"
-                android:layout_weight="1"
-                android:fillViewport="true"
-                android:overScrollMode="always"
-                android:scrollbars="vertical">
-
-                <TextView
-                    android:id="@+id/txtActivityLog"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:lineSpacingExtra="2dp"
-                    android:text="[--:--:--] ..."
-                    android:textColor="#C9D1D9"
-                    android:textSize="13sp" />
-
-            </androidx.core.widget.NestedScrollView>
-
-        </LinearLayout>
-    </com.google.android.material.card.MaterialCardView>
+    <!-- Activities are opened on demand (popup), to keep main screen compact -->
 
     <!-- Bottom bar: Help + Legal -->
     <LinearLayout
         android:id="@+id/panelBottom"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="10dp"
+        android:layout_marginTop="8dp"
         android:gravity="center_vertical"
         android:orientation="horizontal">
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnHelp"
             android:layout_width="0dp"
-            android:layout_height="44dp"
+            android:layout_height="42dp"
             android:layout_marginEnd="6dp"
             android:layout_weight="1"
             android:text="NÁVOD"
@@ -632,10 +586,24 @@
             app:iconSize="18dp" />
 
         <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnActivities"
+            android:layout_width="0dp"
+            android:layout_height="42dp"
+            android:layout_marginEnd="6dp"
+            android:layout_weight="1"
+            android:text="AKTIVITY"
+            android:textAllCaps="false"
+            android:textSize="14sp"
+            app:backgroundTint="#1E222A"
+            app:cornerRadius="14dp"
+            app:icon="@android:drawable/ic_menu_recent_history"
+            app:iconPadding="6dp"
+            app:iconSize="18dp" />
+
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/btnLegal"
             android:layout_width="0dp"
-            android:layout_height="44dp"
-            android:layout_marginStart="6dp"
+            android:layout_height="42dp"
             android:layout_weight="1"
             android:text="LEGAL"
             android:textAllCaps="false"
