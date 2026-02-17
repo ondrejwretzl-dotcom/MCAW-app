@@ -410,7 +410,7 @@
 	    android:id="@+id/panelStatusLine"
 	    android:layout_width="match_parent"
 	    android:layout_height="wrap_content"
-	    android:layout_marginBottom="6dp"
+	    android:layout_marginBottom="2dp"
 	    app:cardCornerRadius="22dp"
 	    app:cardElevation="1dp"
 	    app:cardUseCompatPadding="true">
@@ -498,9 +498,11 @@
 	            <com.google.android.material.button.MaterialButton
 	                android:id="@+id/btnProfileInline"
 	                android:layout_width="wrap_content"
-	                android:layout_height="28dp"
+	                android:layout_height="26dp"
 	                android:insetLeft="0dp"
 	                android:insetRight="0dp"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
 	                android:minWidth="0dp"
 	                android:paddingLeft="10dp"
 	                android:paddingRight="10dp"
@@ -531,12 +533,12 @@
 	
 	</com.google.android.material.card.MaterialCardView>
 
-   	<!-- Controls: preview + STOP + camera/settings -->
+<!-- Controls: preview + START + camera/settings -->
 <com.google.android.material.card.MaterialCardView
     android:id="@+id/panelControls"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_marginBottom="6dp"
+    android:layout_marginBottom="2dp"
     app:cardCornerRadius="22dp"
     app:cardElevation="1dp"
     app:cardUseCompatPadding="true">
@@ -552,7 +554,6 @@
             android:id="@+id/panelMiniPreview"
             android:layout_width="112dp"
             android:layout_height="112dp"
-            android:layout_marginEnd="0dp"
             app:cardCornerRadius="18dp"
             app:cardElevation="1dp"
             app:cardUseCompatPadding="true"
@@ -587,7 +588,7 @@
             </FrameLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- CENTER: START/STOP -->
+        <!-- CENTER: START (overlaps both sides) -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnPower"
             android:layout_width="112dp"
@@ -598,7 +599,9 @@
             android:textColor="#E5E7EB"
             android:textSize="16sp"
             android:textStyle="bold"
-            android:elevation="6dp"
+            android:elevation="8dp"
+            android:layout_marginStart="-18dp"
+            android:layout_marginEnd="-18dp"
             app:backgroundTint="#2B313A"
             app:strokeWidth="3dp"
             app:strokeColor="#64748B"
@@ -613,13 +616,13 @@
             app:layout_constraintStart_toEndOf="@id/panelMiniPreview"
             app:layout_constraintEnd_toStartOf="@id/panelRightButtons" />
 
-        <!-- RIGHT: camera/settings stack (exactly 112dp high) -->
+        <!-- RIGHT: camera/settings (same footprint as preview, and overlaps START) -->
         <LinearLayout
             android:id="@+id/panelRightButtons"
             android:layout_width="112dp"
             android:layout_height="112dp"
-            android:layout_marginStart="0dp"
             android:orientation="vertical"
+            android:layout_marginStart="-18dp"
             app:layout_constraintStart_toEndOf="@id/btnPower"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintTop_toTopOf="@id/btnPower"
@@ -673,26 +676,24 @@
 
         </LinearLayout>
 
-    	</androidx.constraintlayout.widget.ConstraintLayout>
-	</com.google.android.material.card.MaterialCardView>
+    </androidx.constraintlayout.widget.ConstraintLayout>
+</com.google.android.material.card.MaterialCardView>
 
     <!-- Activities are opened on demand (popup), to keep main screen compact -->
 
-    <!-- Bottom bar: Help + Legal -->
-    <LinearLayout
+    <!-- Bottom bar: Help + Kalibrace + Aktivity+ Legal -->
+        <LinearLayout
         android:id="@+id/panelBottom"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
-        android:gravity="center_vertical"
         android:orientation="horizontal">
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnHelp"
             android:layout_width="0dp"
-            android:layout_height="42dp"
-            android:layout_marginEnd="6dp"
+            android:layout_height="40dp"
             android:layout_weight="1"
+            android:minWidth="0dp"
             android:text="NÁVOD"
             android:textAllCaps="false"
             android:textColor="#E5E7EB"
@@ -703,13 +704,30 @@
             app:iconPadding="6dp"
             app:iconTint="#E5E7EB"
             app:iconSize="18dp" />
+        
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnLegal"
+            android:layout_width="0dp"
+            android:layout_height="40dp"
+            android:layout_weight="1"
+            android:minWidth="0dp"
+            android:text="Kalibrace"
+            android:textAllCaps="false"
+            android:textColor="#E5E7EB"
+            android:textSize="13sp"
+            app:backgroundTint="#1E222A"
+            app:cornerRadius="14dp"
+            app:icon="@android:drawable/ic_menu_info_details"
+            app:iconPadding="6dp"
+            app:iconTint="#E5E7EB"
+            app:iconSize="18dp" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnActivities"
             android:layout_width="0dp"
-            android:layout_height="42dp"
-            android:layout_marginEnd="6dp"
+            android:layout_height="40dp"
             android:layout_weight="1"
+            android:minWidth="0dp"
             android:text="AKTIVITY"
             android:textAllCaps="false"
             android:textColor="#E5E7EB"
@@ -724,8 +742,9 @@
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnLegal"
             android:layout_width="0dp"
-            android:layout_height="42dp"
+            android:layout_height="40dp"
             android:layout_weight="1"
+            android:minWidth="0dp"
             android:text="LEGAL"
             android:textAllCaps="false"
             android:textColor="#E5E7EB"
