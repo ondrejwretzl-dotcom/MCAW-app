@@ -66,6 +66,11 @@ object ProfileManager {
             cameraHeightM = AppPreferences.cameraMountHeightM,
             cameraPitchDownDeg = AppPreferences.cameraPitchDownDeg,
             distanceScale = AppPreferences.distanceScale,
+            calibrationRmsM = AppPreferences.calibrationRmsM,
+            calibrationMaxErrM = AppPreferences.calibrationMaxErrM,
+            calibrationImuStdDeg = AppPreferences.calibrationImuStdDeg,
+            calibrationSavedUptimeMs = AppPreferences.calibrationSavedUptimeMs,
+            calibrationQuality = AppPreferences.calibrationQuality,
             laneEgoMaxOffset = AppPreferences.laneEgoMaxOffset,
             roiTopY = roi.topY,
             roiBottomY = roi.bottomY,
@@ -113,6 +118,13 @@ object ProfileManager {
         AppPreferences.distanceScale = p.distanceScale
         AppPreferences.laneEgoMaxOffset = p.laneEgoMaxOffset
 
+        // Calibration metrics (optional)
+        AppPreferences.calibrationRmsM = p.calibrationRmsM
+        AppPreferences.calibrationMaxErrM = p.calibrationMaxErrM
+        AppPreferences.calibrationImuStdDeg = p.calibrationImuStdDeg
+        AppPreferences.calibrationSavedUptimeMs = p.calibrationSavedUptimeMs
+        AppPreferences.calibrationQuality = p.calibrationQuality
+
         // ROI
         AppPreferences.setRoiTrapezoidNormalized(
             topY = p.roiTopY,
@@ -139,6 +151,11 @@ object ProfileManager {
             put("cameraHeightM", p.cameraHeightM.toDouble())
             put("cameraPitchDownDeg", p.cameraPitchDownDeg.toDouble())
             put("distanceScale", p.distanceScale.toDouble())
+            put("calibrationRmsM", p.calibrationRmsM.toDouble())
+            put("calibrationMaxErrM", p.calibrationMaxErrM.toDouble())
+            put("calibrationImuStdDeg", p.calibrationImuStdDeg.toDouble())
+            put("calibrationSavedUptimeMs", p.calibrationSavedUptimeMs)
+            put("calibrationQuality", p.calibrationQuality)
             put("laneEgoMaxOffset", p.laneEgoMaxOffset.toDouble())
             put("roiTopY", p.roiTopY.toDouble())
             put("roiBottomY", p.roiBottomY.toDouble())
@@ -158,6 +175,11 @@ object ProfileManager {
             cameraHeightM = o.optDouble("cameraHeightM", 1.2).toFloat(),
             cameraPitchDownDeg = o.optDouble("cameraPitchDownDeg", 6.0).toFloat(),
             distanceScale = o.optDouble("distanceScale", 1.0).toFloat(),
+            calibrationRmsM = o.optDouble("calibrationRmsM", 0.0).toFloat(),
+            calibrationMaxErrM = o.optDouble("calibrationMaxErrM", 0.0).toFloat(),
+            calibrationImuStdDeg = o.optDouble("calibrationImuStdDeg", 0.0).toFloat(),
+            calibrationSavedUptimeMs = o.optLong("calibrationSavedUptimeMs", 0L),
+            calibrationQuality = o.optInt("calibrationQuality", 0),
             laneEgoMaxOffset = o.optDouble("laneEgoMaxOffset", 0.55).toFloat(),
             roiTopY = o.optDouble("roiTopY", 0.32).toFloat(),
             roiBottomY = o.optDouble("roiBottomY", 0.92).toFloat(),

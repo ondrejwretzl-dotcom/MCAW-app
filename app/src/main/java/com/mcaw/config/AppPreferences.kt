@@ -57,6 +57,37 @@ var cameraPitchDownDeg: Float
     set(v) = prefs.edit().putFloat("calib_camera_pitch_deg", v.coerceIn(-10.0f, 25.0f)).apply()
 
 /**
+ * Poslední metriky kalibrace (audit/debug): RMS chyba v metrech.
+ * 0 = neznámé / neprovedeno.
+ */
+var calibrationRmsM: Float
+    get() = prefs.getFloat("calib_rms_m", 0f).coerceIn(0f, 50f)
+    set(v) = prefs.edit().putFloat("calib_rms_m", v.coerceIn(0f, 50f)).apply()
+
+/** Poslední max chyba kalibrace (|e|) v metrech. */
+var calibrationMaxErrM: Float
+    get() = prefs.getFloat("calib_max_err_m", 0f).coerceIn(0f, 200f)
+    set(v) = prefs.edit().putFloat("calib_max_err_m", v.coerceIn(0f, 200f)).apply()
+
+/**
+ * Stabilita telefonu během kalibrace: směrodatná odchylka "tilt" jitteru (deg).
+ * Nejde o absolutní pitch, ale o to, jak moc se telefon hýbal.
+ */
+var calibrationImuStdDeg: Float
+    get() = prefs.getFloat("calib_imu_std_deg", 0f).coerceIn(0f, 45f)
+    set(v) = prefs.edit().putFloat("calib_imu_std_deg", v.coerceIn(0f, 45f)).apply()
+
+/** 0=unknown, 1=OK, 2=UNCERTAIN, 3=BAD */
+var calibrationQuality: Int
+    get() = prefs.getInt("calib_quality", 0).coerceIn(0, 3)
+    set(v) = prefs.edit().putInt("calib_quality", v.coerceIn(0, 3)).apply()
+
+/** Timestamp (uptime ms) when calibration was saved (best-effort). */
+var calibrationSavedUptimeMs: Long
+    get() = prefs.getLong("calib_saved_uptime_ms", 0L).coerceAtLeast(0L)
+    set(v) = prefs.edit().putLong("calib_saved_uptime_ms", v.coerceAtLeast(0L)).apply()
+
+/**
  * Quality gating: při špatné kvalitě (tma / motion blur) přepne alerting do konzervativního režimu.
  */
 var qualityGatingEnabled: Boolean

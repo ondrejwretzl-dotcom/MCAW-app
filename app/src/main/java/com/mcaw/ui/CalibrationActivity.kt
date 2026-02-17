@@ -3,7 +3,12 @@ package com.mcaw.ui
 import android.content.Context
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.os.Bundle
+import android.os.SystemClock
 import android.text.InputType
 import android.widget.TextView
 import android.widget.Toast
@@ -38,7 +43,15 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
         P1,
         P2,
         P3,
+        RESULT,
         VERIFY
+    }
+
+    private enum class QualityLevel(val code: Int) {
+        UNKNOWN(0),
+        OK(1),
+        UNCERTAIN(2),
+        BAD(3)
     }
 
     private data class Sample(
@@ -62,14 +75,39 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
     private var stage: Stage = Stage.INTRO
     private val samples: ArrayList<Sample> = ArrayList(3)
 
+    // Per-step IMU stability (std dev of tilt jitter) captured when user confirms the point.
+    private val stepImuStdDeg: FloatArray = floatArrayOf(Float.NaN, Float.NaN, Float.NaN)
+
+    // Last fitted evaluation
+    private var lastRmsM: Float = 0f
+    private var lastMaxErrM: Float = 0f
+    private var lastImuStdDeg: Float = 0f
+    private var lastQuality: QualityLevel = QualityLevel.UNKNOWN
+    private var worstStepIndex: Int = 0 // 0..2
+
     // Fitted values (preview only until user confirms save)
     private var fittedHeightM: Float = AppPreferences.cameraMountHeightM
     private var fittedPitchDeg: Float = AppPreferences.cameraPitchDownDeg
+
+    // IMU sampler used only for stability gating during calibration (no risk-engine coupling).
+    private lateinit var sensorManager: SensorManager
+    private var accelSensor: Sensor? = null
+    private val imuSampler = ImuStabilitySampler()
+    private val imuListener = object : SensorEventListener {
+        override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
+        override fun onSensorChanged(event: SensorEvent) {
+            if (event.sensor.type != Sensor.TYPE_ACCELEROMETER) return
+            imuSampler.onAccel(event.values)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         ProfileManager.ensureInit(this)
         setContentView(R.layout.activity_calibration)
+
+        sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        accelSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
 
         previewView = findViewById(R.id.previewView)
         overlay = findViewById(R.id.overlay)
@@ -82,11 +120,35 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
         overlay.listener = this
         overlay.crosshairEnabled = false
 
-        btnBack.setOnClickListener { onBackPressedDispatcher.onBackPressed() }
+        btnBack.setOnClickListener { onBackClicked() }
         btnConfirm.setOnClickListener { onConfirmClicked() }
 
         updateUiForStage()
         startCamera()
+    }
+
+    private fun onBackClicked() {
+        when (stage) {
+            Stage.RESULT -> {
+                if (lastQuality == QualityLevel.BAD) {
+                    restartAll()
+                } else {
+                    repeatWorstStep()
+                }
+            }
+            else -> onBackPressedDispatcher.onBackPressed()
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        accelSensor?.let { sensorManager.registerListener(imuListener, it, SensorManager.SENSOR_DELAY_GAME) }
+        imuSampler.reset()
+    }
+
+    override fun onPause() {
+        try { sensorManager.unregisterListener(imuListener) } catch (_: Exception) {}
+        super.onPause()
     }
 
     override fun onDestroy() {
@@ -110,13 +172,27 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
         when (stage) {
             Stage.INTRO -> {
                 samples.clear()
+                stepImuStdDeg[0] = Float.NaN
+                stepImuStdDeg[1] = Float.NaN
+                stepImuStdDeg[2] = Float.NaN
                 stage = Stage.P1
                 overlay.crosshairEnabled = true
                 overlay.setPointNormalized(0.5f, 0.78f)
+                imuSampler.reset()
                 updateUiForStage()
             }
             Stage.P1, Stage.P2, Stage.P3 -> {
                 requestDistanceForCurrentStage()
+            }
+            Stage.RESULT -> {
+                if (lastQuality == QualityLevel.BAD) {
+                    restartAll()
+                } else {
+                    stage = Stage.VERIFY
+                    overlay.setPointNormalized(0.5f, 0.70f)
+                    updateUiForStage()
+                    onPointChanged(overlay.xNorm, overlay.yNorm, fromUser = false)
+                }
             }
             Stage.VERIFY -> {
                 // Save fitted values and finish.
@@ -139,20 +215,22 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
                 // step back to P1
                 if (samples.isNotEmpty()) samples.removeAt(samples.size - 1)
                 stage = Stage.P1
+                imuSampler.reset()
                 updateUiForStage()
             }
             Stage.P3 -> {
                 if (samples.isNotEmpty()) samples.removeAt(samples.size - 1)
                 stage = Stage.P2
+                imuSampler.reset()
                 updateUiForStage()
+            }
+            Stage.RESULT -> {
+                // Default action = repeat all (safer)
+                restartAll()
             }
             Stage.VERIFY -> {
                 // User says it's wrong -> restart.
-                samples.clear()
-                stage = Stage.P1
-                overlay.crosshairEnabled = true
-                overlay.setPointNormalized(0.5f, 0.78f)
-                updateUiForStage()
+                restartAll()
             }
         }
     }
@@ -186,6 +264,26 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
                 txtHint.text = "Čím přesnější zadání, tím méně bude distance „halucinovat“." 
                 btnBack.text = "ZPĚT"
                 btnConfirm.text = "POTVRDIT BOD"
+            }
+            Stage.RESULT -> {
+                val q = when (lastQuality) {
+                    QualityLevel.OK -> "Kalibrace OK"
+                    QualityLevel.UNCERTAIN -> "Kalibrace nejistá"
+                    QualityLevel.BAD -> "Kalibrace špatná"
+                    else -> "Kalibrace"
+                }
+                txtStep.text = q
+                txtInstruction.text = "RMS: %.2f m, Max: %.2f m, Stabilita: %.2f°".format(lastRmsM, lastMaxErrM, lastImuStdDeg)
+
+                txtHint.text = when (lastQuality) {
+                    QualityLevel.OK -> "Pokračuj na kontrolu (posuň bod a ověř odhad)."
+                    QualityLevel.UNCERTAIN -> "Doporučeno zopakovat krok %d (největší odchylka).".format(worstStepIndex + 1)
+                    QualityLevel.BAD -> "Kalibrace je mimo. Zopakuj ji – nejčastěji je to špatný bod (ne na zemi) nebo pohyb telefonu."
+                    else -> ""
+                }
+
+                btnBack.text = if (lastQuality == QualityLevel.BAD) "ZOPAKOVAT" else "ZOPAKOVAT KROK %d".format(worstStepIndex + 1)
+                btnConfirm.text = if (lastQuality == QualityLevel.BAD) "ZOPAKOVAT VŠE" else "POKRAČOVAT"
             }
             Stage.VERIFY -> {
                 txtStep.text = "Kontrola"
@@ -254,6 +352,15 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
     }
 
     private fun onDistanceConfirmed(distanceM: Float) {
+        // Capture stability for this step before we change stage.
+        val imuStd = imuSampler.stdDevDeg()
+        when (stage) {
+            Stage.P1 -> stepImuStdDeg[0] = imuStd
+            Stage.P2 -> stepImuStdDeg[1] = imuStd
+            Stage.P3 -> stepImuStdDeg[2] = imuStd
+            else -> Unit
+        }
+
         val s = Sample(
             xNorm = overlay.xNorm,
             yNorm = overlay.yNorm,
@@ -265,31 +372,64 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
             Stage.P1 -> {
                 stage = Stage.P2
                 overlay.setPointNormalized(0.5f, 0.72f)
+                imuSampler.reset()
                 updateUiForStage()
             }
             Stage.P2 -> {
                 stage = Stage.P3
                 overlay.setPointNormalized(0.5f, 0.66f)
+                imuSampler.reset()
                 updateUiForStage()
             }
             Stage.P3 -> {
                 // Fit parameters from 3 samples.
                 if (!fitCalibration()) {
                     Toast.makeText(this, "Kalibrace selhala (bod je blízko horizontu?). Zkus znovu.", Toast.LENGTH_LONG).show()
-                    samples.clear()
-                    stage = Stage.P1
-                    overlay.setPointNormalized(0.5f, 0.78f)
-                    updateUiForStage()
+                    restartAll()
                     return
                 }
-                stage = Stage.VERIFY
-                overlay.setPointNormalized(0.5f, 0.70f)
+                evaluateCalibrationQuality()
+                stage = Stage.RESULT
+                overlay.crosshairEnabled = false
                 updateUiForStage()
-                // Trigger first estimate
-                onPointChanged(overlay.xNorm, overlay.yNorm, fromUser = false)
             }
             else -> Unit
         }
+    }
+
+    private fun restartAll() {
+        samples.clear()
+        stepImuStdDeg[0] = Float.NaN
+        stepImuStdDeg[1] = Float.NaN
+        stepImuStdDeg[2] = Float.NaN
+        stage = Stage.P1
+        overlay.crosshairEnabled = true
+        overlay.setPointNormalized(0.5f, 0.78f)
+        imuSampler.reset()
+        updateUiForStage()
+    }
+
+    private fun repeatWorstStep() {
+        val idx = worstStepIndex.coerceIn(0, 2)
+        // Keep samples before idx, drop idx and later.
+        while (samples.size > idx) samples.removeAt(samples.size - 1)
+        when (idx) {
+            0 -> {
+                stage = Stage.P1
+                overlay.setPointNormalized(0.5f, 0.78f)
+            }
+            1 -> {
+                stage = Stage.P2
+                overlay.setPointNormalized(0.5f, 0.72f)
+            }
+            else -> {
+                stage = Stage.P3
+                overlay.setPointNormalized(0.5f, 0.66f)
+            }
+        }
+        overlay.crosshairEnabled = true
+        imuSampler.reset()
+        updateUiForStage()
     }
 
     /**
@@ -384,6 +524,88 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
         return true
     }
 
+    /**
+     * Computes RMS/Max errors for the three samples and classifies the calibration quality.
+     * Also identifies the worst step (largest |error|) for quick repetition.
+     */
+    private fun evaluateCalibrationQuality() {
+        val frameH = previewView.height.takeIf { it > 0 } ?: run {
+            lastQuality = QualityLevel.BAD
+            lastRmsM = 99f
+            lastMaxErrM = 99f
+            lastImuStdDeg = 9f
+            worstStepIndex = 0
+            return
+        }
+
+        val focalMm = AppPreferences.cameraFocalLengthMm
+        val sensorH = AppPreferences.cameraSensorHeightMm
+        val focalPx = if (focalMm.isFinite() && sensorH.isFinite() && sensorH > 0f) {
+            (focalMm / sensorH) * frameH
+        } else {
+            1000f
+        }
+
+        var sse = 0f
+        var maxAbs = 0f
+        var worstIdx = 0
+        for (i in 0 until minOf(3, samples.size)) {
+            val sm = samples[i]
+            val box = com.mcaw.model.Box(0f, 0f, 0f, sm.yNorm)
+            val pred = DetectionPhysics.estimateDistanceGroundPlaneMeters(
+                bbox = box,
+                frameHeightPx = frameH,
+                focalPx = focalPx,
+                camHeightM = fittedHeightM,
+                pitchDownDeg = fittedPitchDeg
+            )
+            val e = if (pred != null && pred.isFinite()) (pred - sm.distanceM) else 99f
+            val ae = kotlin.math.abs(e)
+            sse += e * e
+            if (ae > maxAbs) {
+                maxAbs = ae
+                worstIdx = i
+            }
+        }
+
+        val rms = kotlin.math.sqrt((sse / 3f).toDouble()).toFloat()
+        lastRmsM = rms
+        lastMaxErrM = maxAbs
+        worstStepIndex = worstIdx
+
+        // IMU stability = max std across steps (deg). If NaN, treat as 0 (sensor missing).
+        var imuStd = 0f
+        for (v in stepImuStdDeg) {
+            if (v.isFinite()) imuStd = maxOf(imuStd, v)
+        }
+        lastImuStdDeg = imuStd
+
+        // Quality thresholds tuned for A1 distances (3–14m). Conservative and explainable.
+        val byRms = when {
+            rms <= 0.35f -> QualityLevel.OK
+            rms <= 0.80f -> QualityLevel.UNCERTAIN
+            else -> QualityLevel.BAD
+        }
+        val byMax = when {
+            maxAbs <= 0.70f -> QualityLevel.OK
+            maxAbs <= 1.50f -> QualityLevel.UNCERTAIN
+            else -> QualityLevel.BAD
+        }
+        val byImu = when {
+            imuStd <= 0.15f -> QualityLevel.OK
+            imuStd <= 0.35f -> QualityLevel.UNCERTAIN
+            else -> QualityLevel.BAD
+        }
+
+        // Worst-case gating (safety): if any signal is BAD -> BAD.
+        // Else if any is UNCERTAIN -> UNCERTAIN.
+        lastQuality = when {
+            byRms == QualityLevel.BAD || byMax == QualityLevel.BAD || byImu == QualityLevel.BAD -> QualityLevel.BAD
+            byRms == QualityLevel.UNCERTAIN || byMax == QualityLevel.UNCERTAIN || byImu == QualityLevel.UNCERTAIN -> QualityLevel.UNCERTAIN
+            else -> QualityLevel.OK
+        }
+    }
+
     private fun estimateDistanceForPoint(yNorm: Float): Float? {
         val frameH = previewView.height.takeIf { it > 0 } ?: return null
         val focalMm = AppPreferences.cameraFocalLengthMm
@@ -407,6 +629,11 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
         // Apply to prefs
         AppPreferences.cameraMountHeightM = fittedHeightM
         AppPreferences.cameraPitchDownDeg = fittedPitchDeg
+        AppPreferences.calibrationRmsM = lastRmsM
+        AppPreferences.calibrationMaxErrM = lastMaxErrM
+        AppPreferences.calibrationImuStdDeg = lastImuStdDeg
+        AppPreferences.calibrationQuality = lastQuality.code
+        AppPreferences.calibrationSavedUptimeMs = SystemClock.uptimeMillis()
         // Keep distanceScale unchanged unless user explicitly tunes it elsewhere.
 
         // If there is an active profile, persist to it as well (single source of truth).
@@ -420,6 +647,11 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
                     cameraHeightM = AppPreferences.cameraMountHeightM,
                     cameraPitchDownDeg = AppPreferences.cameraPitchDownDeg,
                     distanceScale = AppPreferences.distanceScale,
+                    calibrationRmsM = AppPreferences.calibrationRmsM,
+                    calibrationMaxErrM = AppPreferences.calibrationMaxErrM,
+                    calibrationImuStdDeg = AppPreferences.calibrationImuStdDeg,
+                    calibrationSavedUptimeMs = AppPreferences.calibrationSavedUptimeMs,
+                    calibrationQuality = AppPreferences.calibrationQuality,
                     laneEgoMaxOffset = p.laneEgoMaxOffset,
                     roiTopY = p.roiTopY,
                     roiBottomY = p.roiBottomY,
@@ -429,6 +661,81 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
                 )
                 ProfileManager.upsert(updated)
             }
+        }
+    }
+
+    /**
+     * Sensor-based stability metric for calibration:
+     * - uses accelerometer only (available almost everywhere)
+     * - tracks jitter of gravity direction relative to a baseline
+     * - provides std dev in degrees (0 = very stable)
+     */
+    private class ImuStabilitySampler {
+        // low-pass gravity estimate
+        private var gx = Float.NaN
+        private var gy = Float.NaN
+        private var gz = Float.NaN
+
+        // baseline gravity unit vector
+        private var bx = Float.NaN
+        private var by = Float.NaN
+        private var bz = Float.NaN
+
+        // Welford running variance of angleDeg
+        private var n = 0
+        private var mean = 0.0
+        private var m2 = 0.0
+
+        fun reset() {
+            gx = Float.NaN; gy = Float.NaN; gz = Float.NaN
+            bx = Float.NaN; by = Float.NaN; bz = Float.NaN
+            n = 0
+            mean = 0.0
+            m2 = 0.0
+        }
+
+        fun onAccel(values: FloatArray) {
+            val ax = values.getOrNull(0) ?: return
+            val ay = values.getOrNull(1) ?: return
+            val az = values.getOrNull(2) ?: return
+
+            val alpha = 0.10f
+            if (!gx.isFinite()) {
+                gx = ax; gy = ay; gz = az
+            } else {
+                gx += alpha * (ax - gx)
+                gy += alpha * (ay - gy)
+                gz += alpha * (az - gz)
+            }
+
+            val norm = kotlin.math.sqrt((gx * gx + gy * gy + gz * gz).toDouble()).toFloat()
+                .coerceAtLeast(1e-3f)
+            val nx = gx / norm
+            val ny = gy / norm
+            val nz = gz / norm
+
+            if (!bx.isFinite()) {
+                bx = nx; by = ny; bz = nz
+                return
+            }
+
+            // angle between current and baseline gravity direction
+            var dot = (bx * nx + by * ny + bz * nz).toDouble()
+            if (dot > 1.0) dot = 1.0
+            if (dot < -1.0) dot = -1.0
+            val angleDeg = kotlin.math.acos(dot) * 57.29577951308232
+
+            n++
+            val delta = angleDeg - mean
+            mean += delta / n.toDouble()
+            val delta2 = angleDeg - mean
+            m2 += delta * delta2
+        }
+
+        fun stdDevDeg(): Float {
+            if (n < 4) return 0f
+            val varDeg = m2 / (n - 1).toDouble()
+            return kotlin.math.sqrt(varDeg).toFloat().coerceIn(0f, 45f)
         }
     }
 

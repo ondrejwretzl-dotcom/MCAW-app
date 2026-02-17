@@ -13,6 +13,12 @@ data class MountProfile(
     val cameraHeightM: Float,
     val cameraPitchDownDeg: Float,
     val distanceScale: Float,
+    // Calibration metrics (audit/debug)
+    val calibrationRmsM: Float = 0f,
+    val calibrationMaxErrM: Float = 0f,
+    val calibrationImuStdDeg: Float = 0f,
+    val calibrationSavedUptimeMs: Long = 0L,
+    val calibrationQuality: Int = 0,
     val laneEgoMaxOffset: Float,
     // ROI trapezoid
     val roiTopY: Float,

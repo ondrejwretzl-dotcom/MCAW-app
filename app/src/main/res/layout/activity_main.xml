@@ -510,7 +510,7 @@
 	                android:textAllCaps="false"
 	                android:textColor="#E5E7EB"
 	                android:textSize="11sp"
-	                app:backgroundTint="#1E222A"
+	                app:backgroundTint="#343947"
 	                app:cornerRadius="14dp"
 	                app:strokeColor="#2F3742"
 	                app:strokeWidth="1dp" />
@@ -649,7 +649,7 @@
                 app:iconSize="26dp"
                 app:strokeWidth="1dp"
                 app:strokeColor="#2F3742"
-                app:backgroundTint="#1E222A" />
+                app:backgroundTint="#343947" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnSettings"
@@ -672,7 +672,7 @@
                 app:iconSize="26dp"
                 app:strokeWidth="1dp"
                 app:strokeColor="#2F3742"
-                app:backgroundTint="#1E222A" />
+                app:backgroundTint="#343947" />
 
         </LinearLayout>
 
@@ -697,8 +697,8 @@
             android:text="NÁVOD"
             android:textAllCaps="false"
             android:textColor="#E5E7EB"
-            android:textSize="13sp"
-            app:backgroundTint="#1E222A"
+            android:textSize="11sp"
+            app:backgroundTint="#343947"
             app:cornerRadius="14dp"
             app:icon="@android:drawable/ic_menu_help"
             app:iconPadding="6dp"
@@ -714,8 +714,8 @@
             android:text="KALIBRACE"
             android:textAllCaps="false"
             android:textColor="#E5E7EB"
-            android:textSize="13sp"
-            app:backgroundTint="#1E222A"
+            android:textSize="11sp"
+            app:backgroundTint="#343947"
             app:cornerRadius="14dp"
             app:icon="@android:drawable/ic_menu_compass"
             app:iconPadding="6dp"
@@ -731,8 +731,8 @@
             android:text="AKTIVITY"
             android:textAllCaps="false"
             android:textColor="#E5E7EB"
-            android:textSize="13sp"
-            app:backgroundTint="#1E222A"
+            android:textSize="11sp"
+            app:backgroundTint="#343947"
             app:cornerRadius="14dp"
             app:icon="@android:drawable/ic_menu_recent_history"
             app:iconPadding="6dp"
@@ -748,8 +748,8 @@
             android:text="LEGAL"
             android:textAllCaps="false"
             android:textColor="#E5E7EB"
-            android:textSize="13sp"
-            app:backgroundTint="#1E222A"
+            android:textSize="11sp"
+            app:backgroundTint="#343947"
             app:cornerRadius="14dp"
             app:icon="@android:drawable/ic_menu_info_details"
             app:iconPadding="6dp"
