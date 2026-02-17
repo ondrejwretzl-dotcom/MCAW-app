@@ -823,28 +823,28 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun updatePowerButtonUi(overallLevel: Int) {
-        // When service is stopped, keep UI calm.
-        if (!serviceRunning) {
-            btnPower.text = "START"
-            btnPower.setBackgroundResource(R.drawable.bg_power_stopped)
-            val neutral = android.graphics.Color.parseColor("#9CA3AF")
-            btnPower.setTextColor(neutral)
-            btnPower.iconTint = android.content.res.ColorStateList.valueOf(neutral)
-            return
+        // MCAW UX: power button must be dominant, readable, and stable (no flashing).
+        // Use a calm dark fill + colored stroke/icon to preserve contrast in all conditions (motorbike daylight, etc.).
+
+        val stroke = if (!serviceRunning) {
+            android.graphics.Color.parseColor("#64748B")
+        } else {
+            when (overallLevel) {
+                2 -> colorAccentRed
+                1 -> colorAccentOrange
+                else -> colorAccentSafe
+            }
         }
 
-        btnPower.text = "STOP"
+        val fill = android.graphics.Color.parseColor("#2B313A")
+        val text = if (!serviceRunning) android.graphics.Color.parseColor("#E5E7EB") else stroke
 
-        // Running state: keep the ring style stable (no flashing), only tint the icon/text by severity.
-        btnPower.setBackgroundResource(R.drawable.bg_power_running)
-
-        val accent = when (overallLevel) {
-            2 -> colorAccentRed
-            1 -> colorAccentOrange
-            else -> colorAccentSafe
-        }
-        btnPower.setTextColor(accent)
-        btnPower.iconTint = android.content.res.ColorStateList.valueOf(accent)
+        btnPower.text = if (serviceRunning) "STOP" else "START"
+        btnPower.backgroundTintList = android.content.res.ColorStateList.valueOf(fill)
+        btnPower.strokeWidth = dpToPx(3)
+        btnPower.strokeColor = android.content.res.ColorStateList.valueOf(stroke)
+        btnPower.setTextColor(text)
+        btnPower.iconTint = android.content.res.ColorStateList.valueOf(text)
     }
 
     private fun formatMetric(value: Float, unit: String): String {
