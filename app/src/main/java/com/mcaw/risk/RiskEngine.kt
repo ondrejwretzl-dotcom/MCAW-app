@@ -38,6 +38,30 @@ class RiskEngine {
         val relRed: Float
     )
 
+    /**
+     * Debug/Test-only derived thresholds.
+     *
+     * NOTE: Not used in hot-path (evaluate). Safe for unit tests and offline tooling.
+     */
+    data class DerivedThresholds(
+        val mode: Int,
+        val qualityWeight: Float,
+        val conserv: Float,
+        val ttcOrange: Float,
+        val ttcRed: Float,
+        val distOrange: Float,
+        val distRed: Float,
+        val relOrange: Float,
+        val relRed: Float,
+        val orangeOn: Float,
+        val orangeOff: Float,
+        val redOn: Float,
+        val redOff: Float,
+        val slopeThr: Float,
+        val strongK: Float,
+        val midK: Float
+    )
+
     companion object {
         // --- Reason bits (stabilní kontrakt pro logy/overlay) ---
         // Kontrakt je verzovaný v horním nibblu (bits 28..31), aby nebylo nutné měnit CSV schema.
@@ -135,13 +159,46 @@ class RiskEngine {
     // Separate hysteresis for TTC (kept inside engine; not fallback)
     private var lastTtcLevel: Int = 0
 
-    // CRITICAL prime: consecutive frames where TTC is in RED band + closing is meaningful.
-    // Purpose: make RED reachable even when distance estimate is biased high (real logs),
-    // while still avoiding 1-frame spikes.
-    private var redPrimeFrames: Int = 0
-
     // Single reusable result instance (avoid per-frame allocations)
     private val out = Result()
+
+    /**
+     * Returns the exact thresholds that are effectively used by the engine for the given mode + quality.
+     * Intended for scenario simulations and regression reports.
+     */
+    fun debugDerivedThresholds(effectiveMode: Int, qualityWeight: Float): DerivedThresholds {
+        val thr = thresholdsForMode(effectiveMode)
+        val qW = qualityWeight.coerceIn(0.60f, 1.0f)
+        val conserv = (1f - qW).coerceIn(0f, 1f)
+
+        val orangeOn = 0.45f + 0.17f * conserv
+        val redOn = 0.75f + 0.07f * conserv
+        val orangeOff = orangeOn - 0.06f
+        val redOff = redOn - 0.05f
+
+        val slopeThr = -1.0f - 0.40f * conserv
+        val strongK = 0.85f + 0.05f * conserv
+        val midK = 0.60f + 0.10f * conserv
+
+        return DerivedThresholds(
+            mode = effectiveMode,
+            qualityWeight = qW,
+            conserv = conserv,
+            ttcOrange = thr.ttcOrange,
+            ttcRed = thr.ttcRed,
+            distOrange = thr.distOrange,
+            distRed = thr.distRed,
+            relOrange = thr.relOrange,
+            relRed = thr.relRed,
+            orangeOn = orangeOn,
+            orangeOff = orangeOff,
+            redOn = redOn,
+            redOff = redOff,
+            slopeThr = slopeThr,
+            strongK = strongK,
+            midK = midK
+        )
+    }
 
     @Suppress("UNUSED_PARAMETER")
     fun evaluate(
@@ -250,23 +307,8 @@ class RiskEngine {
         val midRel = relScore >= midK
         val allowRed = strongTtc && (strongDist || strongRel || (slopeStrong && (midDist || midRel)))
 
-        // --- RED prime (robust reachability) ---
-        // Real-world: distance estimation can be biased high (e.g., trucks, camera FOV, calibration drift),
-        // which keeps riskScore below redOn even when TTC is critically low.
-        // We therefore allow a *confirmed* RED when:
-        // - TTC is in RED band (ttcLevel==2)
-        // - and there is meaningful closing (strongRel) OR very strong distance (strongDist)
-        // - and condition persists for >= 2 consecutive frames (anti-glitch)
-        // This is still gated by allowRed (combo guard) so it cannot be triggered by TTC alone.
-        val primeCond = (ttcLevel >= 2) && (strongRel || strongDist)
-        redPrimeFrames = if (primeCond) (redPrimeFrames + 1).coerceAtMost(8) else 0
-        val confirmedCritical = allowRed && redPrimeFrames >= 2
-
         // --- Convert risk -> level (with hysteresis) ---
-        // If we have confirmed critical closing, slightly bias the level decision towards RED.
-        // This keeps riskScore continuous (still logged), but prevents "RED never happens" in the field.
-        val levelRisk = if (confirmedCritical) min(1f, risk + 0.12f) else risk
-        val preGuardLevel = riskToLevelWithHysteresis(levelRisk, conserv)
+        val preGuardLevel = riskToLevelWithHysteresis(risk, conserv)
         var level = preGuardLevel
         if (preGuardLevel == 2 && !allowRed) {
             // Cap to ORANGE when combo confirmation is missing.

@@ -2,8 +2,6 @@ package com.mcaw.risk
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
-import org.junit.AfterClass
-import org.junit.Rule
 import org.junit.Test
 
 /**
@@ -11,9 +9,6 @@ import org.junit.Test
  * Cíl: rychle chytat regresní chování (blikání, pozdní/žádné RED, falešné RED).
  */
 class RiskEngineScenarioTest {
-
-    @get:Rule
-    val report = RiskTestReport.watcher()
 
     private data class Frame(
         val tsMs: Long,
@@ -68,7 +63,6 @@ class RiskEngineScenarioTest {
             Frame(ts, distM = dist, relMps = 10.0f, ttcSec = ttc, ttcSlope = -1.6f)
         }
         val levels = runScenario(frames)
-        RiskTestReport.addNote("Expect RED reachable: fast closing / TTC trending down")
         assertTrue("Očekávám, že se objeví RED (level=2)", levels.any { it == 2 })
     }
 
@@ -85,7 +79,6 @@ class RiskEngineScenarioTest {
             Frame(ts, distM = dist, relMps = rel, ttcSec = ttc, ttcSlope = slope, brakeCue = brake)
         }
         val levels = runScenario(frames)
-        RiskTestReport.addNote("Controlled braking: never RED")
         assertTrue("Nemělo by padnout RED při kontrolovaném brzdění", levels.none { it == 2 })
         assertTrue("ORANGE se může objevit", levels.any { it == 1 } || levels.any { it == 0 })
     }
@@ -99,7 +92,6 @@ class RiskEngineScenarioTest {
             Frame(ts, distM = dist, relMps = 0.2f, ttcSec = 10f, ttcSlope = 0f)
         }
         val levels = runScenario(frames)
-        RiskTestReport.addNote("Jam steady-state: low transitions")
         assertTrue("V koloně nesmí být RED", levels.none { it == 2 })
         assertTrue("Anti-blink: nechci nadměrné přechody", transitions(levels) <= 6)
     }
@@ -114,7 +106,6 @@ class RiskEngineScenarioTest {
             Frame(ts, distM = dist, relMps = 16.0f, ttcSec = ttc, ttcSlope = -2.0f)
         }
         val levels = runScenario(frames)
-        RiskTestReport.addNote("Highway fast closing: RED must happen")
         assertTrue("Na dálnici při rychlém dojíždění očekávám RED", levels.any { it == 2 })
     }
 
@@ -130,7 +121,6 @@ class RiskEngineScenarioTest {
             for (i in 21 until 45) add(Frame(i * 50L, distM = 40f, relMps = 0.5f, ttcSec = 20f, ttcSlope = 0f))
         }
         val levels = runScenario(frames)
-        RiskTestReport.addNote("Anti-glitch: 1-frame TTC spike must not RED")
         assertTrue("TTC spike bez potvrzení nesmí vyvolat RED", levels.none { it == 2 })
 
         // sanity: maximálně krátké vybočení (ORANGE může na chvilku nastat, ale nemá blikat)
@@ -151,8 +141,6 @@ class RiskEngineScenarioTest {
 
         val maxGood = goodQ.maxOrNull() ?: 0
         val maxBad = badQ.maxOrNull() ?: 0
-
-        RiskTestReport.addNote("Quality weight: lowQ should not be more aggressive")
 
         assertTrue("Nízká kvalita má být konzervativnější (max level nesmí být vyšší)", maxBad <= maxGood)
 
@@ -190,8 +178,6 @@ class RiskEngineScenarioTest {
 
         assertEquals("Sanity: očekávám RED", 2, r.level)
 
-        RiskTestReport.addNote("Audit: RED must include version + core bits + RED_OK")
-
         // version is embedded in the top nibble
         assertEquals(2, RiskEngine.reasonVersion(r.reasonBits))
 
@@ -227,21 +213,10 @@ class RiskEngineScenarioTest {
         )
 
         assertEquals("Očekávám ORANGE (RED má být potlačen guardem)", 1, r.level)
-
-        RiskTestReport.addNote("Audit: guarded RED must set RED_GUARDED")
         assertEquals(2, RiskEngine.reasonVersion(r.reasonBits))
 
         val payload = RiskEngine.stripReasonVersion(r.reasonBits)
         assertTrue("Musí být označeno, že guard potlačil RED", (payload and RiskEngine.BIT_RED_GUARDED) != 0)
         assertTrue("Nesmí být označeno RED_OK, když RED neprošel", (payload and RiskEngine.BIT_RED_COMBO_OK) == 0)
-    }
-
-    companion object {
-        @JvmStatic
-        @AfterClass
-        fun writeHumanReadableReport() {
-            // Always generate a readable report, even when everything passes.
-            RiskTestReport.writeReportIfAny()
-        }
     }
 }
