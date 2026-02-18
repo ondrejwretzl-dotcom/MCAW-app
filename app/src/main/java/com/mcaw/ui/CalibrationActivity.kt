@@ -89,9 +89,6 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
     // Conservative guidance numbers derived from IMU jitter.
     private var lastImuExtraErrAt10m: Float = 0f
     private var lastCombinedErrAt10m: Float = 0f
-    private var lastRoiMinDistM: Float = Float.NaN
-    private var lastRoiMinConfirmed: Boolean = false
-
     private var worstStepIndex: Int = 0 // 0..2
 
     // Fitted values (preview only until user confirms save)
@@ -253,6 +250,9 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
                 txtHint.text = "Během kalibrace s telefonem nehýbej. Vybírej vždy bod na ZEMI (kontakt se zemí)."
                 btnBack.text = "ZRUŠIT"
                 btnConfirm.text = "ZAČÍT"
+
+                overlay.crosshairEnabled = false
+                overlay.guideLineEnabled = false
             }
             Stage.P1 -> {
                 txtStep.text = "Krok 1/3"
@@ -260,6 +260,9 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
                 txtHint.text = "Tip: měř co nejpřesněji (metr je nejlepší)."
                 btnBack.text = "ZPĚT"
                 btnConfirm.text = "POTVRDIT BOD"
+
+                overlay.crosshairEnabled = true
+                overlay.guideLineEnabled = false
             }
             Stage.P2 -> {
                 txtStep.text = "Krok 2/3"
@@ -267,6 +270,9 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
                 txtHint.text = "Neoznačuj strom/zeď – jen bod na zemi."
                 btnBack.text = "ZPĚT"
                 btnConfirm.text = "POTVRDIT BOD"
+
+                overlay.crosshairEnabled = true
+                overlay.guideLineEnabled = false
             }
             Stage.P3 -> {
                 txtStep.text = "Krok 3/3"
@@ -274,6 +280,9 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
                 txtHint.text = "Čím přesnější zadání, tím méně bude distance „halucinovat“." 
                 btnBack.text = "ZPĚT"
                 btnConfirm.text = "POTVRDIT BOD"
+
+                overlay.crosshairEnabled = true
+                overlay.guideLineEnabled = false
             }
             Stage.RESULT -> {
                 val header = when {
@@ -307,19 +316,30 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
                 }
                 // Allow proceed to VERIFY whenever geometry is not BAD.
                 btnConfirm.text = if (lastGeomQuality == QualityLevel.BAD) "ZOPAKOVAT VŠE" else "POKRAČOVAT"
+
+                overlay.crosshairEnabled = false
+                overlay.guideLineEnabled = false
             }
             Stage.VERIFY -> {
                 txtStep.text = "Kontrola"
                 val roiN = AppPreferences.getRoiTrapezoidNormalized()
-                val roiMin = estimateDistanceForPoint(roiN.bottomY)
-                if (roiMin != null && roiMin.isFinite()) {
-                    txtInstruction.text = "Posuň bod na jiné místo na zemi. Zkontroluj, jestli odhad sedí.\nSpodní hrana ROI začíná cca %.1f m před autem (palubka/crop).".format(roiMin)
+                val roiMinM = estimateDistanceForPoint(roiN.bottomY)
+                txtInstruction.text = if (roiMinM != null && roiMinM.isFinite()) {
+                    "Posuň bod na jiné místo na zemi. Zkontroluj, jestli odhad sedí.\n" +
+                        "Spodní hrana ROI začíná cca %.1f m před autem (palubka/crop).".format(roiMinM)
                 } else {
-                    txtInstruction.text = "Posuň bod na jiné místo na zemi. Zkontroluj, jestli odhad sedí."
+                    "Posuň bod na jiné místo na zemi. Zkontroluj, jestli odhad sedí.\n" +
+                        "Spodní hrana ROI je mimo dohled (palubka/crop)."
                 }
+
                 // txtHint is updated live by onPointChanged()
                 btnBack.text = "ŠPATNĚ"
                 btnConfirm.text = "ULOŽIT"
+
+                // Show both the verification point and the ROI bottom guide line.
+                overlay.crosshairEnabled = true
+                overlay.guideLineEnabled = true
+                overlay.guideLineYNorm = roiN.bottomY
             }
         }
     }
@@ -688,12 +708,6 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
         AppPreferences.calibrationImuQuality = lastImuQuality.code
         AppPreferences.calibrationImuExtraErrAt10m = lastImuExtraErrAt10m
         AppPreferences.calibrationCombinedErrAt10m = lastCombinedErrAt10m
-        // Snapshot ROI minimum visible distance (ROI bottom), so we can audit dashboard crop impact.
-        val roiN = AppPreferences.getRoiTrapezoidNormalized()
-        lastRoiMinDistM = estimateDistanceForPoint(roiN.bottomY) ?: Float.NaN
-        lastRoiMinConfirmed = true
-        AppPreferences.roiMinDistM = lastRoiMinDistM
-        AppPreferences.roiMinDistConfirmed = lastRoiMinConfirmed
         AppPreferences.calibrationSavedUptimeMs = SystemClock.uptimeMillis()
         // Keep distanceScale unchanged unless user explicitly tunes it elsewhere.
 
@@ -717,8 +731,6 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
                     calibrationImuQuality = AppPreferences.calibrationImuQuality,
                     calibrationImuExtraErrAt10m = AppPreferences.calibrationImuExtraErrAt10m,
                     calibrationCombinedErrAt10m = AppPreferences.calibrationCombinedErrAt10m,
-                    roiMinDistM = AppPreferences.roiMinDistM,
-                    roiMinDistConfirmed = AppPreferences.roiMinDistConfirmed,
                     laneEgoMaxOffset = p.laneEgoMaxOffset,
                     roiTopY = p.roiTopY,
                     roiBottomY = p.roiBottomY,

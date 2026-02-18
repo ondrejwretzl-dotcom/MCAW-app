@@ -34,11 +34,31 @@ class CalibrationOverlayView @JvmOverloads constructor(
         color = 0x553BA6FF
     }
 
+    private val paintGuide = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 3f
+        color = 0xAA3BA6FF.toInt()
+    }
+
     var listener: Listener? = null
 
     var crosshairEnabled: Boolean = true
         set(value) {
             field = value
+            invalidate()
+        }
+
+    /** Optional guide line (e.g., ROI/crop bottom) to help user validate what the camera can see. */
+    var guideLineEnabled: Boolean = false
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    /** Normalized Y for the guide line (0..1). */
+    var guideLineYNorm: Float = 1f
+        set(value) {
+            field = value.coerceIn(0f, 1f)
             invalidate()
         }
 
@@ -61,10 +81,16 @@ class CalibrationOverlayView @JvmOverloads constructor(
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        if (!crosshairEnabled) return
 
         val w = width.toFloat().coerceAtLeast(1f)
         val h = height.toFloat().coerceAtLeast(1f)
+
+        if (guideLineEnabled) {
+            val gy = guideLineYNorm * h
+            canvas.drawLine(0f, gy, w, gy, paintGuide)
+        }
+
+        if (!crosshairEnabled) return
         val cx = xNorm * w
         val cy = yNorm * h
 
