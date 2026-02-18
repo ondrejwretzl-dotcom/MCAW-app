@@ -30,8 +30,6 @@ import com.mcaw.location.SpeedProvider
 import com.mcaw.util.PublicLogWriter
 import com.mcaw.util.SessionLogFile
 import com.mcaw.util.SessionActivityLogger
-import com.mcaw.config.ProfileManager
-import com.mcaw.config.AppPreferences
 import com.mcaw.util.LogContract
 import com.mcaw.util.TraceContract
 import java.util.Locale

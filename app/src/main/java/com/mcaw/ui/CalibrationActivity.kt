@@ -452,6 +452,8 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
         overlay.crosshairEnabled = true
         imuSampler.reset()
         updateUiForStage()
+
+        SessionActivityLogger.log("calibration_saved cam_h= pitch_deg= rms= max= imu_std= roiMin= roiMinOk=")
     }
 
     /**
@@ -669,9 +671,8 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
         )
     }
 
-    private fun applyCalibrationToPreferencesAndProfile()
-                    SessionActivityLogger.log("calibration_saved cam_h=${AppPreferences.cameraMountHeightM} pitch_deg=${AppPreferences.cameraPitchDownDeg} rms=${AppPreferences.calibrationRmsM} max=${AppPreferences.calibrationMaxErrM} imu_std=${AppPreferences.calibrationImuStdDeg}")
-                            // Apply to prefs
+    private fun applyCalibrationToPreferencesAndProfile() {
+        // Apply to prefs
         AppPreferences.cameraMountHeightM = fittedHeightM
         AppPreferences.cameraPitchDownDeg = fittedPitchDeg
         AppPreferences.calibrationRmsM = lastRmsM
@@ -715,6 +716,15 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
                 ProfileManager.upsert(updated)
             }
         }
+        SessionActivityLogger.log(
+            "calibration_saved cam_h=" + AppPreferences.cameraMountHeightM +
+                " pitch_deg=" + AppPreferences.cameraPitchDownDeg +
+                " rms=" + AppPreferences.calibrationRmsM +
+                " max=" + AppPreferences.calibrationMaxErrM +
+                " imu_std=" + AppPreferences.calibrationImuStdDeg +
+                " roiMin=" + AppPreferences.roiMinDistM +
+                " roiMinOk=" + AppPreferences.roiMinDistConfirmed
+        )
     }
 
     /**
