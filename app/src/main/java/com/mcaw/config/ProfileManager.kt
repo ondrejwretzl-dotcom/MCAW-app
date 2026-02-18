@@ -40,6 +40,11 @@ object ProfileManager {
         prefs.edit().putString(KEY_ACTIVE_ID, id).apply()
     }
 
+
+    /** Back-compat convenience. */
+    fun getActiveProfileId(): String? = getActiveProfileIdOrNull()
+
+    fun getProfileNameById(id: String): String? = findById(id)?.name
     fun listProfiles(): List<MountProfile> {
         if (!::prefs.isInitialized) return emptyList()
         val raw = prefs.getString(KEY_LIST_JSON, null) ?: return emptyList()
@@ -107,46 +112,7 @@ object ProfileManager {
         return listProfiles().firstOrNull { it.id == profileId }
     }
 
-    
-
-/**
- * Updates the currently active profile with current AppPreferences values.
- *
- * Product intent:
- * - User may tweak ROI / calibration in UI and wants to either:
- *   (A) update active profile, or (B) save as new profile.
- * This function performs (A) without creating a new profile ID.
- */
-fun updateActiveProfileFromCurrentPrefs(): Boolean {
-    if (!::prefs.isInitialized) return false
-    val id = getActiveProfileIdOrNull() ?: return false
-    val existing = findById(id) ?: return false
-
-    val roi = AppPreferences.getRoiTrapezoidNormalized()
-    val updated = existing.copy(
-        cameraHeightM = AppPreferences.cameraMountHeightM,
-        cameraPitchDownDeg = AppPreferences.cameraPitchDownDeg,
-        distanceScale = AppPreferences.distanceScale,
-        calibrationRmsM = AppPreferences.calibrationRmsM,
-        calibrationMaxErrM = AppPreferences.calibrationMaxErrM,
-        calibrationImuStdDeg = AppPreferences.calibrationImuStdDeg,
-        calibrationSavedUptimeMs = AppPreferences.calibrationSavedUptimeMs,
-        calibrationQuality = AppPreferences.calibrationQuality,
-        calibrationGeomQuality = AppPreferences.calibrationGeomQuality,
-        calibrationImuQuality = AppPreferences.calibrationImuQuality,
-        calibrationImuExtraErrAt10m = AppPreferences.calibrationImuExtraErrAt10m,
-        calibrationCombinedErrAt10m = AppPreferences.calibrationCombinedErrAt10m,
-        laneEgoMaxOffset = AppPreferences.laneEgoMaxOffset,
-        roiTopY = roi.topY,
-        roiBottomY = roi.bottomY,
-        roiTopHalfW = roi.topHalfW,
-        roiBottomHalfW = roi.bottomHalfW,
-        roiCenterX = roi.centerX,
-    )
-    upsert(updated)
-    return true
-}
-/**
+    /**
      * Applies active profile (if any) to AppPreferences.
      * Safe to call at start of Preview/Service.
      */

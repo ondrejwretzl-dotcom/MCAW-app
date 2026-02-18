@@ -29,6 +29,9 @@ import com.mcaw.location.SpeedMonitor
 import com.mcaw.location.SpeedProvider
 import com.mcaw.util.PublicLogWriter
 import com.mcaw.util.SessionLogFile
+import com.mcaw.util.SessionActivityLogger
+import com.mcaw.config.ProfileManager
+import com.mcaw.config.AppPreferences
 import com.mcaw.util.LogContract
 import com.mcaw.util.TraceContract
 import java.util.Locale
@@ -76,6 +79,24 @@ class McawService : LifecycleService() {
     private fun initUnifiedSessionLog() {
         // One unified session file per app use (process lifetime).
         SessionLogFile.init(this)
+
+        // Initialize off-thread activity logger for sparse events (no IO on UI thread).
+        SessionActivityLogger.init(this, SessionLogFile.fileName)
+
+        // Log effective profile snapshot at session start (audit).
+        val activeId = run { ProfileManager.ensureInit(this); ProfileManager.getActiveProfileIdOrNull() }
+        val activeName = if (activeId != null) ProfileManager.getProfileNameById(activeId) else null
+        val roi = AppPreferences.getRoiTrapezoidNormalized()
+                SessionActivityLogger.log(
+            "session_start active_profile_id=${activeId ?: "none"} " +
+                "active_profile_name=${activeName ?: "none"} " +
+                "cam_h=${AppPreferences.cameraMountHeightM} " +
+                "pitch_deg=${AppPreferences.cameraPitchDownDeg} " +
+                "dist_scale=${AppPreferences.distanceScale} " +
+                "roi_center_x=${roi.centerX} roi_top_y=${roi.topY} roi_bottom_y=${roi.bottomY} " +
+                "roi_top_halfw=${roi.topHalfW} roi_bottom_halfw=${roi.bottomHalfW} " +
+                "cal_rms=${AppPreferences.calibrationRmsM} cal_max=${AppPreferences.calibrationMaxErrM} cal_imu_std=${AppPreferences.calibrationImuStdDeg}"
+        )
     }
 
 private fun startForegroundNotification() {

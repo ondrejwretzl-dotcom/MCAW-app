@@ -25,6 +25,7 @@ import com.google.android.material.textfield.TextInputLayout
 import com.mcaw.ai.DetectionPhysics
 import com.mcaw.app.R
 import com.mcaw.config.AppPreferences
+import com.mcaw.util.SessionActivityLogger
 import com.mcaw.config.ProfileManager
 import com.mcaw.config.MountProfile
 import androidx.camera.camera2.interop.Camera2CameraInfo
@@ -204,7 +205,8 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
             Stage.VERIFY -> {
                 // Save fitted values and finish.
                 applyCalibrationToPreferencesAndProfile()
-                Toast.makeText(this, "Kalibrace uložena", Toast.LENGTH_SHORT).show()
+                    SessionActivityLogger.log("calibration_saved cam_h=${AppPreferences.cameraMountHeightM} pitch_deg=${AppPreferences.cameraPitchDownDeg} rms=${AppPreferences.calibrationRmsM} max=${AppPreferences.calibrationMaxErrM} imu_std=${AppPreferences.calibrationImuStdDeg}")
+                                    Toast.makeText(this, "Kalibrace uložena", Toast.LENGTH_SHORT).show()
                 finish()
             }
         }
@@ -250,9 +252,6 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
                 txtHint.text = "Během kalibrace s telefonem nehýbej. Vybírej vždy bod na ZEMI (kontakt se zemí)."
                 btnBack.text = "ZRUŠIT"
                 btnConfirm.text = "ZAČÍT"
-
-                overlay.crosshairEnabled = false
-                overlay.guideLineEnabled = false
             }
             Stage.P1 -> {
                 txtStep.text = "Krok 1/3"
@@ -260,9 +259,6 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
                 txtHint.text = "Tip: měř co nejpřesněji (metr je nejlepší)."
                 btnBack.text = "ZPĚT"
                 btnConfirm.text = "POTVRDIT BOD"
-
-                overlay.crosshairEnabled = true
-                overlay.guideLineEnabled = false
             }
             Stage.P2 -> {
                 txtStep.text = "Krok 2/3"
@@ -270,9 +266,6 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
                 txtHint.text = "Neoznačuj strom/zeď – jen bod na zemi."
                 btnBack.text = "ZPĚT"
                 btnConfirm.text = "POTVRDIT BOD"
-
-                overlay.crosshairEnabled = true
-                overlay.guideLineEnabled = false
             }
             Stage.P3 -> {
                 txtStep.text = "Krok 3/3"
@@ -280,9 +273,6 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
                 txtHint.text = "Čím přesnější zadání, tím méně bude distance „halucinovat“." 
                 btnBack.text = "ZPĚT"
                 btnConfirm.text = "POTVRDIT BOD"
-
-                overlay.crosshairEnabled = true
-                overlay.guideLineEnabled = false
             }
             Stage.RESULT -> {
                 val header = when {
@@ -316,30 +306,13 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
                 }
                 // Allow proceed to VERIFY whenever geometry is not BAD.
                 btnConfirm.text = if (lastGeomQuality == QualityLevel.BAD) "ZOPAKOVAT VŠE" else "POKRAČOVAT"
-
-                overlay.crosshairEnabled = false
-                overlay.guideLineEnabled = false
             }
             Stage.VERIFY -> {
                 txtStep.text = "Kontrola"
-                val roiN = AppPreferences.getRoiTrapezoidNormalized()
-                val roiMinM = estimateDistanceForPoint(roiN.bottomY)
-                txtInstruction.text = if (roiMinM != null && roiMinM.isFinite()) {
-                    "Posuň bod na jiné místo na zemi. Zkontroluj, jestli odhad sedí.\n" +
-                        "Spodní hrana ROI začíná cca %.1f m před autem (palubka/crop).".format(roiMinM)
-                } else {
-                    "Posuň bod na jiné místo na zemi. Zkontroluj, jestli odhad sedí.\n" +
-                        "Spodní hrana ROI je mimo dohled (palubka/crop)."
-                }
-
+                txtInstruction.text = "Posuň bod na jiné místo na zemi. Zkontroluj, jestli odhad sedí."
                 // txtHint is updated live by onPointChanged()
                 btnBack.text = "ŠPATNĚ"
                 btnConfirm.text = "ULOŽIT"
-
-                // Show both the verification point and the ROI bottom guide line.
-                overlay.crosshairEnabled = true
-                overlay.guideLineEnabled = true
-                overlay.guideLineYNorm = roiN.bottomY
             }
         }
     }
@@ -696,8 +669,9 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
         )
     }
 
-    private fun applyCalibrationToPreferencesAndProfile() {
-        // Apply to prefs
+    private fun applyCalibrationToPreferencesAndProfile()
+                    SessionActivityLogger.log("calibration_saved cam_h=${AppPreferences.cameraMountHeightM} pitch_deg=${AppPreferences.cameraPitchDownDeg} rms=${AppPreferences.calibrationRmsM} max=${AppPreferences.calibrationMaxErrM} imu_std=${AppPreferences.calibrationImuStdDeg}")
+                            // Apply to prefs
         AppPreferences.cameraMountHeightM = fittedHeightM
         AppPreferences.cameraPitchDownDeg = fittedPitchDeg
         AppPreferences.calibrationRmsM = lastRmsM
