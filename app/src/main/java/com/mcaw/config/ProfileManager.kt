@@ -75,8 +75,6 @@ object ProfileManager {
             calibrationImuQuality = AppPreferences.calibrationImuQuality,
             calibrationImuExtraErrAt10m = AppPreferences.calibrationImuExtraErrAt10m,
             calibrationCombinedErrAt10m = AppPreferences.calibrationCombinedErrAt10m,
-            roiMinDistM = AppPreferences.roiMinDistM,
-            roiMinDistConfirmed = AppPreferences.roiMinDistConfirmed,
             laneEgoMaxOffset = AppPreferences.laneEgoMaxOffset,
             roiTopY = roi.topY,
             roiBottomY = roi.bottomY,
@@ -109,7 +107,46 @@ object ProfileManager {
         return listProfiles().firstOrNull { it.id == profileId }
     }
 
-    /**
+    
+
+/**
+ * Updates the currently active profile with current AppPreferences values.
+ *
+ * Product intent:
+ * - User may tweak ROI / calibration in UI and wants to either:
+ *   (A) update active profile, or (B) save as new profile.
+ * This function performs (A) without creating a new profile ID.
+ */
+fun updateActiveProfileFromCurrentPrefs(): Boolean {
+    if (!::prefs.isInitialized) return false
+    val id = getActiveProfileIdOrNull() ?: return false
+    val existing = findById(id) ?: return false
+
+    val roi = AppPreferences.getRoiTrapezoidNormalized()
+    val updated = existing.copy(
+        cameraHeightM = AppPreferences.cameraMountHeightM,
+        cameraPitchDownDeg = AppPreferences.cameraPitchDownDeg,
+        distanceScale = AppPreferences.distanceScale,
+        calibrationRmsM = AppPreferences.calibrationRmsM,
+        calibrationMaxErrM = AppPreferences.calibrationMaxErrM,
+        calibrationImuStdDeg = AppPreferences.calibrationImuStdDeg,
+        calibrationSavedUptimeMs = AppPreferences.calibrationSavedUptimeMs,
+        calibrationQuality = AppPreferences.calibrationQuality,
+        calibrationGeomQuality = AppPreferences.calibrationGeomQuality,
+        calibrationImuQuality = AppPreferences.calibrationImuQuality,
+        calibrationImuExtraErrAt10m = AppPreferences.calibrationImuExtraErrAt10m,
+        calibrationCombinedErrAt10m = AppPreferences.calibrationCombinedErrAt10m,
+        laneEgoMaxOffset = AppPreferences.laneEgoMaxOffset,
+        roiTopY = roi.topY,
+        roiBottomY = roi.bottomY,
+        roiTopHalfW = roi.topHalfW,
+        roiBottomHalfW = roi.bottomHalfW,
+        roiCenterX = roi.centerX,
+    )
+    upsert(updated)
+    return true
+}
+/**
      * Applies active profile (if any) to AppPreferences.
      * Safe to call at start of Preview/Service.
      */
@@ -170,8 +207,6 @@ object ProfileManager {
             put("calibrationImuQuality", p.calibrationImuQuality)
             put("calibrationImuExtraErrAt10m", p.calibrationImuExtraErrAt10m.toDouble())
             put("calibrationCombinedErrAt10m", p.calibrationCombinedErrAt10m.toDouble())
-            if (p.roiMinDistM.isFinite()) put("roiMinDistM", p.roiMinDistM.toDouble()) else put("roiMinDistM", JSONObject.NULL)
-            put("roiMinDistConfirmed", p.roiMinDistConfirmed)
             put("laneEgoMaxOffset", p.laneEgoMaxOffset.toDouble())
             put("roiTopY", p.roiTopY.toDouble())
             put("roiBottomY", p.roiBottomY.toDouble())
@@ -200,8 +235,6 @@ object ProfileManager {
             calibrationImuQuality = o.optInt("calibrationImuQuality", 0),
             calibrationImuExtraErrAt10m = o.optDouble("calibrationImuExtraErrAt10m", 0.0).toFloat(),
             calibrationCombinedErrAt10m = o.optDouble("calibrationCombinedErrAt10m", 0.0).toFloat(),
-            roiMinDistM = o.optDouble("roiMinDistM", Double.NaN).toFloat(),
-            roiMinDistConfirmed = o.optBoolean("roiMinDistConfirmed", false),
             laneEgoMaxOffset = o.optDouble("laneEgoMaxOffset", 0.55).toFloat(),
             roiTopY = o.optDouble("roiTopY", 0.32).toFloat(),
             roiBottomY = o.optDouble("roiBottomY", 0.92).toFloat(),

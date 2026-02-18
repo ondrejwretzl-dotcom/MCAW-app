@@ -55,6 +55,7 @@ class SettingsActivity : ComponentActivity() {
         val btnProfileCreate = findViewById<View?>(R.id.btnProfileCreate)
         val btnProfileDelete = findViewById<View?>(R.id.btnProfileDelete)
         val btnProfileClear = findViewById<View?>(R.id.btnProfileClear)
+        var refreshMountUiFromPrefs: (() -> Unit)? = null
 
         fun refreshProfilesAndSelection() {
             val profiles = ProfileManager.listProfiles().sortedBy { it.name.lowercase() }
@@ -87,6 +88,7 @@ class SettingsActivity : ComponentActivity() {
                     writeSessionLog("Profile set to default")
                 } else {
                     ProfileManager.applyActiveProfileToPreferences()
+                    refreshMountUiFromPrefs?.invoke()
                     val name = ProfileManager.findById(selectedId)?.name ?: "?"
                     Toast.makeText(this@SettingsActivity, "Aktivní profil: $name", Toast.LENGTH_SHORT).show()
                     writeSessionLog("Profile set id=$selectedId name=$name")
@@ -106,6 +108,7 @@ class SettingsActivity : ComponentActivity() {
                     val p = ProfileManager.saveProfileFromCurrentPrefs(name)
                     ProfileManager.setActiveProfileId(p.id)
                     ProfileManager.applyActiveProfileToPreferences()
+                    refreshMountUiFromPrefs?.invoke()
                     refreshProfilesAndSelection()
                     Toast.makeText(this, "Profil uložen: ${p.name}", Toast.LENGTH_SHORT).show()
                     writeSessionLog("Profile saved id=${p.id} name=${p.name}")
@@ -204,6 +207,18 @@ class SettingsActivity : ComponentActivity() {
 // Inicializace hodnot (aby "defaulty" byly vidět hned a slider/edit odpovídal uloženému stavu)
 etCameraMountHeight?.setText(formatFloatForInput(AppPreferences.cameraMountHeightM))
 etCameraPitchDownDeg?.setText(formatFloatForInput(AppPreferences.cameraPitchDownDeg))
+
+// When profile changes, AppPreferences are updated but UI fields must reflect that.
+        // When profile changes, AppPreferences are updated but UI fields must reflect that.
+        refreshMountUiFromPrefs = {
+            // Camera inputs
+            etCameraMountHeight?.setText(formatFloatForInput(AppPreferences.cameraMountHeightM))
+            etCameraPitchDownDeg?.setText(formatFloatForInput(AppPreferences.cameraPitchDownDeg))
+            // Sliders that belong to mount/profile scope
+            bindLaneWidthSlider(sliderLaneWidth, txtLaneWidthValue)
+            bindDistanceScaleSlider(sliderDistanceScale, txtDistanceScaleValue)
+        }
+
 
 
 

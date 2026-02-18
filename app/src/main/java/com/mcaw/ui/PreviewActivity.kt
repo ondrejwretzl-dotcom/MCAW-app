@@ -448,11 +448,57 @@ class PreviewActivity : ComponentActivity() {
         txtActiveProfile.text = "Profil: $name"
     }
 
-    private fun showSaveProfileDialog() {
-        val input = EditText(this).apply {
-            hint = "Název profilu"
-            setSingleLine()
+    
+private fun showSaveProfileDialog() {
+    val activeId = ProfileManager.getActiveProfileIdOrNull()
+    if (activeId.isNullOrBlank()) {
+        // No active profile -> only "save as new".
+        showSaveAsNewProfileDialog()
+        return
+    }
+
+    val activeName = ProfileManager.findById(activeId)?.name ?: "?"
+
+    AlertDialog.Builder(this)
+        .setTitle("Profil: uložit změny")
+        .setMessage("Aktivní profil: „$activeName“\n\nChceš změny uložit do aktivního profilu, nebo vytvořit nový?")
+        .setPositiveButton("Aktualizovat aktivní") { _, _ ->
+            val ok = ProfileManager.updateActiveProfileFromCurrentPrefs()
+            if (ok) {
+                Toast.makeText(this, "Profil aktualizován: $activeName", Toast.LENGTH_SHORT).show()
+                logActivity("profile_updated id=$activeId name=$activeName")
+            } else {
+                Toast.makeText(this, "Nelze aktualizovat profil (není aktivní)", Toast.LENGTH_SHORT).show()
+            }
+            updateActiveProfileLabel()
         }
+        .setNeutralButton("Uložit jako nový") { _, _ ->
+            showSaveAsNewProfileDialog()
+        }
+        .setNegativeButton("Zrušit", null)
+        .show()
+}
+
+private fun showSaveAsNewProfileDialog() {
+    val input = EditText(this).apply {
+        hint = "Název profilu"
+        setSingleLine()
+    }
+    AlertDialog.Builder(this)
+        .setTitle("Uložit nový profil")
+        .setMessage("Uloží aktuální ROI + kalibraci (výška, sklon, distance scale, lane offset) jako nový profil.")
+        .setView(input)
+        .setPositiveButton("Uložit") { _, _ ->
+            val name = input.text?.toString()?.trim().orEmpty()
+            val p = ProfileManager.saveProfileFromCurrentPrefs(name)
+            ProfileManager.setActiveProfileId(p.id)
+            updateActiveProfileLabel()
+            Toast.makeText(this, "Profil uložen: ${p.name}", Toast.LENGTH_SHORT).show()
+            logActivity("profile_saved id=${p.id} name=${p.name}")
+        }
+        .setNegativeButton("Zrušit", null)
+        .show()
+}
         AlertDialog.Builder(this)
             .setTitle("Uložit profil")
             .setMessage("Uloží aktuální ROI + kalibraci (výška, sklon, distance scale, lane offset).")
