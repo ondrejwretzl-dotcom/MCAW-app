@@ -148,6 +148,20 @@ class OverlayView @JvmOverloads constructor(
             invalidate()
         }
 
+    // Estimated distance to the bottom edge of ROI ("minimum observable distance"), in meters.
+    var roiMinDistM: Float = Float.NaN
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    // True if current bbox is touching ROI bottom edge (partial occlusion likely).
+    var roiBottomTouch: Boolean = false
+        set(value) {
+            field = value
+            invalidate()
+        }
+
     /** REL = approach speed (m/s), always >= 0. */
     var speed: Float = -1f
         set(value) {
@@ -355,6 +369,8 @@ class OverlayView @JvmOverloads constructor(
             if (label.isNotBlank()) add("OBJ  $label")
             add("BOX  [%.0f×%.0f]".format((b.x2 - b.x1), (b.y2 - b.y1)))
             if (distance.isFinite() && distance >= 0f) add("DIST %.2f m".format(distance))
+            if (roiMinDistM.isFinite()) add("ROImin ~%.2f m".format(roiMinDistM))
+            if (roiBottomTouch) add("ROI  bottom touch")
             if (speed.isFinite() && speed >= 0f) add("REL  %.1f km/h".format(speed * 3.6f))
             if (objectSpeed.isFinite() && objectSpeed >= 0f) add("OBJ  %.1f km/h".format(objectSpeed * 3.6f))
             if (riderSpeed.isFinite() && riderSpeed >= 0f) add("RID  %.1f km/h".format(riderSpeed * 3.6f))

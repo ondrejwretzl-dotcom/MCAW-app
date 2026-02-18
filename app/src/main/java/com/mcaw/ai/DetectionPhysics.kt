@@ -83,6 +83,34 @@ fun estimateDistanceGroundPlaneMeters(
     if (!dist.isFinite() || dist <= 0f) return null
     return dist.coerceIn(minDistanceM, maxDistanceM)
 }
+
+/**
+ * Ground-plane distance for an arbitrary image Y position (pixel coordinates).
+ * Useful for estimating the distance to the bottom edge of ROI ("minimum observable distance").
+ */
+fun estimateDistanceGroundPlaneMetersAtYPx(
+    yBottomPx: Float,
+    frameHeightPx: Int,
+    focalPx: Float,
+    camHeightM: Float,
+    pitchDownDeg: Float,
+    minDistanceM: Float = 0.7f,
+    maxDistanceM: Float = 200f
+): Float? {
+    if (frameHeightPx <= 0 || focalPx <= 0f) return null
+    if (!camHeightM.isFinite() || camHeightM <= 0.1f) return null
+
+    val y = yBottomPx.coerceIn(0f, frameHeightPx.toFloat())
+    val cy = frameHeightPx.toFloat() * 0.5f
+    val pitchRad = Math.toRadians(pitchDownDeg.toDouble()).toFloat()
+    val angleToPoint = kotlin.math.atan((y - cy) / focalPx)
+    val total = pitchRad + angleToPoint
+
+    if (!total.isFinite() || total <= 0.001f) return null
+    val dist = (camHeightM / kotlin.math.tan(total))
+    if (!dist.isFinite() || dist <= 0f) return null
+    return dist.coerceIn(minDistanceM, maxDistanceM)
+}
     /**
      * TTC z růstu velikosti bboxu (logaritmická derivace).
      * prevH, currH v pixelech; dtSec v sekundách.

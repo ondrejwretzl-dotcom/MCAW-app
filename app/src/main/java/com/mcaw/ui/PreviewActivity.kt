@@ -87,6 +87,8 @@ class PreviewActivity : ComponentActivity() {
             if (i.getBooleanExtra("clear", false)) {
                 overlay.box = null
                 overlay.distance = -1f
+                overlay.roiMinDistM = Float.NaN
+                overlay.roiBottomTouch = false
                 overlay.speed = -1f
                 overlay.objectSpeed = -1f
                 overlay.riderSpeed = -1f
@@ -112,6 +114,8 @@ class PreviewActivity : ComponentActivity() {
                 i.getFloatExtra("bottom", 0f)
             )
             overlay.distance = i.getFloatExtra("dist", -1f)
+            overlay.roiMinDistM = i.getFloatExtra("roi_min_dist_m", Float.NaN)
+            overlay.roiBottomTouch = i.getBooleanExtra("roi_bottom_touch", false)
             overlay.speed = i.getFloatExtra("speed", -1f) // REL (approach)
             overlay.objectSpeed = i.getFloatExtra("object_speed", -1f) // OBJ
             overlay.riderSpeed = i.getFloatExtra("rider_speed", -1f) // RID

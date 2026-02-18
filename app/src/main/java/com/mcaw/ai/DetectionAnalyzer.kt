@@ -439,6 +439,14 @@ if (AppPreferences.debugOverlay) {
             updateCutInState(tsMs, bestBox, frameW, frameH)
             val label = DetectionLabelMapper.toCanonical(best0.label) ?: (best0.label ?: "unknown")
 
+            // --- ROI bottom handling ---
+            // Detector runs on ROI crop, therefore any object parts below ROI.bottom are invisible.
+            // Never interpret a bbox that is "touching" ROI bottom as having a reliable bottom contact point.
+            val roiNNow = AppPreferences.getRoiTrapezoidNormalized()
+            val roiBottomPx = (roiNNow.bottomY.coerceIn(0f, 1f) * frameH).coerceIn(0f, frameH)
+            val roiTouchEpsPx = 8f
+            val bboxTouchesRoiBottom = (roiBottomPx - bestBox.y2) <= roiTouchEpsPx
+
             
 // Distance estimation: blend bbox-height monocular + ground-plane (height + pitch) for robustness.
 val focalPx = estimateFocalLengthPx(frameHRotI)
@@ -449,13 +457,18 @@ val distFromHeight = DetectionPhysics.estimateDistanceMeters(
     realHeightM = if (label == "motorcycle" || label == "bicycle") 1.3f else 1.5f
 )
 
-val distFromGround = DetectionPhysics.estimateDistanceGroundPlaneMeters(
-    bbox = bestBox,
-    frameHeightPx = frameHRotI,
-    focalPx = focalPx,
-    camHeightM = AppPreferences.cameraMountHeightM,
-    pitchDownDeg = AppPreferences.cameraPitchDownDeg
-)
+// Ground-plane is NOT reliable when bbox bottom is clamped to ROI bottom.
+val distFromGround = if (!bboxTouchesRoiBottom) {
+    DetectionPhysics.estimateDistanceGroundPlaneMeters(
+        bbox = bestBox,
+        frameHeightPx = frameHRotI,
+        focalPx = focalPx,
+        camHeightM = AppPreferences.cameraMountHeightM,
+        pitchDownDeg = AppPreferences.cameraPitchDownDeg
+    )
+} else {
+    null
+}
 
 // Weight ground estimate more when bbox bottom is near the bottom of frame (likely on road).
 val yBottomN = (bestBox.y2 / frameH).coerceIn(0f, 1f)
@@ -470,7 +483,10 @@ val distanceScaled =
     if (distanceRaw != null && distanceRaw.isFinite()) distanceRaw * AppPreferences.distanceScale else distanceRaw
 
 
-            val distanceM = smoothDistance(distanceScaled ?: Float.NaN)
+            // If bbox is clamped to ROI bottom, distance/ttc signals get distorted.
+            // Freeze distance briefly (use last EMA) instead of ingesting biased samples.
+            val distanceInput = if (bboxTouchesRoiBottom && distEmaValid && distEma.isFinite()) distEma else (distanceScaled ?: Float.NaN)
+            val distanceM = smoothDistance(distanceInput)
 
             // REL speed (signed internal) from sliding-window + EMA
             val relSpeedSigned = computeRelativeSpeedSignedWindow(bestTrack.id, distanceM, tsMs)
@@ -494,7 +510,9 @@ val distanceScaled =
 
             // TTC from bbox growth tends to be more stable than distance derivative
             val boxHPx = (bestBox.y2 - bestBox.y1).coerceAtLeast(0f)
-            val ttcFromHeightsNow = computeTtcFromBoxHeights(boxHPx, tsMs)
+            // If bbox touches ROI bottom, height growth is biased (partial occlusion).
+            // Don't update the height-derived TTC in this case; rely on hold-last / dist TTC.
+            val ttcFromHeightsNow = if (!bboxTouchesRoiBottom) computeTtcFromBoxHeights(boxHPx, tsMs) else null
 
             // Hold-last-valid bbox TTC briefly to avoid blinking when bbox growth momentarily fails
             val ttcFromHeightsHeld = when {
@@ -646,7 +664,15 @@ sendOverlayUpdate(
                 alertLevel = lastAlertLevel,
                 alertReason = alertReason,
                 reasonBits = reasonBits,
-                riskScore = risk.riskScore
+                riskScore = risk.riskScore,
+                roiMinDistM = DetectionPhysics.estimateDistanceGroundPlaneMetersAtYPx(
+                    yBottomPx = roiBottomPx,
+                    frameHeightPx = frameHRotI,
+                    focalPx = focalPx,
+                    camHeightM = AppPreferences.cameraMountHeightM,
+                    pitchDownDeg = AppPreferences.cameraPitchDownDeg
+                ) ?: Float.NaN,
+                roiBottomTouch = bboxTouchesRoiBottom
             )
 
             flog(
@@ -766,6 +792,8 @@ if (AppPreferences.debugOverlay) {
         alertReason: String = "",
         reasonBits: Int = 0,
         riskScore: Float = Float.NaN,
+        roiMinDistM: Float = Float.NaN,
+        roiBottomTouch: Boolean = false,
         force: Boolean = false
     ) {
         if (!AppPreferences.debugOverlay) return
@@ -797,6 +825,10 @@ if (AppPreferences.debugOverlay) {
         i.putExtra("reason_bits", reasonBits)
         i.putExtra("risk_score", riskScore)
 
+        // ROI diagnostics (helps validate that ROI bottom starts e.g. 2-3m ahead due to dashboard crop).
+        i.putExtra("roi_min_dist_m", roiMinDistM)
+        i.putExtra("roi_bottom_touch", roiBottomTouch)
+
         // keep ROI always in preview overlay
         i.putExtra("roi_trap_top_y_n", roiN.topY)
         i.putExtra("roi_trap_bottom_y_n", roiN.bottomY)
@@ -819,6 +851,8 @@ if (AppPreferences.debugOverlay) {
         i.putExtra("roi_trap_top_halfw_n", roiN.topHalfW)
         i.putExtra("roi_trap_bottom_halfw_n", roiN.bottomHalfW)
         i.putExtra("roi_trap_center_x_n", roiN.centerX)
+        i.putExtra("roi_min_dist_m", Float.NaN)
+        i.putExtra("roi_bottom_touch", false)
         ctx.sendBroadcast(i)
     }
 
