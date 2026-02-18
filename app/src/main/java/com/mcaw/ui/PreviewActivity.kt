@@ -499,20 +499,5 @@ private fun showSaveAsNewProfileDialog() {
         .setNegativeButton("Zrušit", null)
         .show()
 }
-        AlertDialog.Builder(this)
-            .setTitle("Uložit profil")
-            .setMessage("Uloží aktuální ROI + kalibraci (výška, sklon, distance scale, lane offset).")
-            .setView(input)
-            .setPositiveButton("Uložit") { _, _ ->
-                val name = input.text?.toString()?.trim().orEmpty()
-                val p = ProfileManager.saveProfileFromCurrentPrefs(name)
-                ProfileManager.setActiveProfileId(p.id)
-                updateActiveProfileLabel()
-                Toast.makeText(this, "Profil uložen: ${p.name}", Toast.LENGTH_SHORT).show()
-                logActivity("profile_saved id=${p.id} name=${p.name}")
-            }
-            .setNegativeButton("Zrušit", null)
-            .show()
-    }
 
 }
