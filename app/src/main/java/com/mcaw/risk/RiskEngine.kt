@@ -135,6 +135,11 @@ class RiskEngine {
     // Separate hysteresis for TTC (kept inside engine; not fallback)
     private var lastTtcLevel: Int = 0
 
+    // CRITICAL prime: consecutive frames where TTC is in RED band + closing is meaningful.
+    // Purpose: make RED reachable even when distance estimate is biased high (real logs),
+    // while still avoiding 1-frame spikes.
+    private var redPrimeFrames: Int = 0
+
     // Single reusable result instance (avoid per-frame allocations)
     private val out = Result()
 
@@ -245,8 +250,23 @@ class RiskEngine {
         val midRel = relScore >= midK
         val allowRed = strongTtc && (strongDist || strongRel || (slopeStrong && (midDist || midRel)))
 
+        // --- RED prime (robust reachability) ---
+        // Real-world: distance estimation can be biased high (e.g., trucks, camera FOV, calibration drift),
+        // which keeps riskScore below redOn even when TTC is critically low.
+        // We therefore allow a *confirmed* RED when:
+        // - TTC is in RED band (ttcLevel==2)
+        // - and there is meaningful closing (strongRel) OR very strong distance (strongDist)
+        // - and condition persists for >= 2 consecutive frames (anti-glitch)
+        // This is still gated by allowRed (combo guard) so it cannot be triggered by TTC alone.
+        val primeCond = (ttcLevel >= 2) && (strongRel || strongDist)
+        redPrimeFrames = if (primeCond) (redPrimeFrames + 1).coerceAtMost(8) else 0
+        val confirmedCritical = allowRed && redPrimeFrames >= 2
+
         // --- Convert risk -> level (with hysteresis) ---
-        val preGuardLevel = riskToLevelWithHysteresis(risk, conserv)
+        // If we have confirmed critical closing, slightly bias the level decision towards RED.
+        // This keeps riskScore continuous (still logged), but prevents "RED never happens" in the field.
+        val levelRisk = if (confirmedCritical) min(1f, risk + 0.12f) else risk
+        val preGuardLevel = riskToLevelWithHysteresis(levelRisk, conserv)
         var level = preGuardLevel
         if (preGuardLevel == 2 && !allowRed) {
             // Cap to ORANGE when combo confirmation is missing.
