@@ -439,13 +439,17 @@ if (AppPreferences.debugOverlay) {
             updateCutInState(tsMs, bestBox, frameW, frameH)
             val label = DetectionLabelMapper.toCanonical(best0.label) ?: (best0.label ?: "unknown")
 
-            // --- ROI bottom handling ---
-            // Detector runs on ROI crop, therefore any object parts below ROI.bottom are invisible.
-            // Never interpret a bbox that is "touching" ROI bottom as having a reliable bottom contact point.
+            // --- Bottom-occlusion handling (dashboard / ROI crop) ---
+            // We run detection on the ROI crop for performance and to exclude the dashboard.
+            // When an object approaches, its true bottom may fall below the crop bottom and become invisible.
+            // In that case, bbox.bottom/height-based signals (ground-plane distance, bbox-TTC) become biased.
+            // IMPORTANT: ROI is a selection helper only; we do NOT geometrically clamp boxes to ROI here.
             val roiNNow = AppPreferences.getRoiTrapezoidNormalized()
             val roiBottomPx = (roiNNow.bottomY.coerceIn(0f, 1f) * frameH).coerceIn(0f, frameH)
-            val roiTouchEpsPx = 8f
-            val bboxTouchesRoiBottom = (roiBottomPx - bestBox.y2) <= roiTouchEpsPx
+            val cropBottomPx = roiRect.bottom.toFloat().coerceIn(0f, frameH)
+            val bottomOcclEpsPx = 8f
+            // Prefer the actual crop bottom (roiRect). Keep roiBottomPx for debug overlay diagnostics.
+            val bottomOccluded = (cropBottomPx - bestBox.y2) <= bottomOcclEpsPx
 
             
 // Distance estimation: blend bbox-height monocular + ground-plane (height + pitch) for robustness.
@@ -457,8 +461,8 @@ val distFromHeight = DetectionPhysics.estimateDistanceMeters(
     realHeightM = if (label == "motorcycle" || label == "bicycle") 1.3f else 1.5f
 )
 
-// Ground-plane is NOT reliable when bbox bottom is clamped to ROI bottom.
-val distFromGround = if (!bboxTouchesRoiBottom) {
+// Ground-plane is NOT reliable when bbox bottom is affected by crop-bottom occlusion.
+val distFromGround = if (!bottomOccluded) {
     DetectionPhysics.estimateDistanceGroundPlaneMeters(
         bbox = bestBox,
         frameHeightPx = frameHRotI,
@@ -483,9 +487,9 @@ val distanceScaled =
     if (distanceRaw != null && distanceRaw.isFinite()) distanceRaw * AppPreferences.distanceScale else distanceRaw
 
 
-            // If bbox is clamped to ROI bottom, distance/ttc signals get distorted.
+            // If bbox bottom is affected by crop-bottom occlusion, distance/ttc signals get distorted.
             // Freeze distance briefly (use last EMA) instead of ingesting biased samples.
-            val distanceInput = if (bboxTouchesRoiBottom && distEmaValid && distEma.isFinite()) distEma else (distanceScaled ?: Float.NaN)
+            val distanceInput = if (bottomOccluded && distEmaValid && distEma.isFinite()) distEma else (distanceScaled ?: Float.NaN)
             val distanceM = smoothDistance(distanceInput)
 
             // REL speed (signed internal) from sliding-window + EMA
@@ -510,9 +514,9 @@ val distanceScaled =
 
             // TTC from bbox growth tends to be more stable than distance derivative
             val boxHPx = (bestBox.y2 - bestBox.y1).coerceAtLeast(0f)
-            // If bbox touches ROI bottom, height growth is biased (partial occlusion).
+            // If bbox bottom is affected by crop-bottom occlusion, height growth is biased.
             // Don't update the height-derived TTC in this case; rely on hold-last / dist TTC.
-            val ttcFromHeightsNow = if (!bboxTouchesRoiBottom) computeTtcFromBoxHeights(boxHPx, tsMs) else null
+            val ttcFromHeightsNow = if (!bottomOccluded) computeTtcFromBoxHeights(boxHPx, tsMs) else null
 
             // Hold-last-valid bbox TTC briefly to avoid blinking when bbox growth momentarily fails
             val ttcFromHeightsHeld = when {
@@ -666,13 +670,13 @@ sendOverlayUpdate(
                 reasonBits = reasonBits,
                 riskScore = risk.riskScore,
                 roiMinDistM = DetectionPhysics.estimateDistanceGroundPlaneMetersAtYPx(
-                    yBottomPx = roiBottomPx,
+                    yBottomPx = cropBottomPx,
                     frameHeightPx = frameHRotI,
                     focalPx = focalPx,
                     camHeightM = AppPreferences.cameraMountHeightM,
                     pitchDownDeg = AppPreferences.cameraPitchDownDeg
                 ) ?: Float.NaN,
-                roiBottomTouch = bboxTouchesRoiBottom
+                roiBottomTouch = bottomOccluded
             )
 
             flog(
