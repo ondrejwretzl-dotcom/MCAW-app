@@ -1252,32 +1252,52 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
         val roiN = AppPreferences.getRoiTrapezoidNormalized()
         val roiCenterX = roiN.centerX
 
-        fun priority(t: TemporalTracker.TrackedDetection): Float {
-            val d = t.detection
-            val b = d.box
-            val areaNorm = (b.area / (frameW * frameH)).coerceIn(0f, 1f)
-            val cxN = (b.cx / frameW).coerceIn(0f, 1f)
-            val cyN = (b.cy / frameH).coerceIn(0f, 1f)
-            val dx = abs(cxN - roiCenterX)
-            val dy = abs(cyN - 0.55f)
-            val centerScore = (1f - (dx * 1.4f + dy * 1.0f)).coerceIn(0f, 1f)
-            val score = d.score.coerceIn(0f, 1f)
+        
 
-            // Stronger ROI influence for target selection (still soft; never a hard gate).
-            // Rationale: user moves ROI above dashboard and aligns it with their lane.
-            val roiContain = containmentRatioInTrapezoid(b, _roiTrap.pts).coerceIn(0f, 1f)
-            val roiWeight = ((0.10f + 0.90f * roiContain).toDouble().pow(1.8)).toFloat()
+        val focalPxForSel = estimateFocalLengthPx(frameH)
+fun priority(t: TemporalTracker.TrackedDetection): Float {
+    val d = t.detection
+    val b = d.box
+    val cxN = (b.cx / frameW).coerceIn(0f, 1f)
+    val dx = abs(cxN - roiCenterX)
 
-            val egoScore = if (AppPreferences.laneFilter) {
-                val maxOff = dynamicEgoMaxOffset(tsMs)
-                val off = egoOffsetInRoiN(b, frameW, frameH)
-                (1f - (off / maxOff)).coerceIn(0f, 1f)
-            } else {
-                0.5f
-            }
-            val base = (areaNorm * 0.45f) + (centerScore * 0.25f) + (score * 0.15f) + (egoScore * 0.15f)
-            return (base * roiWeight).coerceIn(0f, 1f)
-        }
+    // X-center alignment dominates: user ROI is aligned to lane/forward direction.
+    val centerScore = (1f - (dx * 1.8f)).coerceIn(0f, 1f)
+    val score = d.score.coerceIn(0f, 1f)
+
+    // Distance proxy for prioritization only (do NOT treat as ground-truth long-range meters).
+    // Use the monocular bbox-height estimate which is cheap and stable enough for ranking.
+    val distM = DetectionPhysics.estimateDistanceMeters(
+        bbox = b,
+        frameHeightPx = frameH,
+        focalPx = focalPxForSel,
+        realHeightM = 1.5f
+    )
+    // Convert distance to "closer is better" score. Clamp at 40m: beyond that, treat as equally far.
+    val distanceScore = if (!distM.isFinite() || distM <= 0f) {
+        0f
+    } else {
+        (1f - (distM / 40f).coerceIn(0f, 1f))
+    }
+
+    // Stronger ROI influence for target selection (still soft; never a hard gate).
+    // Rationale: user moves ROI above dashboard and aligns it with their lane.
+    val roiContain = containmentRatioInTrapezoid(b, _roiTrap.pts).coerceIn(0f, 1f)
+    val roiWeight = ((0.10f + 0.90f * roiContain).toDouble().pow(1.8)).toFloat()
+
+    val egoScore = if (AppPreferences.laneFilter) {
+        val maxOff = dynamicEgoMaxOffset(tsMs)
+        val off = egoOffsetInRoiN(b, frameW, frameH)
+        (1f - (off / maxOff)).coerceIn(0f, 1f)
+    } else {
+        0.5f
+    }
+
+    // Selection base: center + distance dominate, then model confidence + ego-path.
+    // (Area is intentionally NOT a primary driver because ROI/occlusion can distort apparent size.)
+    val base = (centerScore * 0.45f) + (distanceScore * 0.35f) + (score * 0.10f) + (egoScore * 0.10f)
+    return (base * roiWeight).coerceIn(0f, 1f)
+}
 
         val bestNow = poolEgo.maxByOrNull { priority(it) } ?: return null
         val bestNowPrio = priority(bestNow)
