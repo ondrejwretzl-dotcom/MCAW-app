@@ -83,6 +83,12 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
     private var lastMaxErrM: Float = 0f
     private var lastImuStdDeg: Float = 0f
     private var lastQuality: QualityLevel = QualityLevel.UNKNOWN
+    // Split signals: geometry fit quality vs device stability quality.
+    private var lastGeomQuality: QualityLevel = QualityLevel.UNKNOWN
+    private var lastImuQuality: QualityLevel = QualityLevel.UNKNOWN
+    // Conservative guidance numbers derived from IMU jitter.
+    private var lastImuExtraErrAt10m: Float = 0f
+    private var lastCombinedErrAt10m: Float = 0f
     private var worstStepIndex: Int = 0 // 0..2
 
     // Fitted values (preview only until user confirms save)
@@ -130,10 +136,11 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
     private fun onBackClicked() {
         when (stage) {
             Stage.RESULT -> {
-                if (lastQuality == QualityLevel.BAD) {
-                    restartAll()
-                } else {
-                    repeatWorstStep()
+                when {
+                    lastGeomQuality == QualityLevel.BAD -> restartAll()
+                    lastGeomQuality == QualityLevel.UNCERTAIN -> repeatWorstStep()
+                    lastImuQuality != QualityLevel.OK -> restartAll() // repeat due to stability warning
+                    else -> restartAll()
                 }
             }
             else -> onBackPressedDispatcher.onBackPressed()
@@ -185,7 +192,7 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
                 requestDistanceForCurrentStage()
             }
             Stage.RESULT -> {
-                if (lastQuality == QualityLevel.BAD) {
+                if (lastGeomQuality == QualityLevel.BAD) {
                     restartAll()
                 } else {
                     stage = Stage.VERIFY
@@ -266,24 +273,37 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
                 btnConfirm.text = "POTVRDIT BOD"
             }
             Stage.RESULT -> {
-                val q = when (lastQuality) {
-                    QualityLevel.OK -> "Kalibrace OK"
-                    QualityLevel.UNCERTAIN -> "Kalibrace nejistá"
-                    QualityLevel.BAD -> "Kalibrace špatná"
-                    else -> "Kalibrace"
+                val header = when {
+                    lastGeomQuality == QualityLevel.BAD -> "Kalibrace špatná"
+                    lastGeomQuality == QualityLevel.UNCERTAIN -> "Kalibrace nejistá"
+                    lastImuQuality != QualityLevel.OK -> "Geometrie OK, stabilita nízká"
+                    else -> "Kalibrace OK"
                 }
-                txtStep.text = q
-                txtInstruction.text = "RMS: %.2f m, Max: %.2f m, Stabilita: %.2f°".format(lastRmsM, lastMaxErrM, lastImuStdDeg)
+                txtStep.text = header
+                txtInstruction.text = (
+                    "RMS: %.2f m, Max: %.2f m, Stabilita: %.2f°" +
+                        " (≈ +%.2f m @10m)\nOdhad chyby @10m: ~%.2f m"
+                    ).format(lastRmsM, lastMaxErrM, lastImuStdDeg, lastImuExtraErrAt10m, lastCombinedErrAt10m)
 
-                txtHint.text = when (lastQuality) {
-                    QualityLevel.OK -> "Pokračuj na kontrolu (posuň bod a ověř odhad)."
-                    QualityLevel.UNCERTAIN -> "Doporučeno zopakovat krok %d (největší odchylka).".format(worstStepIndex + 1)
-                    QualityLevel.BAD -> "Kalibrace je mimo. Zopakuj ji – nejčastěji je to špatný bod (ne na zemi) nebo pohyb telefonu."
-                    else -> ""
+                txtHint.text = when {
+                    lastGeomQuality == QualityLevel.BAD ->
+                        "Geometrie nesedí. Zopakuj kalibraci – nejčastěji je to bod mimo zem nebo špatně zadaná vzdálenost."
+                    lastGeomQuality == QualityLevel.UNCERTAIN ->
+                        "Geometrie je nejistá. Doporučeno zopakovat krok %d (největší odchylka).".format(worstStepIndex + 1)
+                    lastImuQuality != QualityLevel.OK ->
+                        "Geometrie je přesná, ale telefon se pravděpodobně hýbal. Může to přidat chybu (viz odhad). Můžeš pokračovat a uložit, nebo zopakovat."
+                    else ->
+                        "Pokračuj na kontrolu (posuň bod a ověř odhad)."
                 }
 
-                btnBack.text = if (lastQuality == QualityLevel.BAD) "ZOPAKOVAT" else "ZOPAKOVAT KROK %d".format(worstStepIndex + 1)
-                btnConfirm.text = if (lastQuality == QualityLevel.BAD) "ZOPAKOVAT VŠE" else "POKRAČOVAT"
+                btnBack.text = when {
+                    lastGeomQuality == QualityLevel.BAD -> "ZOPAKOVAT"
+                    lastGeomQuality == QualityLevel.UNCERTAIN -> "ZOPAKOVAT KROK %d".format(worstStepIndex + 1)
+                    lastImuQuality != QualityLevel.OK -> "ZOPAKOVAT"
+                    else -> "ZOPAKOVAT"
+                }
+                // Allow proceed to VERIFY whenever geometry is not BAD.
+                btnConfirm.text = if (lastGeomQuality == QualityLevel.BAD) "ZOPAKOVAT VŠE" else "POKRAČOVAT"
             }
             Stage.VERIFY -> {
                 txtStep.text = "Kontrola"
@@ -531,9 +551,13 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
     private fun evaluateCalibrationQuality() {
         val frameH = previewView.height.takeIf { it > 0 } ?: run {
             lastQuality = QualityLevel.BAD
+            lastGeomQuality = QualityLevel.BAD
+            lastImuQuality = QualityLevel.UNKNOWN
             lastRmsM = 99f
             lastMaxErrM = 99f
             lastImuStdDeg = 9f
+            lastImuExtraErrAt10m = 0f
+            lastCombinedErrAt10m = 99f
             worstStepIndex = 0
             return
         }
@@ -592,16 +616,34 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
             else -> QualityLevel.BAD
         }
         val byImu = when {
-            imuStd <= 0.15f -> QualityLevel.OK
-            imuStd <= 0.35f -> QualityLevel.UNCERTAIN
+            imuStd <= 0.50f -> QualityLevel.OK
+            imuStd <= 1.50f -> QualityLevel.UNCERTAIN
             else -> QualityLevel.BAD
         }
 
-        // Worst-case gating (safety): if any signal is BAD -> BAD.
-        // Else if any is UNCERTAIN -> UNCERTAIN.
+        // Geometry quality is derived ONLY from geometric consistency (RMS/Max).
+        lastGeomQuality = when {
+            byRms == QualityLevel.BAD || byMax == QualityLevel.BAD -> QualityLevel.BAD
+            byRms == QualityLevel.UNCERTAIN || byMax == QualityLevel.UNCERTAIN -> QualityLevel.UNCERTAIN
+            else -> QualityLevel.OK
+        }
+        // IMU quality is a separate signal. Never hard-fails a geometrically good calibration.
+        lastImuQuality = byImu
+
+        // Translate IMU jitter (deg) to a rough additional distance error at 10m.
+        // Small-angle approximation: error ≈ d * tan(jitter).
+        // This is intentionally conservative and only used for user guidance.
+        lastImuExtraErrAt10m = (10.0 * kotlin.math.tan(Math.toRadians(imuStd.toDouble()))).toFloat().coerceAtLeast(0f)
+        lastCombinedErrAt10m = kotlin.math.sqrt((rms * rms + lastImuExtraErrAt10m * lastImuExtraErrAt10m).toDouble()).toFloat()
+
+        // Overall quality shown in UI:
+        // - BAD only if geometry is BAD
+        // - UNCERTAIN if geometry is UNCERTAIN OR IMU is UNCERTAIN/BAD
+        // - OK only if both signals are OK
         lastQuality = when {
-            byRms == QualityLevel.BAD || byMax == QualityLevel.BAD || byImu == QualityLevel.BAD -> QualityLevel.BAD
-            byRms == QualityLevel.UNCERTAIN || byMax == QualityLevel.UNCERTAIN || byImu == QualityLevel.UNCERTAIN -> QualityLevel.UNCERTAIN
+            lastGeomQuality == QualityLevel.BAD -> QualityLevel.BAD
+            lastGeomQuality == QualityLevel.UNCERTAIN -> QualityLevel.UNCERTAIN
+            lastImuQuality != QualityLevel.OK -> QualityLevel.UNCERTAIN
             else -> QualityLevel.OK
         }
     }
@@ -633,6 +675,10 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
         AppPreferences.calibrationMaxErrM = lastMaxErrM
         AppPreferences.calibrationImuStdDeg = lastImuStdDeg
         AppPreferences.calibrationQuality = lastQuality.code
+        AppPreferences.calibrationGeomQuality = lastGeomQuality.code
+        AppPreferences.calibrationImuQuality = lastImuQuality.code
+        AppPreferences.calibrationImuExtraErrAt10m = lastImuExtraErrAt10m
+        AppPreferences.calibrationCombinedErrAt10m = lastCombinedErrAt10m
         AppPreferences.calibrationSavedUptimeMs = SystemClock.uptimeMillis()
         // Keep distanceScale unchanged unless user explicitly tunes it elsewhere.
 
@@ -652,6 +698,10 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
                     calibrationImuStdDeg = AppPreferences.calibrationImuStdDeg,
                     calibrationSavedUptimeMs = AppPreferences.calibrationSavedUptimeMs,
                     calibrationQuality = AppPreferences.calibrationQuality,
+                    calibrationGeomQuality = AppPreferences.calibrationGeomQuality,
+                    calibrationImuQuality = AppPreferences.calibrationImuQuality,
+                    calibrationImuExtraErrAt10m = AppPreferences.calibrationImuExtraErrAt10m,
+                    calibrationCombinedErrAt10m = AppPreferences.calibrationCombinedErrAt10m,
                     laneEgoMaxOffset = p.laneEgoMaxOffset,
                     roiTopY = p.roiTopY,
                     roiBottomY = p.roiBottomY,

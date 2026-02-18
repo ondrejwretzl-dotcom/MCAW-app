@@ -19,6 +19,10 @@ data class MountProfile(
     val calibrationImuStdDeg: Float = 0f,
     val calibrationSavedUptimeMs: Long = 0L,
     val calibrationQuality: Int = 0,
+    val calibrationGeomQuality: Int = 0,
+    val calibrationImuQuality: Int = 0,
+    val calibrationImuExtraErrAt10m: Float = 0f,
+    val calibrationCombinedErrAt10m: Float = 0f,
     val laneEgoMaxOffset: Float,
     // ROI trapezoid
     val roiTopY: Float,

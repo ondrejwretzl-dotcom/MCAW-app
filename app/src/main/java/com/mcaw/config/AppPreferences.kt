@@ -82,6 +82,26 @@ var calibrationQuality: Int
     get() = prefs.getInt("calib_quality", 0).coerceIn(0, 3)
     set(v) = prefs.edit().putInt("calib_quality", v.coerceIn(0, 3)).apply()
 
+/** 0=unknown, 1=OK, 2=UNCERTAIN, 3=BAD (geometry-only gating: RMS/Max). */
+var calibrationGeomQuality: Int
+    get() = prefs.getInt("calib_geom_quality", 0).coerceIn(0, 3)
+    set(v) = prefs.edit().putInt("calib_geom_quality", v.coerceIn(0, 3)).apply()
+
+/** 0=unknown, 1=OK, 2=UNCERTAIN, 3=BAD (device stability only). */
+var calibrationImuQuality: Int
+    get() = prefs.getInt("calib_imu_quality", 0).coerceIn(0, 3)
+    set(v) = prefs.edit().putInt("calib_imu_quality", v.coerceIn(0, 3)).apply()
+
+/** Estimated additional distance error at 10m caused by IMU jitter (meters). */
+var calibrationImuExtraErrAt10m: Float
+    get() = prefs.getFloat("calib_imu_extra_err_10m", 0f).coerceIn(0f, 50f)
+    set(v) = prefs.edit().putFloat("calib_imu_extra_err_10m", v.coerceIn(0f, 50f)).apply()
+
+/** Combined estimated error at 10m (meters): sqrt(rms^2 + imuExtra^2). */
+var calibrationCombinedErrAt10m: Float
+    get() = prefs.getFloat("calib_combined_err_10m", 0f).coerceIn(0f, 50f)
+    set(v) = prefs.edit().putFloat("calib_combined_err_10m", v.coerceIn(0f, 50f)).apply()
+
 /** Timestamp (uptime ms) when calibration was saved (best-effort). */
 var calibrationSavedUptimeMs: Long
     get() = prefs.getLong("calib_saved_uptime_ms", 0L).coerceAtLeast(0L)

@@ -71,6 +71,10 @@ object ProfileManager {
             calibrationImuStdDeg = AppPreferences.calibrationImuStdDeg,
             calibrationSavedUptimeMs = AppPreferences.calibrationSavedUptimeMs,
             calibrationQuality = AppPreferences.calibrationQuality,
+            calibrationGeomQuality = AppPreferences.calibrationGeomQuality,
+            calibrationImuQuality = AppPreferences.calibrationImuQuality,
+            calibrationImuExtraErrAt10m = AppPreferences.calibrationImuExtraErrAt10m,
+            calibrationCombinedErrAt10m = AppPreferences.calibrationCombinedErrAt10m,
             laneEgoMaxOffset = AppPreferences.laneEgoMaxOffset,
             roiTopY = roi.topY,
             roiBottomY = roi.bottomY,
@@ -124,6 +128,10 @@ object ProfileManager {
         AppPreferences.calibrationImuStdDeg = p.calibrationImuStdDeg
         AppPreferences.calibrationSavedUptimeMs = p.calibrationSavedUptimeMs
         AppPreferences.calibrationQuality = p.calibrationQuality
+        AppPreferences.calibrationGeomQuality = p.calibrationGeomQuality
+        AppPreferences.calibrationImuQuality = p.calibrationImuQuality
+        AppPreferences.calibrationImuExtraErrAt10m = p.calibrationImuExtraErrAt10m
+        AppPreferences.calibrationCombinedErrAt10m = p.calibrationCombinedErrAt10m
 
         // ROI
         AppPreferences.setRoiTrapezoidNormalized(
@@ -156,6 +164,10 @@ object ProfileManager {
             put("calibrationImuStdDeg", p.calibrationImuStdDeg.toDouble())
             put("calibrationSavedUptimeMs", p.calibrationSavedUptimeMs)
             put("calibrationQuality", p.calibrationQuality)
+            put("calibrationGeomQuality", p.calibrationGeomQuality)
+            put("calibrationImuQuality", p.calibrationImuQuality)
+            put("calibrationImuExtraErrAt10m", p.calibrationImuExtraErrAt10m.toDouble())
+            put("calibrationCombinedErrAt10m", p.calibrationCombinedErrAt10m.toDouble())
             put("laneEgoMaxOffset", p.laneEgoMaxOffset.toDouble())
             put("roiTopY", p.roiTopY.toDouble())
             put("roiBottomY", p.roiBottomY.toDouble())
@@ -180,6 +192,10 @@ object ProfileManager {
             calibrationImuStdDeg = o.optDouble("calibrationImuStdDeg", 0.0).toFloat(),
             calibrationSavedUptimeMs = o.optLong("calibrationSavedUptimeMs", 0L),
             calibrationQuality = o.optInt("calibrationQuality", 0),
+            calibrationGeomQuality = o.optInt("calibrationGeomQuality", 0),
+            calibrationImuQuality = o.optInt("calibrationImuQuality", 0),
+            calibrationImuExtraErrAt10m = o.optDouble("calibrationImuExtraErrAt10m", 0.0).toFloat(),
+            calibrationCombinedErrAt10m = o.optDouble("calibrationCombinedErrAt10m", 0.0).toFloat(),
             laneEgoMaxOffset = o.optDouble("laneEgoMaxOffset", 0.55).toFloat(),
             roiTopY = o.optDouble("roiTopY", 0.32).toFloat(),
             roiBottomY = o.optDouble("roiBottomY", 0.92).toFloat(),
