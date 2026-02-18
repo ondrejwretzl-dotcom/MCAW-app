@@ -1254,7 +1254,7 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
 
         
 
-        val focalPxForSel = estimateFocalLengthPx(frameH)
+        val focalPxForSel = estimateFocalLengthPx(frameH.toInt())
 fun priority(t: TemporalTracker.TrackedDetection): Float {
     val d = t.detection
     val b = d.box
@@ -1269,12 +1269,12 @@ fun priority(t: TemporalTracker.TrackedDetection): Float {
     // Use the monocular bbox-height estimate which is cheap and stable enough for ranking.
     val distM = DetectionPhysics.estimateDistanceMeters(
         bbox = b,
-        frameHeightPx = frameH,
+        frameHeightPx = frameH.toInt(),
         focalPx = focalPxForSel,
         realHeightM = 1.5f
     )
     // Convert distance to "closer is better" score. Clamp at 40m: beyond that, treat as equally far.
-    val distanceScore = if (!distM.isFinite() || distM <= 0f) {
+    val distanceScore = if (distM == null || !distM.isFinite() || distM <= 0f) {
         0f
     } else {
         (1f - (distM / 40f).coerceIn(0f, 1f))
