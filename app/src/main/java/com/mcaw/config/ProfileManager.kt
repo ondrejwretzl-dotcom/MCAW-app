@@ -75,6 +75,8 @@ object ProfileManager {
             calibrationImuQuality = AppPreferences.calibrationImuQuality,
             calibrationImuExtraErrAt10m = AppPreferences.calibrationImuExtraErrAt10m,
             calibrationCombinedErrAt10m = AppPreferences.calibrationCombinedErrAt10m,
+            roiMinDistM = AppPreferences.roiMinDistM,
+            roiMinDistConfirmed = AppPreferences.roiMinDistConfirmed,
             laneEgoMaxOffset = AppPreferences.laneEgoMaxOffset,
             roiTopY = roi.topY,
             roiBottomY = roi.bottomY,
@@ -168,6 +170,8 @@ object ProfileManager {
             put("calibrationImuQuality", p.calibrationImuQuality)
             put("calibrationImuExtraErrAt10m", p.calibrationImuExtraErrAt10m.toDouble())
             put("calibrationCombinedErrAt10m", p.calibrationCombinedErrAt10m.toDouble())
+            if (p.roiMinDistM.isFinite()) put("roiMinDistM", p.roiMinDistM.toDouble()) else put("roiMinDistM", JSONObject.NULL)
+            put("roiMinDistConfirmed", p.roiMinDistConfirmed)
             put("laneEgoMaxOffset", p.laneEgoMaxOffset.toDouble())
             put("roiTopY", p.roiTopY.toDouble())
             put("roiBottomY", p.roiBottomY.toDouble())
@@ -196,6 +200,8 @@ object ProfileManager {
             calibrationImuQuality = o.optInt("calibrationImuQuality", 0),
             calibrationImuExtraErrAt10m = o.optDouble("calibrationImuExtraErrAt10m", 0.0).toFloat(),
             calibrationCombinedErrAt10m = o.optDouble("calibrationCombinedErrAt10m", 0.0).toFloat(),
+            roiMinDistM = o.optDouble("roiMinDistM", Double.NaN).toFloat(),
+            roiMinDistConfirmed = o.optBoolean("roiMinDistConfirmed", false),
             laneEgoMaxOffset = o.optDouble("laneEgoMaxOffset", 0.55).toFloat(),
             roiTopY = o.optDouble("roiTopY", 0.32).toFloat(),
             roiBottomY = o.optDouble("roiBottomY", 0.92).toFloat(),

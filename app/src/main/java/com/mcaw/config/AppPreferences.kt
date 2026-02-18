@@ -102,6 +102,17 @@ var calibrationCombinedErrAt10m: Float
     get() = prefs.getFloat("calib_combined_err_10m", 0f).coerceIn(0f, 50f)
     set(v) = prefs.edit().putFloat("calib_combined_err_10m", v.coerceIn(0f, 50f)).apply()
 
+
+    /** Estimated distance to the bottom edge of the active ROI crop (meters) at the time of calibration save. */
+    var roiMinDistM: Float
+        get() = prefs.getFloat("roi_min_dist_m", Float.NaN)
+        set(v) = prefs.edit().putFloat("roi_min_dist_m", v).apply()
+
+    /** Whether user confirmed that ROI bottom distance (dashboard cut) looks correct in calibration verify step. */
+    var roiMinDistConfirmed: Boolean
+        get() = prefs.getBoolean("roi_min_dist_ok", false)
+        set(v) = prefs.edit().putBoolean("roi_min_dist_ok", v).apply()
+
 /** Timestamp (uptime ms) when calibration was saved (best-effort). */
 var calibrationSavedUptimeMs: Long
     get() = prefs.getLong("calib_saved_uptime_ms", 0L).coerceAtLeast(0L)

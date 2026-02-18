@@ -1259,7 +1259,7 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
         
 
         val focalPxForSel = estimateFocalLengthPx(frameH.toInt())
-fun priority(t: TemporalTracker.TrackedDetection): Float {
+fun priority(t: TemporalTracker.TrackedDetection, isLocked: Boolean = false): Float {
     val d = t.detection
     val b = d.box
     val cxN = (b.cx / frameW).coerceIn(0f, 1f)
@@ -1287,7 +1287,13 @@ fun priority(t: TemporalTracker.TrackedDetection): Float {
     // Stronger ROI influence for target selection (still soft; never a hard gate).
     // Rationale: user moves ROI above dashboard and aligns it with their lane.
     val roiContain = containmentRatioInTrapezoid(b, _roiTrap.pts).coerceIn(0f, 1f)
-    val roiWeight = ((0.10f + 0.90f * roiContain).toDouble().pow(1.8)).toFloat()
+    // ROI is a selection helper only. For the *locked* target we soften ROI weighting
+    // so we don't switch away just because the object becomes partially outside ROI (e.g., close-range / queue).
+    val roiWeight = if (isLocked) {
+        1.0f
+    } else {
+        ((0.10f + 0.90f * roiContain).toDouble().pow(1.8)).toFloat()
+    }
 
     val egoScore = if (AppPreferences.laneFilter) {
         val maxOff = dynamicEgoMaxOffset(tsMs)
@@ -1331,7 +1337,7 @@ fun priority(t: TemporalTracker.TrackedDetection): Float {
             return bestNow
         }
 
-        val lockedPrio = priority(locked)
+        val lockedPrio = priority(locked, isLocked = true)
         lockedPriority = lockedPrio
 
         // Hard stickiness: keep current lock for a short time to avoid rapid switching.

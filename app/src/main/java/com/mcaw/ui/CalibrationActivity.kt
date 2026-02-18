@@ -89,6 +89,9 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
     // Conservative guidance numbers derived from IMU jitter.
     private var lastImuExtraErrAt10m: Float = 0f
     private var lastCombinedErrAt10m: Float = 0f
+    private var lastRoiMinDistM: Float = Float.NaN
+    private var lastRoiMinConfirmed: Boolean = false
+
     private var worstStepIndex: Int = 0 // 0..2
 
     // Fitted values (preview only until user confirms save)
@@ -307,7 +310,13 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
             }
             Stage.VERIFY -> {
                 txtStep.text = "Kontrola"
-                txtInstruction.text = "Posuň bod na jiné místo na zemi. Zkontroluj, jestli odhad sedí."
+                val roiN = AppPreferences.getRoiTrapezoidNormalized()
+                val roiMin = estimateDistanceForPoint(roiN.bottomY)
+                if (roiMin != null && roiMin.isFinite()) {
+                    txtInstruction.text = "Posuň bod na jiné místo na zemi. Zkontroluj, jestli odhad sedí.\nSpodní hrana ROI začíná cca %.1f m před autem (palubka/crop).".format(roiMin)
+                } else {
+                    txtInstruction.text = "Posuň bod na jiné místo na zemi. Zkontroluj, jestli odhad sedí."
+                }
                 // txtHint is updated live by onPointChanged()
                 btnBack.text = "ŠPATNĚ"
                 btnConfirm.text = "ULOŽIT"
@@ -679,6 +688,12 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
         AppPreferences.calibrationImuQuality = lastImuQuality.code
         AppPreferences.calibrationImuExtraErrAt10m = lastImuExtraErrAt10m
         AppPreferences.calibrationCombinedErrAt10m = lastCombinedErrAt10m
+        // Snapshot ROI minimum visible distance (ROI bottom), so we can audit dashboard crop impact.
+        val roiN = AppPreferences.getRoiTrapezoidNormalized()
+        lastRoiMinDistM = estimateDistanceForPoint(roiN.bottomY) ?: Float.NaN
+        lastRoiMinConfirmed = true
+        AppPreferences.roiMinDistM = lastRoiMinDistM
+        AppPreferences.roiMinDistConfirmed = lastRoiMinConfirmed
         AppPreferences.calibrationSavedUptimeMs = SystemClock.uptimeMillis()
         // Keep distanceScale unchanged unless user explicitly tunes it elsewhere.
 
@@ -702,6 +717,8 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
                     calibrationImuQuality = AppPreferences.calibrationImuQuality,
                     calibrationImuExtraErrAt10m = AppPreferences.calibrationImuExtraErrAt10m,
                     calibrationCombinedErrAt10m = AppPreferences.calibrationCombinedErrAt10m,
+                    roiMinDistM = AppPreferences.roiMinDistM,
+                    roiMinDistConfirmed = AppPreferences.roiMinDistConfirmed,
                     laneEgoMaxOffset = p.laneEgoMaxOffset,
                     roiTopY = p.roiTopY,
                     roiBottomY = p.roiBottomY,

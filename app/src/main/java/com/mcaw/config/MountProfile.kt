@@ -23,6 +23,8 @@ data class MountProfile(
     val calibrationImuQuality: Int = 0,
     val calibrationImuExtraErrAt10m: Float = 0f,
     val calibrationCombinedErrAt10m: Float = 0f,
+    val roiMinDistM: Float = Float.NaN,
+    val roiMinDistConfirmed: Boolean = false,
     val laneEgoMaxOffset: Float,
     // ROI trapezoid
     val roiTopY: Float,
