@@ -47,6 +47,15 @@ jobs:
       - name: Run unit tests (D1)
         run: ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace
 
+
+      # Nahraj MCAW scénářové reporty vždy (PASS i FAIL) – jsou určené pro produktové ladění.
+      - name: Upload MCAW scenario reports (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcaw-scenario-reports
+          path: app/build/reports/mcaw_scenarios/
+
       # Když testy spadnou, nahraj reporty a výsledky pro diagnostiku.
       - name: Upload test reports (on failure)
         if: failure()
