@@ -9,11 +9,14 @@ import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
 /**
- * MCAW 2.0 – Scenario simulations with dual-use reports.
+ * MCAW 2.0 – Scénářové simulace s dual-use výstupy.
  *
- * This is NOT a typical "IT unit test" output.
- * The goal is to generate a human-readable report (MD) + a debug-parseable report (JSONL)
- * for each scenario, even when everything passes.
+ * Cíl:
+ * - Vygenerovat čitelný report pro PO (MD) a strukturovaný debug log (JSONL)
+ *   pro každý scénář – i když vše projde.
+ *
+ * Pozn.: build se defaultně NEblokuje; fail je opt-in přes -Dmcaw.failOnScenario=true
+ * až po schválení očekávání jako regresních kontraktů.
  */
 class ScenarioSimulationReportTest {
 
@@ -24,49 +27,60 @@ class ScenarioSimulationReportTest {
         val outDir = File("build/reports/mcaw_scenarios/$stamp")
         outDir.mkdirs()
 
-        // IMPORTANT (MCAW 2.0 workflow): by default, scenario simulations generate reports
-        // but do NOT fail the build. Failing the build is opt-in and should be enabled only
-        // once the Product Owner approves expectations as strict regression contracts.
-        // Enable with: -Dmcaw.failOnScenario=true
-        val failOnScenario = System.getProperty("mcaw.failOnScenario")?.trim()?.equals("true", ignoreCase = true) ?: false
+        val indexMd = StringBuilder(12_000)
+        indexMd.append("# MCAW 2.0 – Přehled simulací scénářů\n\n")
+        indexMd.append("- Katalog: **").append(catalog.title).append("**\n")
+        indexMd.append("- Verze katalogu: ").append(catalog.version).append("\n")
+        indexMd.append("- Vygenerováno: ").append(stamp).append("\n\n")
 
-        val indexMd = StringBuilder(8_000)
-        indexMd.append("# MCAW 2.0 – Scenario Catalog Report\n\n")
-        indexMd.append("- Catalog: **").append(catalog.title).append("**\n")
-        indexMd.append("- Catalog version: ").append(catalog.version).append("\n")
-        indexMd.append("- Generated: ").append(stamp).append("\n\n")
-        indexMd.append("## Scenarios\n")
+        indexMd.append("## Shrnutí\n")
+        indexMd.append("| Scénář | Doména | Vozidlo | Výsledek | Proč (zkráceně) | Report |\n")
+        indexMd.append("|---|---|---|---|---|---|\n")
 
         var allOk = true
+        var passCount = 0
+        var failCount = 0
+
         for (s in catalog.scenarios) {
             val run = ScenarioRunner.runScenario(s)
             ScenarioRunner.writeReports(run, outDir)
 
             val pass = run.verdicts.all { it.ok }
             allOk = allOk && pass
+            if (pass) passCount++ else failCount++
 
-            indexMd.append("- ")
-                .append(if (pass) "✅" else "❌")
-                .append(" **").append(s.id).append("** – ")
-                .append(s.title)
-                .append("  (domain=").append(s.domain).append(", vehicle=").append(s.vehicle).append(")\n")
-            indexMd.append("  - MD: ").append(s.id).append(".md\n")
-            indexMd.append("  - JSONL: ").append(s.id).append(".jsonl\n")
+            val shortWhy = run.verdicts.firstOrNull { !it.ok }?.details?.let { shorten(it) } ?: "—"
+
+            indexMd.append("|")
+                .append("**").append(s.id).append("**").append("|")
+                .append(s.domain).append("|")
+                .append(s.vehicle).append("|")
+                .append(if (pass) "✅ PROŠEL" else "❌ NEPROŠEL").append("|")
+                .append(shortWhy.replace("|", "/")).append("|")
+                .append("[").append(s.id).append(".md](").append(s.id).append(".md)").append("|")
+                .append("\n")
         }
+
+        indexMd.append("\n")
+        indexMd.append("**Souhrn:** ").append(passCount).append(" prošlo, ").append(failCount).append(" neprošlo.\n\n")
+        indexMd.append("## Poznámky\n")
+        indexMd.append("- Detail každého scénáře je v příslušném *.md souboru.\n")
+        indexMd.append("- Pro ladění je ke každému scénáři i *.jsonl (strukturované eventy).\n")
+        indexMd.append("- Cesta k reportům (lokálně): app/build/reports/mcaw_scenarios/").append(stamp).append("/\n")
 
         File(outDir, "INDEX.md").writeText(indexMd.toString())
 
-        // Always print a short summary into the test output (useful in CI logs).
-        if (allOk) {
-            println("MCAW scenario simulations: ALL PASS. Report: build/reports/mcaw_scenarios/$stamp/INDEX.md")
-        } else {
-            val msg = "MCAW scenario simulations: SOME EXPECTATIONS FAILED. Report: build/reports/mcaw_scenarios/$stamp/INDEX.md"
-            if (failOnScenario) {
-                assertTrue(msg, false)
-            } else {
-                // Do not fail the build by default; keep it actionable via the report.
-                println("WARNING: $msg")
-            }
+        val failOnScenario = (System.getProperty("mcaw.failOnScenario") ?: "false").equals("true", ignoreCase = true)
+        if (failOnScenario) {
+            assertTrue(
+                "Některé scénáře nesplnily očekávání. Viz build/reports/mcaw_scenarios/$stamp/INDEX.md",
+                allOk
+            )
         }
+    }
+
+    private fun shorten(s: String): String {
+        val t = s.trim().replace("\n", " ").replace("  ", " ")
+        return if (t.length <= 140) t else t.take(137) + "…"
     }
 }

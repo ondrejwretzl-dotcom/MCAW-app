@@ -132,16 +132,16 @@ object ScenarioRunner {
                     val deadline = e.hazardTimeSec + e.latestSecAfterHazard
                     val ok = first != null && first <= deadline + 1e-3f
                     val details = if (first == null) {
-                        "Never reached level>=${e.level} (deadline t<=${fmt(deadline)}s)."
+                        "Nikdy nedošlo k level>=${e.level} (deadline t<=${fmt(deadline)}s)."
                     } else {
-                        "Reached at t=${fmt(first)}s; deadline t<=${fmt(deadline)}s (hazard t=${fmt(e.hazardTimeSec)}s)."
+                        "Dosaženo v t=${fmt(first)}s; deadline t<=${fmt(deadline)}s (hazard t=${fmt(e.hazardTimeSec)}s)."
                     }
                     out.add(Verdict(ok, "MustEnterLevelBy(level=${e.level})", "${e.message} :: $details"))
                 }
 
                 is Expectation.MustNotEnterLevel -> {
                     val ok = levels.none { it >= e.level }
-                    val details = if (ok) "OK (never reached level>=${e.level})." else "FAILED (reached level>=${e.level})."
+                    val details = if (ok) "OK (nikdy nedošlo k level>=${e.level})." else "NESPLNĚNO (došlo k level>=${e.level})."
                     out.add(Verdict(ok, "MustNotEnterLevel(level=${e.level})", "${e.message} :: $details"))
                 }
 

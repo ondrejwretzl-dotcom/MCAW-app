@@ -14,35 +14,50 @@ object ScenarioReportWriter {
 
         val pass = run.verdicts.all { it.ok }
 
-        val sb = StringBuilder(16_000)
-        sb.append("# MCAW 2.0 – Scenario Simulation Report\n\n")
-        sb.append("- Generated: ").append(dt).append("\n")
-        sb.append("- Scenario: **").append(s.id).append(" – ").append(s.title).append("**\n")
-        sb.append("- Domain: ").append(s.domain).append(" | Vehicle: ").append(s.vehicle).append("\n")
-        sb.append("- Verdict: ").append(if (pass) "✅ PASS" else "❌ FAIL").append("\n\n")
+        val failed = run.verdicts.filterNot { it.ok }
 
-        sb.append("## Story\n")
+        val sb = StringBuilder(16_000)
+        sb.append("# MCAW 2.0 – Report simulace scénáře\n\n")
+        sb.append("- Vygenerováno: ").append(dt).append("\n")
+        sb.append("- Scénář: **").append(s.id).append(" – ").append(s.title).append("**\n")
+        sb.append("- Doména: ").append(s.domain).append(" | Vozidlo: ").append(s.vehicle).append("\n")
+        sb.append("- Výsledek: ").append(if (pass) "✅ PROŠEL" else "❌ NEPROŠEL").append("\n\n")
+
+        sb.append("## Rychlé shrnutí\n")
+        if (pass) {
+            sb.append("- Scénář splnil všechna očekávání.\n")
+        } else {
+            sb.append("- Scénář **nesplnil** ").append(failed.size).append(" očekávání.\n")
+            sb.append("- Důvody (zkráceně):\n")
+            for (v in failed.take(3)) {
+                sb.append("  - ").append(shorten(v.details)).append("\n")
+            }
+            if (failed.size > 3) sb.append("  - …\n")
+        }
+        sb.append("\n")
+
+        sb.append("## Popis situace\n")
         sb.append(s.notes.trim()).append("\n\n")
 
-        sb.append("## Scenario config (effective inputs)\n")
+        sb.append("## Konfigurace scénáře (efektivní vstupy)\n")
         sb.append("- effectiveMode: **").append(s.config.effectiveMode).append("**\n")
         sb.append("- hz: ").append(s.config.hz).append("\n")
         sb.append("- riderSpeedMps: ").append(fmt(s.config.riderSpeedMps)).append("\n")
-        sb.append("- qualityWeight(default): ").append(fmt(s.config.qualityWeight)).append("\n")
-        sb.append("- roiContainment(default): ").append(fmt(s.config.roiContainment)).append("\n")
-        sb.append("- egoOffsetN(default): ").append(fmt(s.config.egoOffsetN)).append("\n")
-        sb.append("- leanDeg(default): ").append(if (s.config.leanDeg.isFinite()) fmt(s.config.leanDeg) else "NaN").append("\n\n")
+        sb.append("- qualityWeight (default): ").append(fmt(s.config.qualityWeight)).append("\n")
+        sb.append("- roiContainment (default): ").append(fmt(s.config.roiContainment)).append("\n")
+        sb.append("- egoOffsetN (default): ").append(fmt(s.config.egoOffsetN)).append("\n")
+        sb.append("- leanDeg (default): ").append(if (s.config.leanDeg.isFinite()) fmt(s.config.leanDeg) else "NaN").append("\n\n")
 
-        sb.append("## Engine thresholds (derived from code)\n")
+        sb.append("## Prahy enginu (odvozeno z kódu)\n")
         val d = run.derived
-        sb.append("- TTC: orange=").append(fmt(d.ttcOrange)).append("s red=").append(fmt(d.ttcRed)).append("s\n")
-        sb.append("- Distance: orange=").append(fmt(d.distOrange)).append("m red=").append(fmt(d.distRed)).append("m\n")
-        sb.append("- Closing speed: orange=").append(fmt(d.relOrange)).append("m/s red=").append(fmt(d.relRed)).append("m/s\n")
-        sb.append("- Risk hysteresis: orangeOn=").append(fmt(d.orangeOn)).append(" orangeOff=").append(fmt(d.orangeOff))
+        sb.append("- TTC: ORANGE=").append(fmt(d.ttcOrange)).append("s RED=").append(fmt(d.ttcRed)).append("s\n")
+        sb.append("- Vzdálenost: ORANGE=").append(fmt(d.distOrange)).append("m RED=").append(fmt(d.distRed)).append("m\n")
+        sb.append("- Přibližování: ORANGE=").append(fmt(d.relOrange)).append("m/s RED=").append(fmt(d.relRed)).append("m/s\n")
+        sb.append("- Hystereze risku: orangeOn=").append(fmt(d.orangeOn)).append(" orangeOff=").append(fmt(d.orangeOff))
             .append(" redOn=").append(fmt(d.redOn)).append(" redOff=").append(fmt(d.redOff)).append("\n")
-        sb.append("- Red combo guard: slopeThr=").append(fmt(d.slopeThr)).append(" strongK=").append(fmt(d.strongK)).append(" midK=").append(fmt(d.midK)).append("\n\n")
+        sb.append("- RED combo guard: slopeThr=").append(fmt(d.slopeThr)).append(" strongK=").append(fmt(d.strongK)).append(" midK=").append(fmt(d.midK)).append("\n\n")
 
-        sb.append("## Expectations\n")
+        sb.append("## Očekávání\n")
         for ((idx, v) in run.verdicts.withIndex()) {
             sb.append(idx + 1).append(") ").append(if (v.ok) "✅" else "❌")
                 .append(" **").append(v.rule).append("**\n")
@@ -50,8 +65,8 @@ object ScenarioReportWriter {
         }
         sb.append("\n")
 
-        sb.append("## Key alert transitions\n")
-        sb.append("| t (s) | event | level | risk | reason | seg | dist(m) | rel(m/s) | ttc(s) | slope | roi | qW |\n")
+        sb.append("## Klíčové přechody alertů\n")
+        sb.append("| t (s) | událost | level | risk | důvod | segment | dist(m) | rel(m/s) | ttc(s) | slope | roi | qW |\n")
         sb.append("|---:|---|---:|---:|---|---|---:|---:|---:|---:|---:|---:|\n")
 
         val transitionEvents = run.events.filter { it.type == "ALERT_ENTER" || it.type == "ALERT_EXIT" }
@@ -79,16 +94,16 @@ object ScenarioReportWriter {
         }
         sb.append("\n")
 
-        sb.append("## Segment overview\n")
+        sb.append("## Přehled segmentů\n")
         for (seg in s.segments.sortedBy { it.tFromSec }) {
             sb.append("- [").append(fmt(seg.tFromSec)).append("–").append(fmt(seg.tToSec)).append("s] ")
                 .append(seg.label).append(" – ").append(seg.label).append("\n")
         }
         sb.append("\n")
 
-        sb.append("## Debug notes\n")
-        sb.append("- This report is intentionally dual-use: readable by PO, but also includes derived thresholds and reason bits for tuning.\n")
-        sb.append("- JSONL file contains structured events and can be grepped / parsed for regression tracking.\n")
+        sb.append("## Poznámky pro ladění\n")
+        sb.append("- Report je dual-use: je čitelný pro PO, ale obsahuje i prahy odvozené z kódu a zkrácené důvody (reason bits) pro ladění.\n")
+        sb.append("- Soubor JSONL obsahuje strukturované eventy a je vhodný pro grep/parsing (regrese).\n")
 
         file.writeText(sb.toString())
     }
@@ -158,4 +173,9 @@ object ScenarioReportWriter {
     }
 
     private fun escape(s: String): String = s.replace("\\", "\\\\").replace("\"", "\\\"")
+
+    private fun shorten(s: String): String {
+        val t = s.trim().replace("\n", " ").replace("  ", " ")
+        return if (t.length <= 180) t else t.take(177) + "…"
+    }
 }

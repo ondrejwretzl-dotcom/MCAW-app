@@ -29,7 +29,7 @@ object ScenarioCatalogFactory {
         list += motoJamSuddenBrake()
 
         return ScenarioCatalog(
-            title = "MCAW 2.0 Scenario Simulation Catalog",
+            title = "MCAW 2.0 – Katalog simulací scénářů",
             version = CATALOG_VERSION,
             scenarios = list
         )
@@ -40,14 +40,14 @@ object ScenarioCatalogFactory {
         val hazard = 4.0f
         return Scenario(
             id = "C1_CITY_PARKED_PASS_BY",
-            title = "City: parked cars pass-by at ROI edge",
+            title = "Město: průjezd kolem zaparkovaných aut na okraji ROI",
             domain = Domain.CITY,
             vehicle = Vehicle.CAR,
             notes = """
-                Rider passes a line of parked cars at the edge of ROI.
-                The detected object may appear large but has near-zero closing speed.
+                Jízda kolem řady zaparkovaných aut na okraji ROI.
+                Objekt může vypadat velký, ale má téměř nulové přibližování.
 
-                Expectation: No ORANGE/RED. This is a trust-critical anti-false-alarm scenario.
+                Očekávání: žádné ORANGE/RED (kritický anti-false-alarm scénář pro důvěru uživatele).
             """.trimIndent(),
             config = ScenarioConfig(
                 effectiveMode = 1,
@@ -59,9 +59,9 @@ object ScenarioCatalogFactory {
                 leanDeg = Float.NaN
             ),
             expectations = listOf(
-                Expectation.MustNotEnterLevel(level = 1, message = "Parked edge ROI must not trigger ORANGE."),
-                Expectation.MaxTransitionsInWindow(maxTransitions = 2, windowSec = 5f, message = "No alert flapping."),
-                Expectation.MustNotAlertWhenTtcInvalidAndRelLow(relMpsMax = 0.8f, message = "Invalid TTC with low closing speed must not alert.")
+                Expectation.MustNotEnterLevel(level = 1, message = "Zaparkovaná auta na okraji ROI nesmí spustit ORANGE."),
+                Expectation.MaxTransitionsInWindow(maxTransitions = 2, windowSec = 5f, message = "Žádné blikání/přepínání alertů."),
+                Expectation.MustNotAlertWhenTtcInvalidAndRelLow(relMpsMax = 0.8f, message = "Invalid TTC + nízké přibližování nesmí varovat.")
             ),
             segments = listOf(
                 Segment(
@@ -84,13 +84,13 @@ object ScenarioCatalogFactory {
         val hazard = 5.0f
         return Scenario(
             id = "C2_CITY_JAM_APPROACH",
-            title = "City: approach traffic jam (fast closing)",
+            title = "Město: dojezd do kolony (rychlé přibližování)",
             domain = Domain.CITY,
             vehicle = Vehicle.CAR,
             notes = """
-                Rider approaches a forming traffic jam. Closing speed remains high and TTC drops below ttcRed.
+                Dojezd do tvořící se kolony. Přibližování zůstává vysoké a TTC klesá pod ttcRed.
 
-                Expectation: ORANGE then RED (stable), derived from current mode thresholds and red combo guard.
+                Očekávání: nejdřív ORANGE, poté stabilní RED (dle prahů aktuálního módu + RED combo guard).
             """.trimIndent(),
             config = ScenarioConfig(
                 effectiveMode = 1,
@@ -99,9 +99,9 @@ object ScenarioCatalogFactory {
                 qualityWeight = 1.0f
             ),
             expectations = listOf(
-                Expectation.MustEnterLevelBy(level = 1, latestSecAfterHazard = 1.0f, hazardTimeSec = hazard, message = "Must warn quickly with ORANGE once hazard starts."),
-                Expectation.MustEnterLevelBy(level = 2, latestSecAfterHazard = 2.0f, hazardTimeSec = hazard, message = "Must reach RED for confirmed critical closing."),
-                Expectation.MaxTransitionsInWindow(maxTransitions = 4, windowSec = 5f, message = "No excessive blinking."),
+                Expectation.MustEnterLevelBy(level = 1, latestSecAfterHazard = 1.0f, hazardTimeSec = hazard, message = "Po začátku hazardu musí rychle přijít ORANGE."),
+                Expectation.MustEnterLevelBy(level = 2, latestSecAfterHazard = 2.0f, hazardTimeSec = hazard, message = "Při potvrzeném kritickém přibližování musí přijít RED."),
+                Expectation.MaxTransitionsInWindow(maxTransitions = 4, windowSec = 5f, message = "Bez nadměrného blikání."),
             ),
             segments = listOf(
                 Segment(
@@ -133,13 +133,13 @@ object ScenarioCatalogFactory {
         val hazard = 6.0f
         return Scenario(
             id = "T1_TUNNEL_EXPOSURE_DROP",
-            title = "Tunnel: exposure drop + continued closing",
+            title = "Tunel: pokles kvality obrazu + pokračující přibližování",
             domain = Domain.TUNNEL,
             vehicle = Vehicle.CAR,
             notes = """
-                Enter tunnel: qualityWeight decreases quickly, then recovers. Closing continues.
+                Vjezd do tunelu: qualityWeight rychle klesne, poté se částečně obnoví. Přibližování pokračuje.
 
-                Expectation: warning remains stable (no flapping), RED may be delayed by conservative thresholds but must occur if closing stays critical.
+                Očekávání: varování je stabilní (bez cvakání). RED se může zpozdit kvůli konzervativním prahům, ale musí nastat, pokud kritické přibližování trvá.
             """.trimIndent(),
             config = ScenarioConfig(
                 effectiveMode = 1,
@@ -148,9 +148,9 @@ object ScenarioCatalogFactory {
                 qualityWeight = 1.0f
             ),
             expectations = listOf(
-                Expectation.MustEnterLevelBy(level = 1, latestSecAfterHazard = 1.5f, hazardTimeSec = hazard, message = "ORANGE should still appear under quality drop when kinematics are dangerous."),
-                Expectation.MustEnterLevelBy(level = 2, latestSecAfterHazard = 3.5f, hazardTimeSec = hazard, message = "RED should occur if critical closing persists."),
-                Expectation.MaxTransitionsInWindow(maxTransitions = 5, windowSec = 6f, message = "Quality change must not cause excessive blinking."),
+                Expectation.MustEnterLevelBy(level = 1, latestSecAfterHazard = 1.5f, hazardTimeSec = hazard, message = "I při poklesu kvality musí přijít ORANGE, pokud je kinematika nebezpečná."),
+                Expectation.MustEnterLevelBy(level = 2, latestSecAfterHazard = 3.5f, hazardTimeSec = hazard, message = "Pokud kritické přibližování trvá, musí nastat RED."),
+                Expectation.MaxTransitionsInWindow(maxTransitions = 5, windowSec = 6f, message = "Změna kvality nesmí způsobit nadměrné cvakání."),
             ),
             segments = listOf(
                 Segment(
@@ -188,12 +188,12 @@ object ScenarioCatalogFactory {
     private fun highwaySteadyFollowing(): Scenario {
         return Scenario(
             id = "H1_HIGHWAY_STEADY_FOLLOW",
-            title = "Highway: steady follow (no alerts)",
+            title = "Dálnice: stabilní odstup (bez alertů)",
             domain = Domain.HIGHWAY,
             vehicle = Vehicle.CAR,
             notes = """
-                Highway cruise with stable distance and low closing speed.
-                This scenario exists to prevent false alarms and ensure stability.
+                Jízda po dálnici se stabilním odstupem a nízkým přibližováním.
+                Scénář brání falešným alarmům a hlídá stabilitu.
             """.trimIndent(),
             config = ScenarioConfig(
                 effectiveMode = 2, // sport/highway
@@ -202,8 +202,8 @@ object ScenarioCatalogFactory {
                 qualityWeight = 0.90f
             ),
             expectations = listOf(
-                Expectation.MustNotEnterLevel(level = 1, message = "Steady follow must remain SAFE."),
-                Expectation.MaxTransitionsInWindow(maxTransitions = 2, windowSec = 8f, message = "No spurious transitions."),
+                Expectation.MustNotEnterLevel(level = 1, message = "Stabilní odstup musí zůstat SAFE."),
+                Expectation.MaxTransitionsInWindow(maxTransitions = 2, windowSec = 8f, message = "Bez náhodných přechodů."),
             ),
             segments = listOf(
                 Segment(
@@ -224,14 +224,14 @@ object ScenarioCatalogFactory {
         val hazard = 3.0f
         return Scenario(
             id = "H2_HIGHWAY_SUDDEN_BRAKE",
-            title = "Highway: lead vehicle sudden braking",
+            title = "Dálnice: náhlé brzdění vozidla vpředu",
             domain = Domain.HIGHWAY,
             vehicle = Vehicle.CAR,
             notes = """
-                Highway closing event where the lead vehicle brakes hard.
-                We model it by a rapid TTC drop and strong closing speed. BrakeCue is active.
+                Situace na dálnici, kdy vozidlo vpředu prudce brzdí.
+                Modelujeme ji rychlým poklesem TTC a vysokým přibližováním. BrakeCue je aktivní.
 
-                Expectation: ORANGE quickly, RED after confirmation (combo guard satisfied).
+                Očekávání: ORANGE rychle, poté RED po potvrzení (combo guard splněn).
             """.trimIndent(),
             config = ScenarioConfig(
                 effectiveMode = 2,
@@ -240,15 +240,15 @@ object ScenarioCatalogFactory {
                 qualityWeight = 0.92f
             ),
             expectations = listOf(
-                Expectation.MustEnterLevelBy(level = 1, latestSecAfterHazard = 0.8f, hazardTimeSec = hazard, message = "Must warn quickly when lead brakes."),
-                Expectation.MustEnterLevelBy(level = 2, latestSecAfterHazard = 1.8f, hazardTimeSec = hazard, message = "Must reach RED for critical closing with brake cue."),
-                Expectation.MaxTransitionsInWindow(maxTransitions = 5, windowSec = 6f, message = "No alert flapping."),
+                Expectation.MustEnterLevelBy(level = 1, latestSecAfterHazard = 0.8f, hazardTimeSec = hazard, message = "Při brzdění auta vpředu musí rychle přijít ORANGE."),
+                Expectation.MustEnterLevelBy(level = 2, latestSecAfterHazard = 1.8f, hazardTimeSec = hazard, message = "Při kritickém přibližování + brake cue musí přijít RED."),
+                Expectation.MaxTransitionsInWindow(maxTransitions = 5, windowSec = 6f, message = "Bez blikání/přepínání alertů."),
             ),
             segments = listOf(
                 Segment(
                     tFromSec = 0f,
                     tToSec = hazard,
-                    label = "cruise",
+                    label = "jízda",
                     distanceM = { _ -> 60f },
                     approachSpeedMps = { _ -> 1.0f },
                     ttcSec = { _ -> 20f },
@@ -258,7 +258,7 @@ object ScenarioCatalogFactory {
                 Segment(
                     tFromSec = hazard,
                     tToSec = 8f,
-                    label = "brake event",
+                    label = "brzdění vpředu",
                     distanceM = { t -> max(10.5f, 60f - (t - hazard) * 10.0f) },
                     approachSpeedMps = { _ -> 12.0f },
                     ttcSec = { t -> max(0.7f, 2.2f - (t - hazard) * 0.35f) },
@@ -277,12 +277,12 @@ object ScenarioCatalogFactory {
         // Goal: oncoming in a curve (outside ROI corridor) must not produce alerts.
         return Scenario(
             id = "R1_RURAL_CURVE_ONCOMING",
-            title = "Rural: curve with oncoming vehicles outside ROI",
+            title = "Okreska: zatáčka + protijedoucí mimo ROI",
             domain = Domain.RURAL,
             vehicle = Vehicle.CAR,
             notes = """
-                Rural road curve. An oncoming vehicle appears but is off-center / low ROI containment.
-                Closing speed relative to rider is not meaningful for collision with the lead lane.
+                Zatáčka na okresce. Protijedoucí vozidlo se objeví mimo střed / nízké ROI containment.
+                Relativní přibližování není relevantní pro kolizi v našem pruhu.
             """.trimIndent(),
             config = ScenarioConfig(
                 effectiveMode = 1,
@@ -293,8 +293,8 @@ object ScenarioCatalogFactory {
                 egoOffsetN = 1.4f
             ),
             expectations = listOf(
-                Expectation.MustNotEnterLevel(level = 1, message = "Oncoming outside ROI must not trigger ORANGE."),
-                Expectation.MaxTransitionsInWindow(maxTransitions = 2, windowSec = 10f, message = "No spurious transitions."),
+                Expectation.MustNotEnterLevel(level = 1, message = "Protijedoucí mimo ROI nesmí spustit ORANGE."),
+                Expectation.MaxTransitionsInWindow(maxTransitions = 2, windowSec = 10f, message = "Bez náhodných přechodů."),
             ),
             segments = listOf(
                 Segment(
@@ -317,14 +317,14 @@ object ScenarioCatalogFactory {
         val hazard = 4.0f
         return Scenario(
             id = "M1_MOTO_FOLLOW_CURVE",
-            title = "Moto: follow another motorcycle in a curve",
+            title = "Motorka: motorka před motorkou v zatáčce",
             domain = Domain.RURAL,
             vehicle = Vehicle.MOTO,
             notes = """
-                Motorcyclist follows another motorcycle while leaning in a curve.
-                Detection jitter and ROI shift may occur; engine reduces gain at high lean.
+                Motorkář jede za motorkou při náklonu v zatáčce.
+                Může vznikat jitter detekce a posun ROI; engine snižuje citlivost při velkém náklonu.
 
-                Expectation: no flapping; ORANGE when closing becomes meaningful.
+                Očekávání: bez cvakání; ORANGE ve chvíli, kdy je přibližování skutečně významné.
             """.trimIndent(),
             config = ScenarioConfig(
                 effectiveMode = 1,
@@ -336,14 +336,14 @@ object ScenarioCatalogFactory {
                 leanDeg = 28f
             ),
             expectations = listOf(
-                Expectation.MustEnterLevelBy(level = 1, latestSecAfterHazard = 1.2f, hazardTimeSec = hazard, message = "Must warn when closing becomes significant, even under lean."),
-                Expectation.MaxTransitionsInWindow(maxTransitions = 5, windowSec = 8f, message = "No excessive blinking in curve."),
+                Expectation.MustEnterLevelBy(level = 1, latestSecAfterHazard = 1.2f, hazardTimeSec = hazard, message = "Při významném přibližování musí přijít ORANGE i při náklonu."),
+                Expectation.MaxTransitionsInWindow(maxTransitions = 5, windowSec = 8f, message = "V zatáčce bez nadměrného cvakání."),
             ),
             segments = listOf(
                 Segment(
                     tFromSec = 0f,
                     tToSec = hazard,
-                    label = "stable follow",
+                    label = "stabilní jízda",
                     distanceM = { _ -> 18f },
                     approachSpeedMps = { _ -> 0.7f },
                     ttcSec = { _ -> 12f },
@@ -353,7 +353,7 @@ object ScenarioCatalogFactory {
                 Segment(
                     tFromSec = hazard,
                     tToSec = 10f,
-                    label = "closing in curve",
+                    label = "přibližování v zatáčce",
                     distanceM = { t -> max(7.0f, 18f - (t - hazard) * 2.3f) },
                     approachSpeedMps = { _ -> 6.0f },
                     ttcSec = { t -> max(0.9f, 2.8f - (t - hazard) * 0.25f) },
@@ -369,12 +369,12 @@ object ScenarioCatalogFactory {
         val hazard = 3.5f
         return Scenario(
             id = "M2_MOTO_JAM_SUDDEN_BRAKE",
-            title = "Moto: sudden braking ahead",
+            title = "Motorka: náhlé brzdění vpředu",
             domain = Domain.CITY,
             vehicle = Vehicle.MOTO,
             notes = """
-                Motorcyclist approaches a slow/stopped vehicle with a sudden braking event.
-                Smaller target + jitter should not prevent critical warning.
+                Motorkář dojíždí pomalé/stojící vozidlo s náhlým brzděním vpředu.
+                Menší target + jitter nesmí zabránit kritickému varování.
             """.trimIndent(),
             config = ScenarioConfig(
                 effectiveMode = 1,
@@ -386,15 +386,15 @@ object ScenarioCatalogFactory {
                 leanDeg = 10f
             ),
             expectations = listOf(
-                Expectation.MustEnterLevelBy(level = 1, latestSecAfterHazard = 0.9f, hazardTimeSec = hazard, message = "Must warn quickly (ORANGE)."),
-                Expectation.MustEnterLevelBy(level = 2, latestSecAfterHazard = 2.2f, hazardTimeSec = hazard, message = "Must reach RED for confirmed critical closing."),
-                Expectation.MaxTransitionsInWindow(maxTransitions = 6, windowSec = 8f, message = "No excessive blinking."),
+                Expectation.MustEnterLevelBy(level = 1, latestSecAfterHazard = 0.9f, hazardTimeSec = hazard, message = "Musí rychle přijít ORANGE."),
+                Expectation.MustEnterLevelBy(level = 2, latestSecAfterHazard = 2.2f, hazardTimeSec = hazard, message = "Při potvrzeném kritickém přibližování musí přijít RED."),
+                Expectation.MaxTransitionsInWindow(maxTransitions = 6, windowSec = 8f, message = "Bez nadměrného cvakání."),
             ),
             segments = listOf(
                 Segment(
                     tFromSec = 0f,
                     tToSec = hazard,
-                    label = "approach",
+                    label = "dojezd",
                     distanceM = { _ -> 30f },
                     approachSpeedMps = { _ -> 1.5f },
                     ttcSec = { _ -> 15f },
@@ -404,7 +404,7 @@ object ScenarioCatalogFactory {
                 Segment(
                     tFromSec = hazard,
                     tToSec = 9f,
-                    label = "critical closing",
+                    label = "kritické přibližování",
                     distanceM = { t -> max(7.5f, 30f - (t - hazard) * 5.5f) },
                     approachSpeedMps = { _ -> 9.0f },
                     ttcSec = { t -> max(0.75f, 2.6f - (t - hazard) * 0.32f) },
