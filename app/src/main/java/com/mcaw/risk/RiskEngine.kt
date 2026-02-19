@@ -376,7 +376,9 @@ class RiskEngine {
     private fun thresholdsForMode(mode: Int): Thresholds {
         // 1 = Město, 2 = Sport, 3 = Uživatel (Auto is resolved before calling)
         return when (mode) {
-            2 -> Thresholds(ttcOrange = 4.0f, ttcRed = 1.5f, distOrange = 30f, distRed = 12f, relOrange = 5f, relRed = 9f)
+            // Pozn.: Red TTC bylo zvednuto, aby CRITICAL přišel dřív (produkční použitelnost).
+            // Orange zůstává výše pro „heads‑up“ bez zbytečného obtěžování.
+            2 -> Thresholds(ttcOrange = 4.0f, ttcRed = 2.2f, distOrange = 30f, distRed = 12f, relOrange = 5f, relRed = 9f)
             3 -> Thresholds(
                 ttcOrange = com.mcaw.config.AppPreferences.userTtcOrange,
                 ttcRed = com.mcaw.config.AppPreferences.userTtcRed,
@@ -385,7 +387,7 @@ class RiskEngine {
                 relOrange = com.mcaw.config.AppPreferences.userSpeedOrange,
                 relRed = com.mcaw.config.AppPreferences.userSpeedRed
             )
-            else -> Thresholds(ttcOrange = 3.0f, ttcRed = 1.2f, distOrange = 15f, distRed = 8f, relOrange = 3f, relRed = 5f)
+            else -> Thresholds(ttcOrange = 3.0f, ttcRed = 2.0f, distOrange = 15f, distRed = 8f, relOrange = 3f, relRed = 5f)
         }
     }
 
