@@ -347,7 +347,36 @@ private fun updateCutInState(tsMs: Long, box: Box, frameW: Float, frameH: Float)
                     "frame imageProxy=${image.width}x${image.height} rot=$rotation rotFrame=${frameWRotI}x${frameHRotI}"
                 )
             }
-val riderSpeedRawMps = speedProvider.getCurrent().speedMps
+
+            // IMU snapshot early: used both for RiskEngine and for speed fallback during GPS/BLE outages.
+            val imu = imuMonitor.snapshot(tsMs)
+
+            // Speed reading (GPS/BLE). In tunnels GPS can drop; keep continuity similarly to navigation:
+            // - use hold-last (already in SpeedProvider)
+            // - extend with short IMU-assisted decel fallback (no map, offline)
+            val speedReading = speedProvider.getCurrent()
+            val riderSpeedRawMps = run {
+                val v = speedReading.speedMps
+                if (v.isFinite() && v >= 0f) return@run v
+
+                // Fallback: if we had a recent speed, keep it and apply only braking-based decel.
+                val lastV = AppPreferences.lastSpeedMps
+                val lastTsEl = AppPreferences.lastSpeedElapsedMs
+                val nowEl = SystemClock.elapsedRealtime()
+
+                if (lastV.isFinite() && lastV >= 0f && lastTsEl > 0L) {
+                    val ageMs = nowEl - lastTsEl
+                    if (ageMs in 1L..12_000L) {
+                        val dtSec = ageMs.toFloat() / 1000f
+                        // Conservative: only decelerate based on IMU brake confidence; never accelerate.
+                        val decel = 2.8f * imu.brakeConfidence.coerceIn(0f, 1f) // m/s^2, ~0.28g max
+                        return@run (lastV - decel * dtSec).coerceAtLeast(0f)
+                    }
+                }
+
+                Float.NaN
+            }
+
             val riderSpeedMps = smoothRiderSpeed(riderSpeedRawMps)
 
 // Frame quality assessment (fast heuristics on Y plane).
@@ -585,9 +614,6 @@ val distanceScaled =
             val riderSpeedKnown = riderSpeedMps.isFinite()
 val riderStanding = riderSpeedKnown && riderSpeedMps <= (6.0f / 3.6f) // < 6 km/h (město/kolony)
 
-// IMU: ego brzdění + náklon (volitelně; když není validní -> NaN/0)
-val imu = imuMonitor.snapshot(tsMs)
-
 // ROI weight (0..1) pro RiskEngine
 val roiContainment = containmentRatioInTrapezoid(bestBox, roiTrap.pts).coerceIn(0f, 1f)
 val egoOffset = egoOffsetInRoiN(bestBox, frameW, frameH).coerceIn(0f, 2f)
@@ -684,7 +710,7 @@ sendOverlayUpdate(
                     "box=${bestBox.x1},${bestBox.y1},${bestBox.x2},${bestBox.y2} " +
                     "distRaw=${distanceRaw ?: Float.NaN} dist=$distanceM " +
                     "relSigned=$relSpeedSigned relApp=$approachSpeedFromDist " +
-                    "riderRaw=$riderSpeedRawMps rider=$riderSpeedMps obj=$objectSpeedMps " +
+                    "riderRaw=$riderSpeedRawMps rider=$riderSpeedMps src=${speedReading.source} conf=${speedReading.confidence} obj=$objectSpeedMps " +
                     "ttcH=${ttcFromHeightsHeld ?: Float.NaN} ttcD=$ttcFromDist ttc=$ttc"
             )
 

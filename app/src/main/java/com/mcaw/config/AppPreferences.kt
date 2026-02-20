@@ -12,6 +12,15 @@ object AppPreferences {
     @Volatile
     var lastSpeedMps: Float = 0f
 
+    /**
+     * Timestamp (elapsedRealtime ms) for lastSpeedMps.
+     * Used for short GPS/BLE outages (tunnel-like) to keep speed continuity.
+     *
+     * NOTE: Runtime-only (not persisted). It is safe to reset on app restart.
+     */
+    @Volatile
+    var lastSpeedElapsedMs: Long = 0L
+
     @Volatile
     var cameraFocalLengthMm: Float = Float.NaN
 

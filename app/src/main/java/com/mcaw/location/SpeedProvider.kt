@@ -69,6 +69,8 @@ class SpeedProvider(private val context: Context) {
         // Keep preferences stable; don't overwrite lastSpeedMps with NaN.
         if (held.speedMps.isFinite()) {
             AppPreferences.lastSpeedMps = held.speedMps
+            // elapsedRealtime timestamp (same clock as sources)
+            AppPreferences.lastSpeedElapsedMs = held.timestampMs
         }
 
         return held
