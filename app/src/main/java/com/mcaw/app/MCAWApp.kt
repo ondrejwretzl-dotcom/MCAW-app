@@ -5,6 +5,7 @@ import android.speech.tts.TextToSpeech
 import android.util.Log
 import com.mcaw.util.PublicLogWriter
 import com.mcaw.config.AppPreferences
+import com.mcaw.ai.AlertNotifier
 import java.io.File
 import java.io.PrintWriter
 import java.io.StringWriter
@@ -63,6 +64,9 @@ class MCAWApp : Application(), TextToSpeech.OnInitListener {
                 Log.e("MCAWApp", "TTS init failed", e)
             }
         }
+
+        // P1/M1: warm-up in-app audio (SoundPools + silent TTS) to reduce first-alert latency.
+        runCatching { AlertNotifier.initAudio(this) }
     }
 
     override fun onTerminate() {
