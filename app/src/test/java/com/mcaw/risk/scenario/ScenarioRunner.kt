@@ -138,7 +138,13 @@ object ScenarioRunner {
                         f.ttcSec.isFinite() && f.ttcSec > 0f && f.ttcSec <= thrSec
                     }
                     if (crossIdx < 0) {
-                        out.add(Verdict(false, e.message, "TTC nikdy nekleslo pod ${e.threshold} (${fmt(thrSec)} s)", null))
+                        out.add(
+                            Verdict(
+                                ok = false,
+                                rule = e.message,
+                                details = "TTC nikdy nekleslo pod ${e.threshold} (thr=${fmt(thrSec)}s)."
+                            )
+                        )
                     } else {
                         val tCross = frames[crossIdx].tSec
                         val latest = tCross + e.latestDelaySec
@@ -150,7 +156,7 @@ object ScenarioRunner {
                             append(", entered=").append(if (tEnter == null) "nikdy" else fmt(tEnter) + "s")
                             append(", thr=").append(fmt(thrSec)).append("s")
                         }
-                        out.add(Verdict(ok, e.message, detail, null))
+                        out.add(Verdict(ok = ok, rule = e.message, details = detail))
                     }
                 }
 
