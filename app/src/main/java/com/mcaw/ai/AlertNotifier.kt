@@ -384,7 +384,7 @@ object AlertNotifier {
         var focusOk = requestAlertAudioFocus(am, gain = p1.gain, usage = p1.usage)
         beginAudioHold(am, p1.stream, scalar = scalar, reason = if (critical) "red" else "orange")
 
-        var played = playViaPool(resId, p1, scalar)
+        var played = playViaPoolOrMedia(context, resId, p1, scalar)
 
         // Fallback "proražení" for BOTH ORANGE and RED:
         // If BT is present and primary is MEDIA but focus denied or playback failed, retry with PRIME.
@@ -395,7 +395,7 @@ object AlertNotifier {
             abandonAlertAudioFocus(am)
             focusOk = requestAlertAudioFocus(am, gain = p2.gain, usage = p2.usage)
             beginAudioHold(am, p2.stream, scalar = scalar, reason = "fallback")
-            played = playViaPool(resId, p2, scalar)
+            played = playViaPoolOrMedia(context, resId, p2, scalar)
             usedFallback = true
             logAudioEvent(
                 kind = "snd_fallback",
@@ -489,18 +489,54 @@ object AlertNotifier {
             .build()
     }
 
-    private fun playViaPool(resId: Int, policy: AudioPolicy, scalar: Float): Boolean {
+    /**
+     * Low-latency attempt via SoundPool. If not ready yet (load async) or play fails,
+     * fall back to MediaPlayer so alerts are never silently dropped (important when BT is off).
+     */
+    private fun playViaPoolOrMedia(context: Context, resId: Int, policy: AudioPolicy, scalar: Float): Boolean {
         val (pool, sid) = when (policy.route) {
             ROUTE_BT_MEDIA -> poolMedia to if (resId == R.raw.red_alert) sndRedMedia else sndBeepMedia
             ROUTE_BT_PRIME -> poolPrime to if (resId == R.raw.red_alert) sndRedPrime else sndBeepPrime
             else -> poolAlarm to if (resId == R.raw.red_alert) sndRedAlarm else sndBeepAlarm
         }
         val p = pool
-        if (p == null || sid == 0) return false
+        if (p == null || sid == 0) {
+            return playViaMediaPlayer(context, resId, policy.usage, scalar)
+        }
         val v = scalar.coerceIn(0f, 1f)
         // Play returns streamId (0 == fail)
         val streamId = runCatching { p.play(sid, v, v, 1, 0, 1f) }.getOrDefault(0)
-        return streamId != 0
+        if (streamId != 0) return true
+
+        // If SoundPool isn't ready yet (common right after cold start), do a safe fallback.
+        return playViaMediaPlayer(context, resId, policy.usage, scalar)
+    }
+
+    private fun playViaMediaPlayer(context: Context, resId: Int, usage: Int, scalar: Float): Boolean {
+        val v = scalar.coerceIn(0f, 1f)
+        return try {
+            // Recreate player for deterministic routing. This is on alert path, not frame loop.
+            alertPlayer?.release()
+            alertPlayer = MediaPlayer.create(context.applicationContext, resId)
+            val mp = alertPlayer ?: return false
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                val attrs = AudioAttributes.Builder()
+                    .setUsage(usage)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build()
+                runCatching { mp.setAudioAttributes(attrs) }
+            }
+            runCatching { mp.setVolume(v, v) }
+            mp.setOnCompletionListener {
+                runCatching { it.release() }
+                if (alertPlayer === it) alertPlayer = null
+            }
+            mp.start()
+            true
+        } catch (_: Throwable) {
+            false
+        }
     }
 
     private fun requestAlertAudioFocus(am: AudioManager, gain: Int, usage: Int): Boolean {
@@ -532,7 +568,11 @@ object AlertNotifier {
             @Suppress("DEPRECATION")
             audioFocusGranted = (am.requestAudioFocus(
                 null,
-                AudioManager.STREAM_RING,
+                when (usage) {
+                    USAGE_MEDIA -> AudioManager.STREAM_MUSIC
+                    USAGE_ALARM -> AudioManager.STREAM_ALARM
+                    else -> AudioManager.STREAM_RING
+                },
                 gain
             ) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
             if (audioFocusGranted) {

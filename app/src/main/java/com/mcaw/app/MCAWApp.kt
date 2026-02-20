@@ -5,6 +5,7 @@ import android.speech.tts.TextToSpeech
 import android.util.Log
 import com.mcaw.util.PublicLogWriter
 import com.mcaw.config.AppPreferences
+import com.mcaw.config.ProfileManager
 import com.mcaw.ai.AlertNotifier
 import java.io.File
 import java.io.PrintWriter
@@ -43,6 +44,13 @@ class MCAWApp : Application(), TextToSpeech.OnInitListener {
 
         // Preferences
         AppPreferences.init(this)
+
+        // Profiles: apply active mount snapshot early so ALL UI / preview / service use the same framing (zoom)
+        // and calibration parameters.
+        runCatching {
+            ProfileManager.ensureInit(this)
+            ProfileManager.applyActiveProfileToPreferences()
+        }
 
         // IO executor
         ioExecutor = Executors.newSingleThreadExecutor { r ->
