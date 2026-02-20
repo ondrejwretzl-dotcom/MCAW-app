@@ -54,6 +54,7 @@ class SettingsActivity : ComponentActivity() {
         val spProfileSelect = findViewById<Spinner?>(R.id.spProfileSelect)
         val btnProfileCreate = findViewById<View?>(R.id.btnProfileCreate)
         val btnProfileDelete = findViewById<View?>(R.id.btnProfileDelete)
+        val btnProfileOverwrite = findViewById<View?>(R.id.btnProfileOverwrite)
         val btnProfileClear = findViewById<View?>(R.id.btnProfileClear)
         var refreshMountUiFromPrefs: (() -> Unit)? = null
 
@@ -132,6 +133,37 @@ class SettingsActivity : ComponentActivity() {
                     refreshProfilesAndSelection()
                     Toast.makeText(this, "Profil smazán", Toast.LENGTH_SHORT).show()
                     writeSessionLog("Profile deleted id=$activeId")
+                }
+                .setNegativeButton("Zrušit", null)
+                .show()
+        }
+
+        btnProfileOverwrite?.setOnClickListener {
+            val activeId = ProfileManager.getActiveProfileIdOrNull()
+            if (activeId.isNullOrBlank()) {
+                showInfo("Přepsat profil", "Není vybraný žádný profil. Vyber profil ve spinneru.")
+                return@setOnClickListener
+            }
+            val name = ProfileManager.findById(activeId)?.name ?: "?"
+            AlertDialog.Builder(this)
+                .setTitle("Přepsat aktivní profil")
+                .setMessage(
+                    "Přepsat profil „$name“ aktuálními hodnotami ROI + kalibrace?\n\n" +
+                        "Použij, když jsi profil upravil a chceš ho uložit zpět (ne vytvářet nový)."
+                )
+                .setPositiveButton("Přepsat") { _, _ ->
+                    val updated = ProfileManager.overwriteProfileFromCurrentPrefs(activeId)
+                    if (updated == null) {
+                        Toast.makeText(this, "Profil nebyl nalezen", Toast.LENGTH_SHORT).show()
+                        writeSessionLog("Profile overwrite failed id=$activeId")
+                    } else {
+                        ProfileManager.setActiveProfileId(updated.id)
+                        ProfileManager.applyActiveProfileToPreferences()
+                        refreshMountUiFromPrefs?.invoke()
+                        refreshProfilesAndSelection()
+                        Toast.makeText(this, "Profil přepsán: ${updated.name}", Toast.LENGTH_SHORT).show()
+                        writeSessionLog("Profile overwritten id=${updated.id} name=${updated.name}")
+                    }
                 }
                 .setNegativeButton("Zrušit", null)
                 .show()

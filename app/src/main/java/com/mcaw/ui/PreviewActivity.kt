@@ -445,12 +445,47 @@ class PreviewActivity : ComponentActivity() {
     }
 
     private fun showSaveProfileDialog() {
+        val activeId = ProfileManager.getActiveProfileIdOrNull()
+        if (!activeId.isNullOrBlank()) {
+            val activeName = ProfileManager.findById(activeId)?.name ?: "?"
+            val actions = arrayOf(
+                "Přepsat aktivní profil: $activeName",
+                "Uložit jako nový profil"
+            )
+            AlertDialog.Builder(this)
+                .setTitle("Uložit profil")
+                .setItems(actions) { _, which ->
+                    when (which) {
+                        0 -> {
+                            val updated = ProfileManager.overwriteProfileFromCurrentPrefs(activeId)
+                            if (updated == null) {
+                                Toast.makeText(this, "Profil nebyl nalezen", Toast.LENGTH_SHORT).show()
+                                logActivity("profile_overwrite_failed id=$activeId")
+                            } else {
+                                ProfileManager.setActiveProfileId(updated.id)
+                                updateActiveProfileLabel()
+                                Toast.makeText(this, "Profil přepsán: ${updated.name}", Toast.LENGTH_SHORT).show()
+                                logActivity("profile_overwritten id=${updated.id} name=${updated.name}")
+                            }
+                        }
+                        else -> showSaveNewProfileDialog()
+                    }
+                }
+                .setNegativeButton("Zrušit", null)
+                .show()
+            return
+        }
+
+        showSaveNewProfileDialog()
+    }
+
+    private fun showSaveNewProfileDialog() {
         val input = EditText(this).apply {
             hint = "Název profilu"
             setSingleLine()
         }
         AlertDialog.Builder(this)
-            .setTitle("Uložit profil")
+            .setTitle("Uložit nový profil")
             .setMessage("Uloží aktuální ROI + kalibraci (výška, sklon, distance scale, lane offset).")
             .setView(input)
             .setPositiveButton("Uložit") { _, _ ->

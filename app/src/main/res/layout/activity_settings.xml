@@ -188,6 +188,15 @@
                 </LinearLayout>
 
                 <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnProfileOverwrite"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp"
+                    android:layout_marginTop="10dp"
+                    android:text="Přepsat aktivní profil"
+                    android:textAllCaps="false"
+                    app:cornerRadius="14dp" />
+
+                <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnProfileClear"
                     android:layout_width="match_parent"
                     android:layout_height="44dp"
