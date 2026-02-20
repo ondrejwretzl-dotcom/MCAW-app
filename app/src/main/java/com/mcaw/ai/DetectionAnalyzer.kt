@@ -41,6 +41,8 @@ class DetectionAnalyzer(
         const val EXTRA_SPEED = "extra_speed" // REL = approach speed (m/s), always >= 0
         const val EXTRA_OBJECT_SPEED = "extra_object_speed" // OBJ speed estimate (m/s) = rider - relSigned
         const val EXTRA_RIDER_SPEED = "extra_rider_speed" // RID speed (m/s)
+        const val EXTRA_RIDER_SPEED_SOURCE = "extra_rider_speed_source" // ordinal of SpeedProvider.Source
+        const val EXTRA_RIDER_SPEED_CONFIDENCE = "extra_rider_speed_confidence" // 0..1
         const val EXTRA_LEVEL = "extra_level"
         const val EXTRA_LABEL = "extra_label"
         const val EXTRA_BRAKE_CUE = "extra_brake_cue"
@@ -355,6 +357,17 @@ private fun updateCutInState(tsMs: Long, box: Box, frameW: Float, frameH: Float)
             // - use hold-last (already in SpeedProvider)
             // - extend with short IMU-assisted decel fallback (no map, offline)
             val speedReading = speedProvider.getCurrent()
+            val nowEl = SystemClock.elapsedRealtime()
+
+            // Derived rider speed + confidence/source for downstream gating and UI.
+            var riderSpeedSourceOrdinal = speedReading.source.ordinal
+            var riderSpeedConfidence = if (speedReading.speedMps.isFinite() && speedReading.speedMps >= 0f) {
+                speedReading.confidence.coerceIn(0f, 1f)
+            } else {
+                0f
+            }
+            var riderSpeedAgeMs = if (speedReading.timestampMs > 0L) (nowEl - speedReading.timestampMs).coerceAtLeast(0L) else 0L
+
             val riderSpeedRawMps = run {
                 val v = speedReading.speedMps
                 if (v.isFinite() && v >= 0f) return@run v
@@ -362,7 +375,6 @@ private fun updateCutInState(tsMs: Long, box: Box, frameW: Float, frameH: Float)
                 // Fallback: if we had a recent speed, keep it and apply only braking-based decel.
                 val lastV = AppPreferences.lastSpeedMps
                 val lastTsEl = AppPreferences.lastSpeedElapsedMs
-                val nowEl = SystemClock.elapsedRealtime()
 
                 if (lastV.isFinite() && lastV >= 0f && lastTsEl > 0L) {
                     val ageMs = nowEl - lastTsEl
@@ -370,6 +382,14 @@ private fun updateCutInState(tsMs: Long, box: Box, frameW: Float, frameH: Float)
                         val dtSec = ageMs.toFloat() / 1000f
                         // Conservative: only decelerate based on IMU brake confidence; never accelerate.
                         val decel = 2.8f * imu.brakeConfidence.coerceIn(0f, 1f) // m/s^2, ~0.28g max
+
+                        // Fallback is treated as SENSOR (low confidence) to prevent false "standing" / mode flips.
+                        riderSpeedSourceOrdinal = SpeedProvider.Source.SENSOR.ordinal
+                        // Confidence decays with age; boosted slightly by brakeConfidence (we're more sure when braking).
+                        val ageK = (1f - (ageMs.toFloat() / 12_000f)).coerceIn(0f, 1f)
+                        val imuK = (0.15f + 0.35f * imu.brakeConfidence.coerceIn(0f, 1f)).coerceIn(0f, 0.50f)
+                        riderSpeedConfidence = (imuK * ageK).coerceIn(0f, 0.50f)
+                        riderSpeedAgeMs = ageMs.coerceAtLeast(0L)
                         return@run (lastV - decel * dtSec).coerceAtLeast(0f)
                     }
                 }
@@ -607,12 +627,19 @@ val distanceScaled =
             val objectSpeedMps =
                 if (riderSpeedMps.isFinite()) (riderSpeedMps - relSpeedSigned) else Float.POSITIVE_INFINITY
 
-            val modeRes = autoModeSwitcher.resolve(AppPreferences.detectionMode, riderSpeedMps, lastAlertLevel, tsMs)
+            val modeRes = autoModeSwitcher.resolve(
+                selectedMode = AppPreferences.detectionMode,
+                riderSpeedMps = riderSpeedMps,
+                riderSpeedConfidence = riderSpeedConfidence,
+                lastAlertLevel = lastAlertLevel,
+                nowMs = tsMs
+            )
             if (modeRes.changed) {
                 flog("auto_mode effective=${'$'}{modeName(modeRes.effectiveMode)} reason=${'$'}{modeRes.reason}", force = true)
             }
             val riderSpeedKnown = riderSpeedMps.isFinite()
-val riderStanding = riderSpeedKnown && riderSpeedMps <= (6.0f / 3.6f) // < 6 km/h (město/kolony)
+            // Standing gating must NOT trigger on low-confidence tunnel fallback.
+            val riderStanding = riderSpeedKnown && riderSpeedConfidence >= 0.70f && riderSpeedMps <= (6.0f / 3.6f) // < 6 km/h
 
 // ROI weight (0..1) pro RiskEngine
 val roiContainment = containmentRatioInTrapezoid(bestBox, roiTrap.pts).coerceIn(0f, 1f)
@@ -635,6 +662,7 @@ val risk = if (riderStanding) {
         brakeCueStrength = brakeCue.strength,
 	        qualityWeight = qualityWeight,
         riderSpeedMps = riderSpeedMps,
+        riderSpeedConfidence = riderSpeedConfidence,
         egoBrakingConfidence = imu.brakeConfidence,
         leanDeg = imu.leanDeg
     )
@@ -688,6 +716,9 @@ sendOverlayUpdate(
                 approachSpeed = approachSpeedMps,
                 objectSpeed = objectSpeedMps,
                 riderSpeed = riderSpeedMps,
+                riderSpeedSourceOrdinal = riderSpeedSourceOrdinal,
+                riderSpeedConfidence = riderSpeedConfidence,
+                riderSpeedAgeMs = riderSpeedAgeMs,
                 ttc = ttc,
                 label = label,
                 brakeCue = brakeCue.active,
@@ -719,6 +750,8 @@ sendOverlayUpdate(
                 approachSpeed = approachSpeedMps,
                 objectSpeed = objectSpeedMps,
                 riderSpeed = riderSpeedMps,
+                riderSpeedSourceOrdinal = riderSpeedSourceOrdinal,
+                riderSpeedConfidence = riderSpeedConfidence,
                 ttc = ttc,
                 level = level,
                 label = label,
@@ -815,6 +848,9 @@ if (AppPreferences.debugOverlay) {
         approachSpeed: Float,
         objectSpeed: Float,
         riderSpeed: Float,
+        riderSpeedSourceOrdinal: Int = 0,
+        riderSpeedConfidence: Float = 0f,
+        riderSpeedAgeMs: Long = 0L,
         ttc: Float,
         label: String,
         brakeCue: Boolean,
@@ -847,6 +883,9 @@ if (AppPreferences.debugOverlay) {
         i.putExtra("speed", approachSpeed) // REL (approach)
         i.putExtra("object_speed", objectSpeed) // OBJ
         i.putExtra("rider_speed", riderSpeed) // RID
+        i.putExtra("rider_speed_src", riderSpeedSourceOrdinal)
+        i.putExtra("rider_speed_conf", riderSpeedConfidence)
+        i.putExtra("rider_speed_age_ms", riderSpeedAgeMs)
         i.putExtra("ttc", ttc)
         i.putExtra("label", label)
         i.putExtra("brake_cue", brakeCue)
@@ -891,6 +930,8 @@ if (AppPreferences.debugOverlay) {
         approachSpeed: Float,
         objectSpeed: Float,
         riderSpeed: Float,
+        riderSpeedSourceOrdinal: Int = 0,
+        riderSpeedConfidence: Float = 0f,
         ttc: Float,
         level: Int,
         label: String,
@@ -911,6 +952,8 @@ if (AppPreferences.debugOverlay) {
         i.putExtra(EXTRA_SPEED, approachSpeed)
         i.putExtra(EXTRA_OBJECT_SPEED, objectSpeed)
         i.putExtra(EXTRA_RIDER_SPEED, riderSpeed)
+        i.putExtra(EXTRA_RIDER_SPEED_SOURCE, riderSpeedSourceOrdinal)
+        i.putExtra(EXTRA_RIDER_SPEED_CONFIDENCE, riderSpeedConfidence)
         i.putExtra(EXTRA_TTC, ttc)
         i.putExtra(EXTRA_LEVEL, level)
         i.putExtra(EXTRA_LABEL, label)

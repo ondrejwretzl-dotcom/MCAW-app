@@ -183,6 +183,27 @@ class OverlayView @JvmOverloads constructor(
             invalidate()
         }
 
+    /** Rider speed source (ordinal of SpeedProvider.Source). Debug-only. */
+    var riderSpeedSourceOrdinal: Int = 0
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    /** Rider speed confidence 0..1. Debug-only. */
+    var riderSpeedConfidence: Float = 0f
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    /** Rider speed age (ms) from selected source timestamp. Debug-only. */
+    var riderSpeedAgeMs: Long = 0L
+        set(value) {
+            field = value
+            invalidate()
+        }
+
     /** 0=SAFE, 1=ORANGE, 2=RED (z DetectionAnalyzer). */
     var alertLevel: Int = 0
         set(value) {
@@ -374,6 +395,16 @@ class OverlayView @JvmOverloads constructor(
             if (speed.isFinite() && speed >= 0f) add("REL  %.1f km/h".format(speed * 3.6f))
             if (objectSpeed.isFinite() && objectSpeed >= 0f) add("OBJ  %.1f km/h".format(objectSpeed * 3.6f))
             if (riderSpeed.isFinite() && riderSpeed >= 0f) add("RID  %.1f km/h".format(riderSpeed * 3.6f))
+            if (riderSpeedConfidence > 0f || riderSpeedSourceOrdinal != 0 || riderSpeedAgeMs > 0L) {
+                val src = when (riderSpeedSourceOrdinal) {
+                    0 -> "BLE"
+                    1 -> "GPS"
+                    2 -> "IMU"
+                    else -> "UNK"
+                }
+                val ageS = (riderSpeedAgeMs.toFloat() / 1000f).coerceAtLeast(0f)
+                add("SPD  $src  c=%.2f  age=%.1fs".format(riderSpeedConfidence.coerceIn(0f, 1f), ageS))
+            }
             if (ttc.isFinite() && ttc >= 0f) add("TTC  %.2f s".format(ttc))
             if (riskScore.isFinite()) add("RISK %.2f".format(riskScore))
             if (alertLevel > 0 && alertReason.isNotBlank()) add("WHY  " + alertReason)

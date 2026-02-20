@@ -34,7 +34,13 @@ object DetectionModePolicy {
         private var lastSwitchMs: Long = 0L
         private var lastAlertMs: Long = 0L
 
-        fun resolve(selectedMode: Int, riderSpeedMps: Float, lastAlertLevel: Int, nowMs: Long): Resolution {
+        fun resolve(
+            selectedMode: Int,
+            riderSpeedMps: Float,
+            riderSpeedConfidence: Float,
+            lastAlertLevel: Int,
+            nowMs: Long
+        ): Resolution {
             // Non-auto: direct mapping (city/sport/user)
             if (selectedMode != AppPreferences.MODE_AUTO) {
                 val eff = selectedMode.coerceIn(AppPreferences.MODE_AUTO, AppPreferences.MODE_USER)
@@ -50,8 +56,9 @@ object DetectionModePolicy {
             // Remember last alert timestamp to prevent toggling right after it clears.
             if (lastAlertLevel > 0) lastAlertMs = nowMs
 
-            // If speed unknown, be conservative.
-            val kmh = if (riderSpeedMps.isFinite()) riderSpeedMps * 3.6f else Float.NaN
+            // If speed unknown / low-confidence (tunnel fallback), be conservative and avoid mode flip.
+            val speedOk = riderSpeedMps.isFinite() && riderSpeedMps >= 0f && riderSpeedConfidence >= 0.60f
+            val kmh = if (speedOk) riderSpeedMps * 3.6f else Float.NaN
             val up = switchCenterKmh + hysteresisKmh
             val down = switchCenterKmh - hysteresisKmh
 

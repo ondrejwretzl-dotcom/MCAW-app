@@ -83,6 +83,7 @@ class RiskEngine {
         const val BIT_TTC_SLOPE_STRONG = 1 shl 9
         const val BIT_RED_COMBO_OK = 1 shl 10
         const val BIT_RED_GUARDED = 1 shl 11
+        const val BIT_SPEED_LOWCONF = 1 shl 12
 
         fun reasonVersion(reasonBits: Int): Int = (reasonBits ushr REASON_BITS_VERSION_SHIFT) and 0xF
 
@@ -141,6 +142,7 @@ class RiskEngine {
             if ((payload and BIT_CUT_IN) != 0) sb.append("CUT_IN ")
             if ((payload and BIT_EGO_BRAKE) != 0) sb.append("EGO_BRAKE ")
             if ((payload and BIT_QUALITY_CONSERV) != 0) sb.append("QCONSERV ")
+            if ((payload and BIT_SPEED_LOWCONF) != 0) sb.append("SPD_LOW ")
             if ((payload and BIT_RED_COMBO_OK) != 0) sb.append("RED_OK ")
             if ((payload and BIT_RED_GUARDED) != 0) sb.append("RED_GUARD ")
             // trim trailing space
@@ -217,6 +219,7 @@ class RiskEngine {
         // 1.0 = full confidence, lower values = more conservative thresholds and lower gain.
         qualityWeight: Float = 1f,
         riderSpeedMps: Float,
+        riderSpeedConfidence: Float,
         egoBrakingConfidence: Float, // 0..1
         leanDeg: Float              // deg, NaN if unknown
     ): Result {
@@ -334,11 +337,13 @@ class RiskEngine {
             if (cutInActive) bits = bits or BIT_CUT_IN
             if (egoBrake >= 0.65f) bits = bits or BIT_EGO_BRAKE
             if (conserv >= 0.15f) bits = bits or BIT_QUALITY_CONSERV
+            if (riderSpeedConfidence < 0.60f) bits = bits or BIT_SPEED_LOWCONF
             if (slopeStrong) bits = bits or BIT_TTC_SLOPE_STRONG
             if (level == 2 && allowRed) bits = bits or BIT_RED_COMBO_OK
             if (level == 1 && preGuardLevel == 2 && !allowRed) bits = bits or BIT_RED_GUARDED
         } else {
             if (conserv >= 0.15f) bits = bits or BIT_QUALITY_CONSERV
+            if (riderSpeedConfidence < 0.60f) bits = bits or BIT_SPEED_LOWCONF
         }
 
         // --- D2-3: Audit invariants (O(1), no allocations) ---

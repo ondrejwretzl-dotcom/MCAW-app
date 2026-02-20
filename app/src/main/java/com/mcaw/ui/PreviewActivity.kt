@@ -97,6 +97,9 @@ class PreviewActivity : ComponentActivity() {
                 overlay.speed = -1f
                 overlay.objectSpeed = -1f
                 overlay.riderSpeed = -1f
+                overlay.riderSpeedSourceOrdinal = 0
+                overlay.riderSpeedConfidence = 0f
+                overlay.riderSpeedAgeMs = 0L
                 overlay.ttc = -1f
                 overlay.label = ""
                 overlay.alertLevel = 0
@@ -124,6 +127,9 @@ class PreviewActivity : ComponentActivity() {
             overlay.speed = i.getFloatExtra("speed", -1f) // REL (approach)
             overlay.objectSpeed = i.getFloatExtra("object_speed", -1f) // OBJ
             overlay.riderSpeed = i.getFloatExtra("rider_speed", -1f) // RID
+            overlay.riderSpeedSourceOrdinal = i.getIntExtra("rider_speed_src", 0)
+            overlay.riderSpeedConfidence = i.getFloatExtra("rider_speed_conf", 0f)
+            overlay.riderSpeedAgeMs = i.getLongExtra("rider_speed_age_ms", 0L)
             overlay.ttc = i.getFloatExtra("ttc", -1f)
             overlay.alertLevel = i.getIntExtra("alert_level", 0)
             val legacyReason = i.getStringExtra("alert_reason") ?: ""

@@ -39,6 +39,7 @@ class RiskEngineScenarioTest {
                 brakeCueStrength = f.brakeCue.coerceIn(0f, 1f),
                 qualityWeight = f.qW,
                 riderSpeedMps = 10f,
+                riderSpeedConfidence = 1f,
                 egoBrakingConfidence = if (f.brakeCue > 0f) 0.8f else 0.0f,
                 leanDeg = Float.NaN
             )
@@ -172,6 +173,7 @@ class RiskEngineScenarioTest {
             brakeCueStrength = 0f,
             qualityWeight = 1.0f,
             riderSpeedMps = 10f,
+            riderSpeedConfidence = 1f,
             egoBrakingConfidence = 0f,
             leanDeg = Float.NaN
         )
@@ -208,6 +210,7 @@ class RiskEngineScenarioTest {
             brakeCueStrength = 1.0f,
             qualityWeight = 1.0f,
             riderSpeedMps = 10f,
+            riderSpeedConfidence = 1f,
             egoBrakingConfidence = 0.8f,
             leanDeg = Float.NaN
         )

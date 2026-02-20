@@ -36,6 +36,7 @@ object ScenarioRunner {
                 brakeCueStrength = f.brakeCueStrength,
                 qualityWeight = f.qualityWeight,
                 riderSpeedMps = f.riderSpeedMps,
+                riderSpeedConfidence = 1f,
                 egoBrakingConfidence = f.egoBrakingConfidence,
                 leanDeg = f.leanDeg
             )
