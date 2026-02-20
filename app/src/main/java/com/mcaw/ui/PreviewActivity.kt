@@ -19,7 +19,9 @@ import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.FocusMeteringAction
 import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.MeteringPoint
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
@@ -41,6 +43,7 @@ import com.mcaw.util.SessionLogFile
 import com.mcaw.util.SessionActivityLogger
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 class PreviewActivity : ComponentActivity() {
 
@@ -65,6 +68,7 @@ class PreviewActivity : ComponentActivity() {
     private val analysisExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private var isCameraBound: Boolean = false
     private var speedPausedByEdit: Boolean = false
+    private var boundCamera: androidx.camera.core.Camera? = null
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(ctx: Context?, i: Intent?) {
@@ -166,6 +170,7 @@ class PreviewActivity : ComponentActivity() {
             if (isFinal) {
                 AppPreferences.setRoiTrapezoidNormalized(topY, bottomY, topHalfW, bottomHalfW, centerX = centerX)
                 logActivity("roi_set topY=$topY bottomY=$bottomY topHalfW=$topHalfW bottomHalfW=$bottomHalfW centerX=$centerX")
+                applyZoomAndFocusIfPossible(reason = "roi")
             }
         }
 
@@ -337,7 +342,9 @@ class PreviewActivity : ComponentActivity() {
             CameraSelector.DEFAULT_BACK_CAMERA,
             previewUseCase
         )
+        boundCamera = camera
         updateCameraCalibration(camera)
+        applyZoomAndFocusIfPossible(reason = "bind_preview")
         analysisUseCase = null
     }
 
@@ -369,7 +376,9 @@ class PreviewActivity : ComponentActivity() {
             CameraSelector.DEFAULT_BACK_CAMERA,
             *useCases.toTypedArray()
         )
+        boundCamera = camera
         updateCameraCalibration(camera)
+        applyZoomAndFocusIfPossible(reason = "bind_preview_analysis")
     }
 
     private fun updateCameraCalibration(camera: androidx.camera.core.Camera) {
@@ -387,6 +396,37 @@ class PreviewActivity : ComponentActivity() {
         if (sensorSize != null) {
             AppPreferences.cameraSensorHeightMm = sensorSize.height
         }
+    }
+
+    /**
+     * Applies camera zoom and autofocus metering point derived from ROI (user intent).
+     * This is lightweight and safe to call repeatedly.
+     */
+    private fun applyZoomAndFocusIfPossible(reason: String) {
+        val camera = boundCamera ?: return
+
+        // Zoom (conservative upper bound to avoid lens switching)
+        runCatching {
+            camera.cameraControl.setZoomRatio(AppPreferences.cameraZoomRatio.coerceIn(1.0f, 2.0f))
+        }
+
+        // Focus point: centerX, and upper third within ROI vertical span (avoid dashboard)
+        val roi = AppPreferences.getRoiTrapezoidNormalized()
+        val xNorm = roi.centerX.coerceIn(0.05f, 0.95f)
+        val yNorm = (roi.topY + 0.35f * (roi.bottomY - roi.topY)).coerceIn(0.05f, 0.95f)
+
+        val factory = previewView.meteringPointFactory
+        val p: MeteringPoint = factory.createPoint(xNorm, yNorm)
+        val action = FocusMeteringAction.Builder(p)
+            .setAutoCancelDuration(3, TimeUnit.SECONDS)
+            .build()
+
+        runCatching { camera.cameraControl.startFocusAndMetering(action) }
+            .onSuccess {
+                logActivity(
+                    "cam_focus_roi reason=$reason x=${"%.3f".format(xNorm)} y=${"%.3f".format(yNorm)} z=${"%.2f".format(AppPreferences.cameraZoomRatio)}"
+                )
+            }
     }
 
     override fun onDestroy() {
@@ -445,47 +485,12 @@ class PreviewActivity : ComponentActivity() {
     }
 
     private fun showSaveProfileDialog() {
-        val activeId = ProfileManager.getActiveProfileIdOrNull()
-        if (!activeId.isNullOrBlank()) {
-            val activeName = ProfileManager.findById(activeId)?.name ?: "?"
-            val actions = arrayOf(
-                "Přepsat aktivní profil: $activeName",
-                "Uložit jako nový profil"
-            )
-            AlertDialog.Builder(this)
-                .setTitle("Uložit profil")
-                .setItems(actions) { _, which ->
-                    when (which) {
-                        0 -> {
-                            val updated = ProfileManager.overwriteProfileFromCurrentPrefs(activeId)
-                            if (updated == null) {
-                                Toast.makeText(this, "Profil nebyl nalezen", Toast.LENGTH_SHORT).show()
-                                logActivity("profile_overwrite_failed id=$activeId")
-                            } else {
-                                ProfileManager.setActiveProfileId(updated.id)
-                                updateActiveProfileLabel()
-                                Toast.makeText(this, "Profil přepsán: ${updated.name}", Toast.LENGTH_SHORT).show()
-                                logActivity("profile_overwritten id=${updated.id} name=${updated.name}")
-                            }
-                        }
-                        else -> showSaveNewProfileDialog()
-                    }
-                }
-                .setNegativeButton("Zrušit", null)
-                .show()
-            return
-        }
-
-        showSaveNewProfileDialog()
-    }
-
-    private fun showSaveNewProfileDialog() {
         val input = EditText(this).apply {
             hint = "Název profilu"
             setSingleLine()
         }
         AlertDialog.Builder(this)
-            .setTitle("Uložit nový profil")
+            .setTitle("Uložit profil")
             .setMessage("Uloží aktuální ROI + kalibraci (výška, sklon, distance scale, lane offset).")
             .setView(input)
             .setPositiveButton("Uložit") { _, _ ->

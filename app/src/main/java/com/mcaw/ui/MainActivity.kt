@@ -19,6 +19,8 @@ import androidx.activity.ComponentActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.FocusMeteringAction
+import androidx.camera.core.MeteringPoint
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
@@ -34,6 +36,8 @@ import com.mcaw.util.SessionLogFile
 import com.mcaw.util.LabelMapper
 import com.mcaw.util.ReasonTextMapper
 import com.mcaw.config.ProfileManager
+
+import java.util.concurrent.TimeUnit
 
 class MainActivity : ComponentActivity() {
 
@@ -784,12 +788,32 @@ class MainActivity : ComponentActivity() {
             previewUseCase = Preview.Builder().build().also {
                 it.setSurfaceProvider(previewThumb.surfaceProvider)
             }
-            provider.bindToLifecycle(this, selector, previewUseCase)
+            val camera = provider.bindToLifecycle(this, selector, previewUseCase)
+            applyZoomAndFocusMiniPreview(camera)
             miniPreviewBound = true
         } catch (t: Throwable) {
             miniPreviewBound = false
             // Fail silently: mini preview is optional and must never break main UX.
         }
+    }
+
+    private fun applyZoomAndFocusMiniPreview(camera: androidx.camera.core.Camera) {
+        // Zoom
+        runCatching {
+            camera.cameraControl.setZoomRatio(AppPreferences.cameraZoomRatio.coerceIn(1.0f, 2.0f))
+        }
+
+        // Focus point from ROI (user intent). Use the mini preview's metering factory.
+        val roi = AppPreferences.getRoiTrapezoidNormalized()
+        val xNorm = roi.centerX.coerceIn(0.05f, 0.95f)
+        val yNorm = (roi.topY + 0.35f * (roi.bottomY - roi.topY)).coerceIn(0.05f, 0.95f)
+
+        val factory = previewThumb.meteringPointFactory
+        val p: MeteringPoint = factory.createPoint(xNorm, yNorm)
+        val action = FocusMeteringAction.Builder(p)
+            .setAutoCancelDuration(3, TimeUnit.SECONDS)
+            .build()
+        runCatching { camera.cameraControl.startFocusAndMetering(action) }
     }
 
     private fun stopMiniPreview() {

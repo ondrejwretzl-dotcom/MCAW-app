@@ -12,6 +12,8 @@ data class MountProfile(
     // Mount / calibration
     val cameraHeightM: Float,
     val cameraPitchDownDeg: Float,
+    /** Camera framing (zoom ratio). 1.0 = no zoom. */
+    val cameraZoomRatio: Float = 1.0f,
     val distanceScale: Float,
     // Calibration metrics (audit/debug)
     val calibrationRmsM: Float = 0f,

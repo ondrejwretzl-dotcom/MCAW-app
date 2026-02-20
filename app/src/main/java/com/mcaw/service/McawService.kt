@@ -12,8 +12,11 @@ import android.os.Handler
 import android.os.Looper
 import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.FocusMeteringAction
 import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.MeteringPoint
 import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.SurfaceOrientedMeteringPointFactory
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
@@ -34,6 +37,7 @@ import com.mcaw.util.LogContract
 import com.mcaw.util.TraceContract
 import java.util.Locale
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 class McawService : LifecycleService() {
 
@@ -197,6 +201,7 @@ private fun startForegroundNotification() {
                 )
 
                 updateCameraCalibration(camera)
+                applyZoomAndFocusFromPrefs(camera)
                 speedMonitor.start()
                 analysisRunning = true
                 retryAttempts = 0
@@ -248,6 +253,35 @@ private fun startForegroundNotification() {
             AppPreferences.cameraFocalLengthMm = focalMm ?: Float.NaN
             AppPreferences.cameraSensorHeightMm = sensorHeightMm ?: Float.NaN
         }
+    }
+
+    /**
+     * Autofocus is guided by ROI (user intent). Zoom ratio is applied from prefs.
+     * This is best-effort and never blocks camera startup.
+     */
+    private fun applyZoomAndFocusFromPrefs(camera: androidx.camera.core.Camera) {
+        // Zoom
+        runCatching {
+            camera.cameraControl.setZoomRatio(AppPreferences.cameraZoomRatio.coerceIn(1.0f, 2.0f))
+        }
+
+        // Focus point derived from ROI trapezoid. Use a normalized factory (no PreviewView in service).
+        val roi = AppPreferences.getRoiTrapezoidNormalized()
+        val xNorm = roi.centerX.coerceIn(0.05f, 0.95f)
+        val yNorm = (roi.topY + 0.35f * (roi.bottomY - roi.topY)).coerceIn(0.05f, 0.95f)
+
+        val factory = SurfaceOrientedMeteringPointFactory(1f, 1f)
+        val p: MeteringPoint = factory.createPoint(xNorm, yNorm)
+        val action = FocusMeteringAction.Builder(p)
+            .setAutoCancelDuration(3, TimeUnit.SECONDS)
+            .build()
+
+        runCatching { camera.cameraControl.startFocusAndMetering(action) }
+            .onSuccess {
+                logService(
+                    "cam_focus_roi svc x=${String.format(Locale.US, "%.3f", xNorm)} y=${String.format(Locale.US, "%.3f", yNorm)} z=${String.format(Locale.US, "%.2f", AppPreferences.cameraZoomRatio)}"
+                )
+            }
     }
 
     private fun logService(message: String) {

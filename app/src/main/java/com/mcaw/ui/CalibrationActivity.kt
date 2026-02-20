@@ -13,13 +13,18 @@ import android.text.InputType
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.FocusMeteringAction
+import androidx.camera.core.MeteringPoint
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.camera.view.SurfaceOrientedMeteringPointFactory
 import androidx.core.content.ContextCompat
 import androidx.core.widget.doAfterTextChanged
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.slider.Slider
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import com.mcaw.ai.DetectionPhysics
@@ -29,11 +34,12 @@ import com.mcaw.util.SessionActivityLogger
 import com.mcaw.config.ProfileManager
 import com.mcaw.config.MountProfile
 import androidx.camera.camera2.interop.Camera2CameraInfo
+import java.util.concurrent.TimeUnit
 
 /**
  * Camera distance calibration wizard (A1).
  *
- * Collects 3 ground points with known distances (3–4m, 7–8m, 12–14m),
+ * Collects 3 ground points with known distances (3–6m, 7–12m, 13–20m),
  * fits (cameraHeightM, pitchDownDeg) for DetectionPhysics ground-plane model,
  * and then shows a final "sanity" step where the user verifies the estimated distance.
  */
@@ -72,6 +78,10 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
 
     private var cameraProvider: ProcessCameraProvider? = null
     private var previewUseCase: Preview? = null
+    private var boundCamera: Camera? = null
+
+    private lateinit var sliderZoom: Slider
+    private lateinit var txtZoomValue: TextView
 
     private var stage: Stage = Stage.INTRO
     private val samples: ArrayList<Sample> = ArrayList(3)
@@ -121,6 +131,25 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
         txtStep = findViewById(R.id.txtStep)
         txtInstruction = findViewById(R.id.txtInstruction)
         txtHint = findViewById(R.id.txtHint)
+
+        // Zoom / framing control (stored in prefs; profile persistence handled elsewhere)
+        txtZoomValue = findViewById(R.id.txtZoomValue)
+        sliderZoom = findViewById(R.id.sliderZoom)
+        sliderZoom.valueFrom = 1.0f
+        sliderZoom.valueTo = 2.0f
+        sliderZoom.stepSize = 0.1f
+        val initialZoom = AppPreferences.cameraZoomRatio.coerceIn(1.0f, 2.0f)
+        sliderZoom.value = initialZoom
+        updateZoomLabel(initialZoom)
+        sliderZoom.addOnChangeListener { _, v, fromUser ->
+            val z = v.coerceIn(1.0f, 2.0f)
+            updateZoomLabel(z)
+            if (fromUser) {
+                AppPreferences.cameraZoomRatio = z
+                SessionActivityLogger.log("calib_zoom_set ratio=${"%.2f".format(z)}")
+            }
+            applyZoomAndFocusIfPossible()
+        }
         btnBack = findViewById(R.id.btnBack)
         btnConfirm = findViewById(R.id.btnConfirm)
 
@@ -132,6 +161,40 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
 
         updateUiForStage()
         startCamera()
+    }
+
+    private fun updateZoomLabel(z: Float) {
+        txtZoomValue.text = "Záběr %.1f×".format(z)
+    }
+
+    private fun applyZoomAndFocusIfPossible() {
+        val camera = boundCamera ?: return
+
+        // Apply zoom
+        runCatching {
+            camera.cameraControl.setZoomRatio(AppPreferences.cameraZoomRatio.coerceIn(1.0f, 2.0f))
+        }
+
+        // Focus point derived from ROI (user intent). Prefer upper third of ROI to avoid dashboard.
+        val roi = AppPreferences.getRoiTrapezoidNormalized()
+        val xNorm = roi.centerX.coerceIn(0.05f, 0.95f)
+        val yNorm = (roi.topY + 0.35f * (roi.bottomY - roi.topY)).coerceIn(0.05f, 0.95f)
+
+        val factory = if (previewView.width > 0 && previewView.height > 0) {
+            previewView.meteringPointFactory
+        } else {
+            SurfaceOrientedMeteringPointFactory(1f, 1f)
+        }
+
+        val p: MeteringPoint = factory.createPoint(xNorm, yNorm)
+        val action = FocusMeteringAction.Builder(p)
+            .setAutoCancelDuration(3, TimeUnit.SECONDS)
+            .build()
+
+        runCatching { camera.cameraControl.startFocusAndMetering(action) }
+            .onSuccess {
+                SessionActivityLogger.log("calib_af_roi x=${"%.3f".format(xNorm)} y=${"%.3f".format(yNorm)}")
+            }
     }
 
     private fun onBackClicked() {
@@ -255,21 +318,21 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
             }
             Stage.P1 -> {
                 txtStep.text = "Krok 1/3"
-                txtInstruction.text = "Umísti modrý bod na zem ve vzdálenosti 3–4 m."
+                txtInstruction.text = "Umísti modrý bod na zem ve vzdálenosti 3–6 m."
                 txtHint.text = "Tip: měř co nejpřesněji (metr je nejlepší)."
                 btnBack.text = "ZPĚT"
                 btnConfirm.text = "POTVRDIT BOD"
             }
             Stage.P2 -> {
                 txtStep.text = "Krok 2/3"
-                txtInstruction.text = "Umísti modrý bod na zem ve vzdálenosti 7–8 m."
+                txtInstruction.text = "Umísti modrý bod na zem ve vzdálenosti 7–12 m."
                 txtHint.text = "Neoznačuj strom/zeď – jen bod na zemi."
                 btnBack.text = "ZPĚT"
                 btnConfirm.text = "POTVRDIT BOD"
             }
             Stage.P3 -> {
                 txtStep.text = "Krok 3/3"
-                txtInstruction.text = "Umísti modrý bod na zem ve vzdálenosti 12–14 m."
+                txtInstruction.text = "Umísti modrý bod na zem ve vzdálenosti 13–20 m."
                 txtHint.text = "Čím přesnější zadání, tím méně bude distance „halucinovat“." 
                 btnBack.text = "ZPĚT"
                 btnConfirm.text = "POTVRDIT BOD"
@@ -319,9 +382,9 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
 
     private fun requestDistanceForCurrentStage() {
         val (minM, maxM) = when (stage) {
-            Stage.P1 -> 2.5f to 6.0f
-            Stage.P2 -> 6.0f to 10.0f
-            Stage.P3 -> 10.0f to 18.0f
+            Stage.P1 -> 3.0f to 6.0f
+            Stage.P2 -> 7.0f to 12.0f
+            Stage.P3 -> 13.0f to 20.0f
             else -> 0.5f to 200f
         }
 
@@ -696,6 +759,7 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
                     name = p.name,
                     cameraHeightM = AppPreferences.cameraMountHeightM,
                     cameraPitchDownDeg = AppPreferences.cameraPitchDownDeg,
+                    cameraZoomRatio = AppPreferences.cameraZoomRatio,
                     distanceScale = AppPreferences.distanceScale,
                     calibrationRmsM = AppPreferences.calibrationRmsM,
                     calibrationMaxErrM = AppPreferences.calibrationMaxErrM,
@@ -719,6 +783,7 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
         SessionActivityLogger.log(
             "calibration_saved cam_h=" + AppPreferences.cameraMountHeightM +
                 " pitch_deg=" + AppPreferences.cameraPitchDownDeg +
+                " zoom=" + AppPreferences.cameraZoomRatio +
                 " rms=" + AppPreferences.calibrationRmsM +
                 " max=" + AppPreferences.calibrationMaxErrM +
                 " imu_std=" + AppPreferences.calibrationImuStdDeg +
@@ -823,7 +888,9 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
             CameraSelector.DEFAULT_BACK_CAMERA,
             previewUseCase!!
         )
+        boundCamera = camera
         updateCameraCalibration(camera)
+        applyZoomAndFocusIfPossible()
     }
 
     private fun updateCameraCalibration(camera: androidx.camera.core.Camera) {

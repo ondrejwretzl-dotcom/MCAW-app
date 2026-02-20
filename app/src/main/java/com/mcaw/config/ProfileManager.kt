@@ -64,30 +64,13 @@ object ProfileManager {
     fun saveProfileFromCurrentPrefs(name: String): MountProfile {
         check(::prefs.isInitialized) { "ProfileManager not initialized" }
         val id = "p_" + SystemClock.uptimeMillis().toString()
-        val p = buildProfileFromCurrentPrefs(id = id, name = name.ifBlank { "Profil" })
-        upsert(p)
-        return p
-    }
-
-    /**
-     * Overwrites an existing profile with current AppPreferences values.
-     * Returns the updated profile or null if the profile doesn't exist.
-     */
-    fun overwriteProfileFromCurrentPrefs(profileId: String): MountProfile? {
-        check(::prefs.isInitialized) { "ProfileManager not initialized" }
-        val existing = findById(profileId) ?: return null
-        val updated = buildProfileFromCurrentPrefs(id = existing.id, name = existing.name)
-        upsert(updated)
-        return updated
-    }
-
-    private fun buildProfileFromCurrentPrefs(id: String, name: String): MountProfile {
         val roi = AppPreferences.getRoiTrapezoidNormalized()
-        return MountProfile(
+        val p = MountProfile(
             id = id,
-            name = name,
+            name = name.ifBlank { "Profil" },
             cameraHeightM = AppPreferences.cameraMountHeightM,
             cameraPitchDownDeg = AppPreferences.cameraPitchDownDeg,
+            cameraZoomRatio = AppPreferences.cameraZoomRatio,
             distanceScale = AppPreferences.distanceScale,
             calibrationRmsM = AppPreferences.calibrationRmsM,
             calibrationMaxErrM = AppPreferences.calibrationMaxErrM,
@@ -105,6 +88,8 @@ object ProfileManager {
             roiBottomHalfW = roi.bottomHalfW,
             roiCenterX = roi.centerX,
         )
+        upsert(p)
+        return p
     }
 
     fun upsert(profile: MountProfile) {
@@ -140,6 +125,7 @@ object ProfileManager {
         // Mount
         AppPreferences.cameraMountHeightM = p.cameraHeightM
         AppPreferences.cameraPitchDownDeg = p.cameraPitchDownDeg
+        AppPreferences.cameraZoomRatio = p.cameraZoomRatio
         AppPreferences.distanceScale = p.distanceScale
         AppPreferences.laneEgoMaxOffset = p.laneEgoMaxOffset
 
@@ -179,6 +165,7 @@ object ProfileManager {
             put("name", p.name)
             put("cameraHeightM", p.cameraHeightM.toDouble())
             put("cameraPitchDownDeg", p.cameraPitchDownDeg.toDouble())
+            put("cameraZoomRatio", p.cameraZoomRatio.toDouble())
             put("distanceScale", p.distanceScale.toDouble())
             put("calibrationRmsM", p.calibrationRmsM.toDouble())
             put("calibrationMaxErrM", p.calibrationMaxErrM.toDouble())
@@ -207,6 +194,7 @@ object ProfileManager {
             name = name,
             cameraHeightM = o.optDouble("cameraHeightM", 1.2).toFloat(),
             cameraPitchDownDeg = o.optDouble("cameraPitchDownDeg", 6.0).toFloat(),
+            cameraZoomRatio = o.optDouble("cameraZoomRatio", 1.0).toFloat(),
             distanceScale = o.optDouble("distanceScale", 1.0).toFloat(),
             calibrationRmsM = o.optDouble("calibrationRmsM", 0.0).toFloat(),
             calibrationMaxErrM = o.optDouble("calibrationMaxErrM", 0.0).toFloat(),

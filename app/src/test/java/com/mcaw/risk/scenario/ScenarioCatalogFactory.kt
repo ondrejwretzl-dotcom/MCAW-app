@@ -99,8 +99,8 @@ object ScenarioCatalogFactory {
                 qualityWeight = 1.0f
             ),
             expectations = listOf(
-                Expectation.MustEnterLevelByTtcThreshold(level = 1, threshold = TtcThreshold.ORANGE, latestDelaySec = 1.0f, message = "Po začátku hazardu musí rychle přijít ORANGE."),
-                Expectation.MustEnterLevelByTtcThreshold(level = 2, threshold = TtcThreshold.RED, latestDelaySec = 2.0f, message = "Při potvrzeném kritickém přibližování musí přijít RED."),
+                Expectation.MustEnterLevelBy(level = 1, latestSecAfterHazard = 1.0f, hazardTimeSec = hazard, message = "Po začátku hazardu musí rychle přijít ORANGE."),
+                Expectation.MustEnterLevelBy(level = 2, latestSecAfterHazard = 2.0f, hazardTimeSec = hazard, message = "Při potvrzeném kritickém přibližování musí přijít RED."),
                 Expectation.MaxTransitionsInWindow(maxTransitions = 4, windowSec = 5f, message = "Bez nadměrného blikání."),
             ),
             segments = listOf(
@@ -148,8 +148,8 @@ object ScenarioCatalogFactory {
                 qualityWeight = 1.0f
             ),
             expectations = listOf(
-                Expectation.MustEnterLevelByTtcThreshold(level = 1, threshold = TtcThreshold.ORANGE, latestDelaySec = 1.5f, message = "I při poklesu kvality musí přijít ORANGE, pokud je kinematika nebezpečná."),
-                Expectation.MustEnterLevelByTtcThreshold(level = 2, threshold = TtcThreshold.RED, latestDelaySec = 3.5f, message = "Pokud kritické přibližování trvá, musí nastat RED."),
+                Expectation.MustEnterLevelBy(level = 1, latestSecAfterHazard = 1.5f, hazardTimeSec = hazard, message = "I při poklesu kvality musí přijít ORANGE, pokud je kinematika nebezpečná."),
+                Expectation.MustEnterLevelBy(level = 2, latestSecAfterHazard = 3.5f, hazardTimeSec = hazard, message = "Pokud kritické přibližování trvá, musí nastat RED."),
                 Expectation.MaxTransitionsInWindow(maxTransitions = 5, windowSec = 6f, message = "Změna kvality nesmí způsobit nadměrné cvakání."),
             ),
             segments = listOf(
@@ -240,8 +240,8 @@ object ScenarioCatalogFactory {
                 qualityWeight = 0.92f
             ),
             expectations = listOf(
-                Expectation.MustEnterLevelByTtcThreshold(level = 1, threshold = TtcThreshold.ORANGE, latestDelaySec = 0.8f, message = "Při brzdění auta vpředu musí rychle přijít ORANGE."),
-                Expectation.MustEnterLevelByTtcThreshold(level = 2, threshold = TtcThreshold.RED, latestDelaySec = 1.8f, message = "Při kritickém přibližování + brake cue musí přijít RED."),
+                Expectation.MustEnterLevelBy(level = 1, latestSecAfterHazard = 0.8f, hazardTimeSec = hazard, message = "Při brzdění auta vpředu musí rychle přijít ORANGE."),
+                Expectation.MustEnterLevelBy(level = 2, latestSecAfterHazard = 1.8f, hazardTimeSec = hazard, message = "Při kritickém přibližování + brake cue musí přijít RED."),
                 Expectation.MaxTransitionsInWindow(maxTransitions = 5, windowSec = 6f, message = "Bez blikání/přepínání alertů."),
             ),
             segments = listOf(
@@ -336,7 +336,7 @@ object ScenarioCatalogFactory {
                 leanDeg = 28f
             ),
             expectations = listOf(
-                Expectation.MustEnterLevelByTtcThreshold(level = 1, threshold = TtcThreshold.ORANGE, latestDelaySec = 1.2f, message = "Při významném přibližování musí přijít ORANGE i při náklonu."),
+                Expectation.MustEnterLevelBy(level = 1, latestSecAfterHazard = 1.2f, hazardTimeSec = hazard, message = "Při významném přibližování musí přijít ORANGE i při náklonu."),
                 Expectation.MaxTransitionsInWindow(maxTransitions = 5, windowSec = 8f, message = "V zatáčce bez nadměrného cvakání."),
             ),
             segments = listOf(
@@ -386,8 +386,8 @@ object ScenarioCatalogFactory {
                 leanDeg = 10f
             ),
             expectations = listOf(
-                Expectation.MustEnterLevelByTtcThreshold(level = 1, threshold = TtcThreshold.ORANGE, latestDelaySec = 0.9f, message = "Musí rychle přijít ORANGE."),
-                Expectation.MustEnterLevelByTtcThreshold(level = 2, threshold = TtcThreshold.RED, latestDelaySec = 2.2f, message = "Při potvrzeném kritickém přibližování musí přijít RED."),
+                Expectation.MustEnterLevelBy(level = 1, latestSecAfterHazard = 0.9f, hazardTimeSec = hazard, message = "Musí rychle přijít ORANGE."),
+                Expectation.MustEnterLevelBy(level = 2, latestSecAfterHazard = 2.2f, hazardTimeSec = hazard, message = "Při potvrzeném kritickém přibližování musí přijít RED."),
                 Expectation.MaxTransitionsInWindow(maxTransitions = 6, windowSec = 8f, message = "Bez nadměrného cvakání."),
             ),
             segments = listOf(

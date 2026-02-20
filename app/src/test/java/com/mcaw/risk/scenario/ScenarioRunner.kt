@@ -72,7 +72,7 @@ object ScenarioRunner {
             }
         }
 
-        val verdicts = evaluateExpectations(s, derived, frames, levels)
+        val verdicts = evaluateExpectations(s, frames, levels)
         // add summary event
         events.add(
             SimEvent(
@@ -96,7 +96,7 @@ object ScenarioRunner {
         return ScenarioRun(s, derived, frames, levels, events, verdicts)
     }
 
-    private fun evaluateExpectations(s: Scenario, derived: RiskEngine.DerivedThresholds, frames: List<SimFrame>, levels: List<Int>): List<Verdict> {
+    private fun evaluateExpectations(s: Scenario, frames: List<SimFrame>, levels: List<Int>): List<Verdict> {
         val out = ArrayList<Verdict>(s.expectations.size)
 
         fun firstTimeAtOrAbove(level: Int): Float? {
@@ -127,39 +127,6 @@ object ScenarioRunner {
 
         for (e in s.expectations) {
             when (e) {
-
-                is Expectation.MustEnterLevelByTtcThreshold -> {
-                    val thrSec = when (e.threshold) {
-                        TtcThreshold.ORANGE -> derived.ttcOrange
-                        TtcThreshold.RED -> derived.ttcRed
-                    }
-                    // Find first time TTC is valid and at/below threshold
-                    val crossIdx = frames.indexOfFirst { f ->
-                        f.ttcSec.isFinite() && f.ttcSec > 0f && f.ttcSec <= thrSec
-                    }
-                    if (crossIdx < 0) {
-                        out.add(
-                            Verdict(
-                                ok = false,
-                                rule = e.message,
-                                details = "TTC nikdy nekleslo pod ${e.threshold} (thr=${fmt(thrSec)}s)."
-                            )
-                        )
-                    } else {
-                        val tCross = frames[crossIdx].tSec
-                        val latest = tCross + e.latestDelaySec
-                        val tEnter = firstTimeAtOrAbove(e.level)
-                        val ok = tEnter != null && tEnter <= latest
-                        val detail = buildString {
-                            append("tCross=").append(fmt(tCross)).append("s")
-                            append(", limit=").append(fmt(latest)).append("s")
-                            append(", entered=").append(if (tEnter == null) "nikdy" else fmt(tEnter) + "s")
-                            append(", thr=").append(fmt(thrSec)).append("s")
-                        }
-                        out.add(Verdict(ok = ok, rule = e.message, details = detail))
-                    }
-                }
-
                 is Expectation.MustEnterLevelBy -> {
                     val first = firstTimeAtOrAbove(e.level)
                     val deadline = e.hazardTimeSec + e.latestSecAfterHazard

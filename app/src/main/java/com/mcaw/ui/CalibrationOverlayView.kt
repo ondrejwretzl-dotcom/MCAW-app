@@ -25,13 +25,21 @@ class CalibrationOverlayView @JvmOverloads constructor(
 
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = 4f
+        // Slightly thicker so the point is visible in bright daylight.
+        strokeWidth = 6f
         color = 0xFF3BA6FF.toInt() // MCAW blue
     }
 
     private val paintFill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
-        color = 0x553BA6FF
+        color = 0x663BA6FF
+    }
+
+    // Soft halo to improve visibility on complex backgrounds (no blur effects, just alpha stroke).
+    private val paintHalo = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 14f
+        color = 0x223BA6FF
     }
 
     private val paintGuide = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -94,11 +102,13 @@ class CalibrationOverlayView @JvmOverloads constructor(
         val cx = xNorm * w
         val cy = yNorm * h
 
-        val r = 22f
-        val arm = 34f
+        val r = 28f
+        val arm = 42f
 
+        // Halo
+        canvas.drawCircle(cx, cy, r + 8f, paintHalo)
         // Fill dot
-        canvas.drawCircle(cx, cy, 8f, paintFill)
+        canvas.drawCircle(cx, cy, 10f, paintFill)
         // Ring
         canvas.drawCircle(cx, cy, r, paint)
         // Cross

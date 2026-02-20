@@ -21,6 +21,14 @@ object AppPreferences {
     @Volatile
     var cameraSensorWidthMm: Float = Float.NaN
 
+    /**
+     * Camera zoom ratio (framing). Stored as user/mount preference.
+     * 1.0 = no zoom. Upper bound is intentionally conservative to reduce lens switching.
+     */
+    var cameraZoomRatio: Float
+        get() = prefs.getFloat("camera_zoom_ratio", 1.0f).coerceIn(1.0f, 2.0f)
+        set(v) = prefs.edit().putFloat("camera_zoom_ratio", v.coerceIn(1.0f, 2.0f)).apply()
+
 
     // ---- Calibration / robustness knobs ----
     /**
