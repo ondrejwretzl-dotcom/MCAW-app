@@ -278,7 +278,12 @@ private fun startForegroundNotification() {
             val dm = resources.displayMetrics
             if (display == null || dm.widthPixels <= 0 || dm.heightPixels <= 0) return@runCatching
 
-            val factory = DisplayOrientedMeteringPointFactory(display, camera.cameraInfo, dm.widthPixels, dm.heightPixels)
+            val factory = DisplayOrientedMeteringPointFactory(
+                display,
+                camera.cameraInfo,
+                dm.widthPixels.toFloat(),
+                dm.heightPixels.toFloat()
+            )
             val xPx = xNorm * dm.widthPixels
             val yPx = yNorm * dm.heightPixels
             val p: MeteringPoint = factory.createPoint(xPx, yPx)
