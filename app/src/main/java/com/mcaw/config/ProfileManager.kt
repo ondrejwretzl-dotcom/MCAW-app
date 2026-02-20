@@ -61,13 +61,31 @@ object ProfileManager {
         }
     }
 
-    fun saveProfileFromCurrentPrefs(name: String): MountProfile {
+        fun saveProfileFromCurrentPrefs(name: String): MountProfile {
         check(::prefs.isInitialized) { "ProfileManager not initialized" }
         val id = "p_" + SystemClock.uptimeMillis().toString()
+        val p = buildProfileFromCurrentPrefs(id = id, name = name.ifBlank { "Profil" })
+        upsert(p)
+        return p
+    }
+
+    /**
+     * Overwrites an existing profile with current AppPreferences values.
+     * Returns the updated profile or null if the profile doesn't exist.
+     */
+    fun overwriteProfileFromCurrentPrefs(profileId: String): MountProfile? {
+        check(::prefs.isInitialized) { "ProfileManager not initialized" }
+        val existing = findById(profileId) ?: return null
+        val updated = buildProfileFromCurrentPrefs(id = existing.id, name = existing.name)
+        upsert(updated)
+        return updated
+    }
+
+    private fun buildProfileFromCurrentPrefs(id: String, name: String): MountProfile {
         val roi = AppPreferences.getRoiTrapezoidNormalized()
-        val p = MountProfile(
+        return MountProfile(
             id = id,
-            name = name.ifBlank { "Profil" },
+            name = name,
             cameraHeightM = AppPreferences.cameraMountHeightM,
             cameraPitchDownDeg = AppPreferences.cameraPitchDownDeg,
             cameraZoomRatio = AppPreferences.cameraZoomRatio,
@@ -88,8 +106,6 @@ object ProfileManager {
             roiBottomHalfW = roi.bottomHalfW,
             roiCenterX = roi.centerX,
         )
-        upsert(p)
-        return p
     }
 
     fun upsert(profile: MountProfile) {
@@ -214,3 +230,4 @@ object ProfileManager {
         )
     }
 }
+test
