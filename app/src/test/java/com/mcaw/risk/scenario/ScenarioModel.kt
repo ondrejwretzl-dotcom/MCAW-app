@@ -71,12 +71,30 @@ data class Segment(
     val leanDeg: (t: Float) -> Float? = { null }
 )
 
+enum class TtcThreshold { ORANGE, RED }
+
 sealed class Expectation {
+    /**
+     * Legacy expectation – uses explicit hazard time. Prefer MustEnterLevelByTtcThreshold for new scenarios.
+     */
     data class MustEnterLevelBy(
         val level: Int,
         /** relative to hazardTimeSec */
         val latestSecAfterHazard: Float,
         val hazardTimeSec: Float,
+        val message: String
+    ) : Expectation()
+
+    /**
+     * Expectation derived from RiskEngine thresholds (ttcOrange/ttcRed). This stays valid when thresholds change.
+     *
+     * Pass condition: engine must enter >= level no later than (tCross + latestDelaySec),
+     * where tCross is the first time TTC <= threshold in the simulated timeline.
+     */
+    data class MustEnterLevelByTtcThreshold(
+        val level: Int,
+        val threshold: TtcThreshold,
+        val latestDelaySec: Float,
         val message: String
     ) : Expectation()
 
