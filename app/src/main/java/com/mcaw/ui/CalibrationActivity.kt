@@ -20,7 +20,6 @@ import androidx.camera.core.MeteringPoint
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
-import androidx.camera.view.SurfaceOrientedMeteringPointFactory
 import androidx.core.content.ContextCompat
 import androidx.core.widget.doAfterTextChanged
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -180,13 +179,13 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
         val xNorm = roi.centerX.coerceIn(0.05f, 0.95f)
         val yNorm = (roi.topY + 0.35f * (roi.bottomY - roi.topY)).coerceIn(0.05f, 0.95f)
 
-        val factory = if (previewView.width > 0 && previewView.height > 0) {
-            previewView.meteringPointFactory
-        } else {
-            SurfaceOrientedMeteringPointFactory(1f, 1f)
-        }
+        // PreviewView.meteringPointFactory expects pixel coordinates.
+        // If the view isn't laid out yet, skip (never block calibration).
+        if (previewView.width <= 0 || previewView.height <= 0) return
+        val xPx = xNorm * previewView.width
+        val yPx = yNorm * previewView.height
 
-        val p: MeteringPoint = factory.createPoint(xNorm, yNorm)
+        val p: MeteringPoint = previewView.meteringPointFactory.createPoint(xPx, yPx)
         val action = FocusMeteringAction.Builder(p)
             .setAutoCancelDuration(3, TimeUnit.SECONDS)
             .build()

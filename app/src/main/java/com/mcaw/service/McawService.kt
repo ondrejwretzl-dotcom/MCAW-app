@@ -12,11 +12,11 @@ import android.os.Handler
 import android.os.Looper
 import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.DisplayOrientedMeteringPointFactory
 import androidx.camera.core.FocusMeteringAction
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.MeteringPoint
 import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.camera.view.SurfaceOrientedMeteringPointFactory
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
@@ -35,6 +35,7 @@ import com.mcaw.util.SessionLogFile
 import com.mcaw.util.SessionActivityLogger
 import com.mcaw.util.LogContract
 import com.mcaw.util.TraceContract
+import android.view.WindowManager
 import java.util.Locale
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -265,23 +266,31 @@ private fun startForegroundNotification() {
             camera.cameraControl.setZoomRatio(AppPreferences.cameraZoomRatio.coerceIn(1.0f, 2.0f))
         }
 
-        // Focus point derived from ROI trapezoid. Use a normalized factory (no PreviewView in service).
+        // Focus point derived from ROI trapezoid. In service we don't have a PreviewView,
+        // so use DisplayOrientedMeteringPointFactory best-effort.
         val roi = AppPreferences.getRoiTrapezoidNormalized()
         val xNorm = roi.centerX.coerceIn(0.05f, 0.95f)
         val yNorm = (roi.topY + 0.35f * (roi.bottomY - roi.topY)).coerceIn(0.05f, 0.95f)
 
-        val factory = SurfaceOrientedMeteringPointFactory(1f, 1f)
-        val p: MeteringPoint = factory.createPoint(xNorm, yNorm)
-        val action = FocusMeteringAction.Builder(p)
-            .setAutoCancelDuration(3, TimeUnit.SECONDS)
-            .build()
+        runCatching {
+            val wm = getSystemService(Context.WINDOW_SERVICE) as? WindowManager
+            val display = wm?.defaultDisplay
+            val dm = resources.displayMetrics
+            if (display == null || dm.widthPixels <= 0 || dm.heightPixels <= 0) return@runCatching
 
-        runCatching { camera.cameraControl.startFocusAndMetering(action) }
-            .onSuccess {
-                logService(
-                    "cam_focus_roi svc x=${String.format(Locale.US, "%.3f", xNorm)} y=${String.format(Locale.US, "%.3f", yNorm)} z=${String.format(Locale.US, "%.2f", AppPreferences.cameraZoomRatio)}"
-                )
-            }
+            val factory = DisplayOrientedMeteringPointFactory(display, camera.cameraInfo, dm.widthPixels, dm.heightPixels)
+            val xPx = xNorm * dm.widthPixels
+            val yPx = yNorm * dm.heightPixels
+            val p: MeteringPoint = factory.createPoint(xPx, yPx)
+            val action = FocusMeteringAction.Builder(p)
+                .setAutoCancelDuration(3, TimeUnit.SECONDS)
+                .build()
+            camera.cameraControl.startFocusAndMetering(action)
+
+            logService(
+                "cam_focus_roi svc x=${String.format(Locale.US, "%.3f", xNorm)} y=${String.format(Locale.US, "%.3f", yNorm)} z=${String.format(Locale.US, "%.2f", AppPreferences.cameraZoomRatio)}"
+            )
+        }
     }
 
     private fun logService(message: String) {
