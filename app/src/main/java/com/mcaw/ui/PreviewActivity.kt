@@ -46,6 +46,7 @@ import com.mcaw.util.SessionActivityLogger
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import android.view.View
 
 class PreviewActivity : ComponentActivity() {
 
@@ -659,15 +660,10 @@ private fun showSaveProfileDialog() {
         val h = CalibrationHealth.evaluate()
         if (h.bannerText.isBlank()) {
             txtCalibrationHealth.visibility = View.GONE
-            txtCalibrationHealth.text = ""
         } else {
             txtCalibrationHealth.visibility = View.VISIBLE
             txtCalibrationHealth.text = h.bannerText
         }
     }
-
-    override fun onResume() {
-        super.onResume()
-        updateCalibrationHealthUi()
-    }
+}
 
