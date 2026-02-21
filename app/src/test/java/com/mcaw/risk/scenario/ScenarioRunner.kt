@@ -131,11 +131,14 @@ object ScenarioRunner {
                 is Expectation.MustEnterLevelBy -> {
                     val first = firstTimeAtOrAbove(e.level)
                     val deadline = e.hazardTimeSec + e.latestSecAfterHazard
+                    val maxLevel = levels.maxOrNull() ?: 0
+                    val firstOrange = firstTimeAtOrAbove(1)
+                    val firstRed = firstTimeAtOrAbove(2)
                     val ok = first != null && first <= deadline + 1e-3f
                     val details = if (first == null) {
-                        "Nikdy nedošlo k level>=${e.level} (deadline t<=${fmt(deadline)}s)."
+                        "Nikdy nedošlo k level>=${e.level} (deadline t<=${fmt(deadline)}s, maxLevel=$maxLevel, firstOrange=${firstOrange?.let { fmt(it) + "s" } ?: "n/a"}, firstRed=${firstRed?.let { fmt(it) + "s" } ?: "n/a"})."
                     } else {
-                        "Dosaženo v t=${fmt(first)}s; deadline t<=${fmt(deadline)}s (hazard t=${fmt(e.hazardTimeSec)}s)."
+                        "Dosaženo v t=${fmt(first)}s; deadline t<=${fmt(deadline)}s (hazard t=${fmt(e.hazardTimeSec)}s, maxLevel=$maxLevel, firstOrange=${firstOrange?.let { fmt(it) + "s" } ?: "n/a"}, firstRed=${firstRed?.let { fmt(it) + "s" } ?: "n/a"})."
                     }
                     out.add(Verdict(ok, "MustEnterLevelBy(level=${e.level})", "${e.message} :: $details"))
                 }

@@ -35,8 +35,8 @@ Reporty se generují vždy, i při PASS.
 
 | effectiveMode | popis | ttcOrange | ttcRed | distOrange | distRed | relOrange | relRed |
 |---:|---|---:|---:|---:|---:|---:|---:|
-| 1 | Město (default) | 3.0s | 1.2s | 15m | 8m | 3 m/s | 5 m/s |
-| 2 | Sport / dálnice | 4.0s | 1.5s | 30m | 12m | 5 m/s | 9 m/s |
+| 1 | Město (default) | 3.0s | 2.0s | 15m | 8m | 3 m/s | 5 m/s |
+| 2 | Sport / dálnice | 4.0s | 2.2s | 30m | 12m | 5 m/s | 9 m/s |
 | 3 | Uživatel | z `AppPreferences` | z `AppPreferences` | z `AppPreferences` | z `AppPreferences` | z `AppPreferences` | z `AppPreferences` |
 
 ### 2.2 Risk hysteresis (`RiskEngine.riskToLevelWithHysteresis(risk, conserv)`)
@@ -66,6 +66,25 @@ midK    = 0.60 + 0.10*conserv
 ```
 
 To je klíčové pro audit: report musí uvádět, zda by RED prošel nebo byl guardován.
+
+### 2.4 Nejčastější důvod „scénář neprošel“ (rychlá diagnostika)
+
+Když scénář očekává RED, ale dostane jen ORANGE, bývá problém typicky v jednom z těchto bodů:
+
+1. `preGuardLevel` byl 2, ale `allowRed=false` (combo guard RED potlačil).
+2. `qualityWeight` snížil agresivitu (`conserv` zvýší `redOn`, `strongK` a zpřísní `slopeThr`).
+3. Kinematika dosáhla ORANGE, ale ne „strong“ podmínky (`strongDist`/`strongRel`) nebo kombinaci `slopeStrong + midDist/midRel`.
+
+Pro scénáře **C2_CITY_JAM_APPROACH** a **T1_TUNNEL_EXPOSURE_DROP** proto vždy kontroluj v JSONL:
+
+- `derived.redOn`, `derived.slopeThr`, `derived.strongK`, `derived.midK`
+- vstupy `distM`, `relMps`, `ttcSec`, `ttcSlope`, `qW`
+- reason bits: `RED_COMBO_OK` vs `RED_GUARDED`
+
+Teprve podle těchto dat rozhoduj, zda je chyba v:
+
+- **scénáři** (příliš optimistický deadline / slabá kinematika), nebo
+- **RiskEngine** (příliš konzervativní guard / hysterese).
 
 ---
 
