@@ -4,6 +4,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.view.View
 import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import com.google.android.material.button.MaterialButton
@@ -40,6 +41,7 @@ class CalibrationWizardActivity : ComponentActivity() {
     private lateinit var inputNameLayout: TextInputLayout
     private lateinit var inputName: TextInputEditText
     private lateinit var txtBody: TextView
+    private lateinit var txtStepHint: TextView
     private lateinit var btnPrimary: MaterialButton
     private lateinit var btnSecondary: MaterialButton
 
@@ -57,7 +59,9 @@ class CalibrationWizardActivity : ComponentActivity() {
     ) { res ->
         if (res.resultCode == RESULT_OK) {
             cameraSetupDone = true
-            // Do not auto-advance: user may want to re-check or continue via button.
+            Toast.makeText(this, "Kamera setup uložen", Toast.LENGTH_SHORT).show()
+            goTo(Step.CALIBRATION)
+        } else {
             render()
         }
     }
@@ -67,7 +71,9 @@ class CalibrationWizardActivity : ComponentActivity() {
     ) { res ->
         if (res.resultCode == RESULT_OK) {
             calibDone = true
-            // Do not auto-advance: allow user to decide (and re-run if needed).
+            Toast.makeText(this, "Kalibrace vzdálenosti dokončena", Toast.LENGTH_SHORT).show()
+            goTo(Step.SUMMARY)
+        } else {
             render()
         }
     }
@@ -87,6 +93,7 @@ class CalibrationWizardActivity : ComponentActivity() {
         inputNameLayout = findViewById(R.id.inputProfileNameLayout)
         inputName = findViewById(R.id.inputProfileName)
         txtBody = findViewById(R.id.txtBody)
+        txtStepHint = findViewById(R.id.txtStepHint)
         btnPrimary = findViewById(R.id.btnPrimary)
         btnSecondary = findViewById(R.id.btnSecondary)
 
@@ -149,6 +156,8 @@ class CalibrationWizardActivity : ComponentActivity() {
     }
 
     private fun render() {
+        txtStepHint.visibility = View.GONE
+        txtStepHint.text = ""
         when (step) {
             Step.NAME -> {
                 txtStep.text = if (flowMode == FlowMode.CREATE) {
@@ -181,6 +190,10 @@ class CalibrationWizardActivity : ComponentActivity() {
                 // Keep this step always editable.
                 btnPrimary.text = "Otevřít setup"
                 btnSecondary.text = if (cameraSetupDone) "Pokračovat" else "Zpět"
+                if (!cameraSetupDone) {
+                    txtStepHint.visibility = View.VISIBLE
+                    txtStepHint.text = "Nejdřív otevři setup a potvrď hodnoty tlačítkem Hotovo."
+                }
             }
 
             Step.CALIBRATION -> {
@@ -194,6 +207,10 @@ class CalibrationWizardActivity : ComponentActivity() {
                 // Calibration can be re-run; allow it even after completion.
                 btnPrimary.text = "Spustit kalibraci"
                 btnSecondary.text = if (calibDone) "Pokračovat" else "Zpět"
+                if (!calibDone) {
+                    txtStepHint.visibility = View.VISIBLE
+                    txtStepHint.text = "Po kroku Kontrola musíš potvrdit ULOŽIT, jinak se krok neoznačí jako hotový."
+                }
             }
 
             Step.SUMMARY -> {

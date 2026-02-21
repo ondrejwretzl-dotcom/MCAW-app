@@ -3,6 +3,7 @@ package com.mcaw.ui
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.view.View
 import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.camera.core.Camera
@@ -36,6 +37,7 @@ class CalibrationCameraSetupActivity : ComponentActivity() {
     private lateinit var sliderZoom: Slider
     private lateinit var txtZoomValue: TextView
     private lateinit var sliderGuide: Slider
+    private lateinit var loadingContainer: View
     private lateinit var txtGuideValue: TextView
     private lateinit var btnDone: MaterialButton
     private lateinit var btnCancel: MaterialButton
@@ -43,6 +45,7 @@ class CalibrationCameraSetupActivity : ComponentActivity() {
     private var cameraProvider: ProcessCameraProvider? = null
     private var previewUseCase: Preview? = null
     private var boundCamera: Camera? = null
+    private var cameraStartRequested: Boolean = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -58,9 +61,14 @@ class CalibrationCameraSetupActivity : ComponentActivity() {
         sliderZoom = findViewById(R.id.sliderZoom)
         txtZoomValue = findViewById(R.id.txtZoomValue)
         sliderGuide = findViewById(R.id.sliderGuide)
+        loadingContainer = findViewById(R.id.loadingContainer)
         txtGuideValue = findViewById(R.id.txtGuideValue)
         btnDone = findViewById(R.id.btnDone)
         btnCancel = findViewById(R.id.btnCancel)
+
+        previewView.previewStreamState.observe(this) { state ->
+            loadingContainer.visibility = if (state == PreviewView.StreamState.STREAMING) View.GONE else View.VISIBLE
+        }
 
         // Overlay setup: show ROI + guide, allow edit.
         overlay.showTelemetry = false
@@ -165,6 +173,9 @@ class CalibrationCameraSetupActivity : ComponentActivity() {
     }
 
     private fun startCamera() {
+        if (cameraStartRequested) return
+        cameraStartRequested = true
+        loadingContainer.visibility = View.VISIBLE
         val providerFuture = ProcessCameraProvider.getInstance(this)
         providerFuture.addListener({
             try {
@@ -192,10 +203,12 @@ class CalibrationCameraSetupActivity : ComponentActivity() {
                             )
                         )
                     } catch (t: Throwable) {
+                        cameraStartRequested = false
                         showCameraErrorAndFinish(t)
                     }
                 }
             } catch (t: Throwable) {
+                cameraStartRequested = false
                 showCameraErrorAndFinish(t)
             }
         }, ContextCompat.getMainExecutor(this))
