@@ -314,16 +314,19 @@ object AlertNotifier {
                 val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
                 val policy = chooseAudioPolicy(am)
                 val focusOk = requestAlertAudioFocus(am, gain = policy.gain, usage = policy.usage)
-                beginAudioHold(am, policy.stream, scalar = 1f, reason = "tts")
-                logAudioEvent(
-                    kind = "tts_req",
+                val spoke = if (focusOk) {
+                    beginAudioHold(am, policy.stream, scalar = 1f, reason = "tts")
+                    inst.speak(text, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
+                    true
+                } else false
+                logAudioAttempt(
                     level = if (utteranceId.contains("red")) 2 else 1,
                     policy = policy,
                     focusOk = focusOk,
-                    fallback = false,
-                    fail = null
+                    played = spoke,
+                    failureReason = if (spoke) null else "focus_denied",
+                    fallback = false
                 )
-                inst.speak(text, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
             }
         } catch (_: Exception) {
             // ignore
@@ -382,41 +385,47 @@ object AlertNotifier {
         // Primary attempt.
         val p1 = chooseAudioPolicy(am)
         var focusOk = requestAlertAudioFocus(am, gain = p1.gain, usage = p1.usage)
-        beginAudioHold(am, p1.stream, scalar = scalar, reason = if (critical) "red" else "orange")
-
-        var played = playViaPoolOrMedia(context, resId, p1, scalar)
+        var played = false
+        if (focusOk) {
+            played = playViaPoolOrMedia(context, resId, p1, scalar)
+            if (played) beginAudioHold(am, p1.stream, scalar = scalar, reason = if (critical) "red" else "orange")
+        }
 
         // Fallback "proražení" for BOTH ORANGE and RED:
         // If BT is present and primary is MEDIA but focus denied or playback failed, retry with PRIME.
         var usedFallback = false
+        var finalPolicy = p1
         if (p1.route == ROUTE_BT_MEDIA && (!focusOk || !played)) {
             val p2 = AudioPolicy(route = ROUTE_BT_PRIME, usage = USAGE_PRIME, gain = GAIN_PRIME, stream = STREAM_RING)
-            // Release + reacquire focus with stronger params.
             abandonAlertAudioFocus(am)
             focusOk = requestAlertAudioFocus(am, gain = p2.gain, usage = p2.usage)
-            beginAudioHold(am, p2.stream, scalar = scalar, reason = "fallback")
-            played = playViaPoolOrMedia(context, resId, p2, scalar)
+            played = false
+            if (focusOk) {
+                played = playViaPoolOrMedia(context, resId, p2, scalar)
+                if (played) beginAudioHold(am, p2.stream, scalar = scalar, reason = "fallback")
+            }
             usedFallback = true
-            logAudioEvent(
-                kind = "snd_fallback",
-                level = level,
-                policy = p2,
-                focusOk = focusOk,
-                fallback = true,
-                fail = if (played) null else "play_failed"
-            )
+            finalPolicy = p2
         }
 
-        // SoundPool has no completion callback. Release focus/volume after a short, safe delay.
-        scheduleSoundRelease(am, resId, usedFallback = usedFallback)
+        if (played) {
+            // SoundPool has no completion callback. Release focus/volume after a short, safe delay.
+            scheduleSoundRelease(am, resId, usedFallback = usedFallback)
+        } else {
+            abandonAlertAudioFocus(am)
+        }
 
-        logAudioEvent(
-            kind = "snd_req",
+        logAudioAttempt(
             level = level,
-            policy = p1,
+            policy = finalPolicy,
             focusOk = focusOk,
-            fallback = usedFallback,
-            fail = if (played) null else "play_failed"
+            played = played,
+            failureReason = when {
+                played -> null
+                !focusOk -> "focus_denied"
+                else -> "play_failed"
+            },
+            fallback = usedFallback
         )
     }
 
@@ -626,6 +635,7 @@ object AlertNotifier {
     }
 
     private fun endAudioHold(am: AudioManager) {
+        if (activeAudioHolds <= 0) return
         val left = (activeAudioHolds - 1).coerceAtLeast(0)
         activeAudioHolds = left
         if (left > 0) return
@@ -645,36 +655,34 @@ object AlertNotifier {
         SessionActivityLogger.log("audio_hold_end")
     }
 
-    private fun logAudioEvent(
-        kind: String,
+    private fun logAudioAttempt(
         level: Int,
         policy: AudioPolicy,
         focusOk: Boolean,
-        fallback: Boolean,
-        fail: String?
+        played: Boolean,
+        failureReason: String?,
+        fallback: Boolean
     ) {
         val hasBt = (policy.route == ROUTE_BT_MEDIA || policy.route == ROUTE_BT_PRIME)
-        val msg = buildString(128) {
-            append("audio_")
-            append(kind)
-            append(" lvl=")
+        val msg = buildString(160) {
+            append("audio_attempt lvl=")
             append(level)
             append(" route=")
             append(routeName(policy.route))
             append(" usage=")
             append(policy.usage)
-            append(" gain=")
-            append(policy.gain)
             append(" stream=")
             append(streamName(policy.stream))
             append(" bt=")
             append(if (hasBt) 1 else 0)
             append(" focus=")
             append(if (focusOk) "GRANTED" else "DENIED")
+            append(" played=")
+            append(if (played) 1 else 0)
             if (fallback) append(" fallback=1")
-            if (fail != null) {
+            if (failureReason != null) {
                 append(" fail=")
-                append(fail)
+                append(failureReason)
             }
         }
         SessionActivityLogger.log(msg)
