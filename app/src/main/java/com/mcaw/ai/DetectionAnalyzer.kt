@@ -185,6 +185,8 @@ class DetectionAnalyzer(
     private var lockedPriority: Float = 0f
     private var switchCandidateId: Long? = null
     private var switchCandidateCount: Int = 0
+    private var lockedAgeFrames: Int = 0
+    private var lockMissingSinceMs: Long = -1L
     private var lastSelectedTrackId: Long = -1L
 
     // Lock timing (prevents rapid target switching / UI blinking)
@@ -454,7 +456,7 @@ if (AppPreferences.debugOverlay) {
                 )
             }
 
-            val tracked = tracker.update(post.accepted)
+            val tracked = tracker.update(post.accepted, tsMs = tsMs, bottomOccluded = bottomOccludedStable)
             val bestTrack = selectLockedTarget(tracked, frameW, frameH, roiTrap, tsMs)
 
             if (bestTrack == null) {
@@ -466,17 +468,23 @@ if (AppPreferences.debugOverlay) {
                 AlertNotifier.stopInApp(ctx)
 
                 // DEBUG trace: lock cleared
-                traceLogger?.logTarget(
+                traceLogger?.logTrack(
                     tsMs = tsMs,
-                    kind = 1,
                     lockedId = -1L,
+                    lockedAgeFrames = 0,
+                    lockedMisses = 0,
                     bestId = -1L,
-                    bestPri = 0f,
-                    lockedPri = 0f,
-                    candId = -1L,
-                    candCount = 0,
-                    alertLevel = lastAlertLevel,
-                    mode = AppPreferences.detectionMode
+                    bestScore = 0f,
+                    lockedScore = 0f,
+                    switchPending = 0,
+                    switchCount = 0,
+                    graceActive = 0,
+                    graceRemainingMs = 0L,
+                    bottomOccluded = 0,
+                    matchIou = Float.NaN,
+                    matchCenterDx = Float.NaN,
+                    matchCenterDy = Float.NaN,
+                    switchReason = 3
                 )
 
                 resetMotionState()
@@ -1388,8 +1396,6 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
         val pool = if (gated.isNotEmpty()) gated else tracks.filter { it.misses == 0 }
         if (pool.isEmpty()) return null
 
-        // Optional ego-path gating inside ROI trapezoid (reduces side-object false positives in city).
-        // Keeps behavior backward-compatible: if gating removes everything, fallback to original pool.
         val poolEgo = if (AppPreferences.laneFilter) {
             val maxOff = dynamicEgoMaxOffset(tsMs)
             val filtered = pool.filter { t ->
@@ -1400,144 +1406,115 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
             pool
         }
 
-
         val roiN = AppPreferences.getRoiTrapezoidNormalized()
         val roiCenterX = roiN.centerX
-
-        
-
         val focalPxForSel = estimateFocalLengthPx(frameH.toInt())
-fun priority(t: TemporalTracker.TrackedDetection, isLocked: Boolean = false): Float {
-    val d = t.detection
-    val b = d.box
-    val cxN = (b.cx / frameW).coerceIn(0f, 1f)
-    val dx = abs(cxN - roiCenterX)
 
-    // X-center alignment dominates: user ROI is aligned to lane/forward direction.
-    val centerScore = (1f - (dx * 1.8f)).coerceIn(0f, 1f)
-    val score = d.score.coerceIn(0f, 1f)
+        fun priority(t: TemporalTracker.TrackedDetection, isLocked: Boolean = false): Float {
+            val d = t.detection
+            val b = d.box
+            val cxN = (b.cx / frameW).coerceIn(0f, 1f)
+            val dx = abs(cxN - roiCenterX)
+            val centerScore = (1f - (dx * 1.8f)).coerceIn(0f, 1f)
+            val score = d.score.coerceIn(0f, 1f)
 
-    // Distance proxy for prioritization only (do NOT treat as ground-truth long-range meters).
-    // Use the monocular bbox-height estimate which is cheap and stable enough for ranking.
-    val distM = DetectionPhysics.estimateDistanceMeters(
-        bbox = b,
-        frameHeightPx = frameH.toInt(),
-        focalPx = focalPxForSel,
-        realHeightM = 1.5f
-    )
-    // Convert distance to "closer is better" score. Clamp at 40m: beyond that, treat as equally far.
-    val distanceScore = if (distM == null || !distM.isFinite() || distM <= 0f) {
-        0f
-    } else {
-        (1f - (distM / 40f).coerceIn(0f, 1f))
-    }
+            val distM = DetectionPhysics.estimateDistanceMeters(
+                bbox = b,
+                frameHeightPx = frameH.toInt(),
+                focalPx = focalPxForSel,
+                realHeightM = 1.5f
+            )
+            val distanceScore = if (distM == null || !distM.isFinite() || distM <= 0f) {
+                0f
+            } else {
+                (1f - (distM / 40f).coerceIn(0f, 1f))
+            }
 
-    // Stronger ROI influence for target selection (still soft; never a hard gate).
-    // Rationale: user moves ROI above dashboard and aligns it with their lane.
-    val roiContain = containmentRatioInTrapezoid(b, _roiTrap.pts).coerceIn(0f, 1f)
-    // ROI is a selection helper only. For the *locked* target we soften ROI weighting
-    // so we don't switch away just because the object becomes partially outside ROI (e.g., close-range / queue).
-    val roiWeight = if (isLocked) {
-        1.0f
-    } else {
-        ((0.10f + 0.90f * roiContain).toDouble().pow(1.8)).toFloat()
-    }
+            val roiContain = containmentRatioInTrapezoid(b, _roiTrap.pts).coerceIn(0f, 1f)
+            val roiWeight = if (isLocked) 1.0f else ((0.10f + 0.90f * roiContain).toDouble().pow(1.8)).toFloat()
 
-    val egoScore = if (AppPreferences.laneFilter) {
-        val maxOff = dynamicEgoMaxOffset(tsMs)
-        val off = egoOffsetInRoiN(b, frameW, frameH)
-        (1f - (off / maxOff)).coerceIn(0f, 1f)
-    } else {
-        0.5f
-    }
+            val egoScore = if (AppPreferences.laneFilter) {
+                val maxOff = dynamicEgoMaxOffset(tsMs)
+                val off = egoOffsetInRoiN(b, frameW, frameH)
+                (1f - (off / maxOff)).coerceIn(0f, 1f)
+            } else {
+                0.5f
+            }
 
-    // Selection base: center + distance dominate, then model confidence + ego-path.
-    // (Area is intentionally NOT a primary driver because ROI/occlusion can distort apparent size.)
-    val base = (centerScore * 0.45f) + (distanceScore * 0.35f) + (score * 0.10f) + (egoScore * 0.10f)
-    return (base * roiWeight).coerceIn(0f, 1f)
-}
+            val base = (centerScore * 0.45f) + (distanceScore * 0.35f) + (score * 0.10f) + (egoScore * 0.10f)
+            return (base * roiWeight).coerceIn(0f, 1f)
+        }
 
         val bestNow = poolEgo.maxByOrNull { priority(it) } ?: return null
         val bestNowPrio = priority(bestNow)
 
-        val lockedId = lockedTrackId
-        val locked = if (lockedId != null) poolEgo.firstOrNull { it.id == lockedId } else null
+        val prevLockedId = lockedTrackId
+        val trackerLockedId = tracker.getLockedTrackId()
+        val locked = if (trackerLockedId != null) tracks.firstOrNull { it.id == trackerLockedId } else null
+        val lockedVisible = if (trackerLockedId != null) poolEgo.firstOrNull { it.id == trackerLockedId } else null
 
-        if (locked == null) {
-            lockedTrackId = bestNow.id
-            lockedPriority = bestNowPrio
-            lockedSinceMs = tsMs
-            switchCandidateId = null
-            switchCandidateCount = 0
-            // DEBUG trace: lock changed
-            traceLogger?.logTarget(
-                tsMs = tsMs,
-                kind = 1,
-                lockedId = bestNow.id,
-                bestId = bestNow.id,
-                bestPri = bestNowPrio,
-                lockedPri = bestNowPrio,
-                candId = (switchCandidateId ?: -1L),
-                candCount = switchCandidateCount,
-                alertLevel = lastAlertLevel,
-                mode = AppPreferences.detectionMode
-            )
+        lockedTrackId = trackerLockedId
+        lockedAgeFrames = tracker.getLockedAgeFrames()
+        switchCandidateId = null
+        switchCandidateCount = 0
+        if (locked == null || trackerLockedId == null) {
+            lockMissingSinceMs = -1L
             return bestNow
         }
 
-        val lockedPrio = priority(locked, isLocked = true)
-        lockedPriority = lockedPrio
+        if (locked.misses > 0 && lockMissingSinceMs < 0L) lockMissingSinceMs = tsMs
+        if (locked.misses == 0) lockMissingSinceMs = -1L
 
-        // Hard stickiness: keep current lock for a short time to avoid rapid switching.
-        val minLockMs = if (lastAlertLevel > 0) 900L else 600L
-        if (lockedSinceMs > 0L && (tsMs - lockedSinceMs) < minLockMs) {
-            return locked
-        }
+        val selected = lockedVisible ?: bestNow
+        val lockedPrio = if (lockedVisible != null) priority(lockedVisible, isLocked = true) else Float.NaN
+        lockedPriority = if (lockedPrio.isFinite()) lockedPrio else bestNowPrio
 
-        // Switching is harder during active alerts to keep TTC/WHY stable.
-        val switchMargin = if (lastAlertLevel > 0) 1.85f else 1.45f
-        val minAbsGain = if (lastAlertLevel > 0) 0.14f else 0.10f
-        val framesNeeded = if (lastAlertLevel > 0) 8 else 5
+        val graceActive = tracker.isLockGraceActive(tsMs)
+        val reason = tracker.getLastSwitchReason()
+        val switchChanged = prevLockedId != trackerLockedId
 
-        val eligibleSwitch =
-            bestNow.id != locked.id &&
-                (bestNowPrio >= lockedPrio * switchMargin || (bestNowPrio - lockedPrio) >= minAbsGain)
-
-        if (eligibleSwitch) {
-            if (switchCandidateId == bestNow.id) {
-                switchCandidateCount += 1
-            } else {
-                switchCandidateId = bestNow.id
-                switchCandidateCount = 1
-            }
-
-            if (switchCandidateCount >= framesNeeded) {
-                lockedTrackId = bestNow.id
-                lockedPriority = bestNowPrio
-                lockedSinceMs = tsMs
-                switchCandidateId = null
-                switchCandidateCount = 0
-            // DEBUG trace: lock changed
-            traceLogger?.logTarget(
-                tsMs = tsMs,
-                kind = 1,
-                lockedId = bestNow.id,
-                bestId = bestNow.id,
-                bestPri = bestNowPrio,
-                lockedPri = bestNowPrio,
-                candId = (switchCandidateId ?: -1L),
-                candCount = switchCandidateCount,
-                alertLevel = lastAlertLevel,
-                mode = AppPreferences.detectionMode
-            )
-                return bestNow
-            }
+        val pending = if (!switchChanged && bestNow.id != trackerLockedId && !graceActive) 1 else 0
+        val graceRemainingMs = if (graceActive && lockMissingSinceMs > 0L) {
+            (400L - (tsMs - lockMissingSinceMs)).coerceAtLeast(0L)
         } else {
-            switchCandidateId = null
-            switchCandidateCount = 0
+            0L
         }
 
-        return locked
+        val shouldLogTrack =
+            switchChanged ||
+                graceActive ||
+                pending == 1 ||
+                reason != TemporalTracker.SwitchReason.NONE ||
+                (AppPreferences.debugOverlay && (frameIndex % 15L == 0L))
+
+        if (shouldLogTrack) {
+            traceLogger?.logTrack(
+                tsMs = tsMs,
+                lockedId = trackerLockedId,
+                lockedAgeFrames = lockedAgeFrames,
+                lockedMisses = tracker.getLockedMissFrames(),
+                bestId = bestNow.id,
+                bestScore = bestNowPrio,
+                lockedScore = if (lockedPrio.isFinite()) lockedPrio else -1f,
+                switchPending = pending,
+                switchCount = switchCandidateCount,
+                graceActive = if (graceActive) 1 else 0,
+                graceRemainingMs = graceRemainingMs,
+                bottomOccluded = if (bottomOccludedStable) 1 else 0,
+                matchIou = if (tracker.wasLastMatchOcclusionFallback()) 0f else Float.NaN,
+                matchCenterDx = Float.NaN,
+                matchCenterDy = Float.NaN,
+                switchReason = when {
+                    tracker.wasLastMatchOcclusionFallback() -> 4
+                    reason == TemporalTracker.SwitchReason.GRACE_EXPIRED -> 1
+                    reason == TemporalTracker.SwitchReason.BETTER_STABLE -> 2
+                    reason == TemporalTracker.SwitchReason.LOST -> 3
+                    else -> 0
+                }
+            )
+        }
+
+        return selected
     }
 
     /**
