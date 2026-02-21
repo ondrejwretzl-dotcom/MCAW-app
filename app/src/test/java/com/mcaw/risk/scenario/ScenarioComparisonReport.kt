@@ -50,6 +50,11 @@ object ScenarioComparisonReport {
         val entries: List<DiffEntry>
     )
 
+    data class BaselineUpdateDecision(
+        val shouldUpdate: Boolean,
+        val reasons: List<String>
+    )
+
     fun summarizeRuns(runs: List<ScenarioRun>): List<ScenarioSummary> {
         return runs.map { run ->
             val levels = run.levels
@@ -372,6 +377,56 @@ object ScenarioComparisonReport {
 
         sb.append("</body></html>")
         outFile.writeText(sb.toString())
+    }
+
+    fun decideBaselineUpdate(
+        hasBaseline: Boolean,
+        allScenariosPass: Boolean,
+        diff: DiffResult?,
+        requireAllPass: Boolean,
+        maxSoftRegressions: Int,
+        minImproved: Int
+    ): BaselineUpdateDecision {
+        val reasons = ArrayList<String>()
+
+        if (requireAllPass && !allScenariosPass) {
+            reasons += "Not all scenarios passed."
+        }
+
+        if (!hasBaseline) {
+            return if (reasons.isEmpty()) {
+                BaselineUpdateDecision(true, listOf("No baseline exists; creating initial baseline."))
+            } else {
+                BaselineUpdateDecision(false, reasons + "Initial baseline creation blocked by gates.")
+            }
+        }
+
+        val d = diff
+        if (d == null) {
+            reasons += "Diff is unavailable while baseline exists."
+            return BaselineUpdateDecision(false, reasons)
+        }
+
+        if (d.hardRegressionCount > 0) {
+            reasons += "Hard regressions present: ${d.hardRegressionCount}."
+        }
+        if (d.softRegressionCount > maxSoftRegressions) {
+            reasons += "Soft regressions exceed limit: ${d.softRegressionCount} > $maxSoftRegressions."
+        }
+        if (d.improvedCount < minImproved) {
+            reasons += "Improvements below gate: ${d.improvedCount} < $minImproved."
+        }
+
+        return if (reasons.isEmpty()) {
+            BaselineUpdateDecision(
+                true,
+                listOf(
+                    "Gates passed: hard=${d.hardRegressionCount}, soft=${d.softRegressionCount}, improved=${d.improvedCount}."
+                )
+            )
+        } else {
+            BaselineUpdateDecision(false, reasons)
+        }
     }
 
     private fun firstTimeAtOrAbove(run: ScenarioRun, level: Int): Float? {

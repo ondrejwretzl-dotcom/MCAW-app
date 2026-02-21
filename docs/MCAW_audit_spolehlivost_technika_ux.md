@@ -131,3 +131,46 @@ Tím bude implementace v dalším kroku přímočará a bez přepisování logik
 ## 8) Shrnutí jednou větou
 
 Risk test stack už máte velmi dobrý; teď potřebujeme hlavně **automatické porovnání dvou běhů a čitelné HTML diff reporty**, aby byl po každém commitu jasný dopad změn.
+
+---
+
+## 9) Praktické prahy v1 (doporučený start pro CI)
+
+Na základě aktuálního katalogu scénářů a cíle minimalizovat falešné pády CI navrhuji v1 defaulty:
+
+- `mcaw.diff.hardLatencySec=0.60`
+- `mcaw.diff.softLatencySec=0.25`
+- `mcaw.diff.hardTransitionsInc=2`
+- `mcaw.diff.softTransitionsInc=1`
+
+Interpretace:
+- Hard regrese: výrazné zpomalení reakce varování nebo výrazný nárůst cvakání.
+- Soft regrese: časná signalizace driftu (warning), bez okamžitého failu.
+
+## 10) Mechanismus bezpečné aktualizace baseline (aby se na to nezapomnělo)
+
+Baseline update se nyní řeší jako **řízený gate**, ne automaticky vždy.
+
+Doporučené vlastnosti:
+- baseline se aktualizuje jen když projdou quality gate podmínky,
+- baseline candidate se zapisuje na explicitní cestu,
+- do reportu se uloží rozhodnutí (`baseline_update_decision.txt`) proč ano/ne.
+
+Doporučené CI přepínače:
+
+- `mcaw.baseline.updateEnabled=true|false`
+- `mcaw.baseline.candidateOut=/path/to/new/baseline_summary.json`
+- `mcaw.baseline.requireAllPass=true`
+- `mcaw.baseline.maxSoftRegressions=0`
+- `mcaw.baseline.minImproved=0` (pro první baseline),
+  později např. `1` pro „jen když je reálné zlepšení“.
+
+## 11) Další kroky po tomto PR
+
+1. **První baseline vytvořit vědomě** (s `mcaw.baseline.updateEnabled=true`, bez existující baseline).
+2. Baseline uložit immutable (ideálně SHA/časová cesta) + mít pointer na „approved latest“.
+3. V CI zapnout:
+   - `mcaw.failOnHardRegression=true`
+   - baseline compare přes `mcaw.baselineSummary=...`
+4. Build summary/artefakt publikovat s odkazem na `index.html`.
+5. Po 1–2 týdnech doladit prahy podle reálných trendů.
