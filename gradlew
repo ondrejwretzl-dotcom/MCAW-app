@@ -146,11 +146,29 @@ case "$JAVA_VERSION_STR" in
   "") ;;
   [0-9]*)
     if [ "$JAVA_VERSION_STR" -ge 25 ] 2>/dev/null; then
-      die "ERROR: Detected Java $JAVA_VERSION_STR. This project currently requires Java 17-24 to run Gradle reliably.
+      # Prefer local fallback JDKs commonly available in CI/dev containers.
+      for CAND in \
+        "$HOME/.local/share/mise/installs/java/24.0.2/bin/java" \
+        "$HOME/.local/share/mise/installs/java/24/bin/java" \
+        "$HOME/.local/share/mise/installs/java/21.0.2/bin/java" \
+        "$HOME/.local/share/mise/installs/java/21/bin/java" \
+        "$HOME/.local/share/mise/installs/java/17.0.2/bin/java" \
+        "$HOME/.local/share/mise/installs/java/17/bin/java"
+      do
+        if [ -x "$CAND" ]; then
+          JAVACMD="$CAND"
+          JAVA_VERSION_STR=$("$JAVACMD" -version 2>&1 | awk -F"[\".]" 'NR==1 {print $2}')
+          break
+        fi
+      done
+
+      if [ "$JAVA_VERSION_STR" -ge 25 ] 2>/dev/null; then
+        die "ERROR: Detected Java $JAVA_VERSION_STR and no compatible local fallback JDK (17-24) was found.
 
 Use JDK 17 (recommended) and re-run, for example:
   export JAVA_HOME=/path/to/jdk-17
   export PATH=\$JAVA_HOME/bin:\$PATH"
+      fi
     fi
   ;;
 esac
