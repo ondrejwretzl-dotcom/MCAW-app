@@ -43,30 +43,46 @@ jobs:
           FAIL_ON_SCENARIO: "false"
         run: scripts/mcaw/scenario_compare_ci.sh
 
+      - name: Locate latest scenario report directory
+        if: always()
+        id: locate
+        run: |
+          REPORT_ROOT="app/build/reports/mcaw_scenarios"
+          if [[ ! -d "$REPORT_ROOT" ]]; then
+            REPORT_ROOT="build/reports/mcaw_scenarios"
+          fi
+
+          LATEST=""
+          if [[ -d "$REPORT_ROOT" ]]; then
+            LATEST="$(find "$REPORT_ROOT" -mindepth 1 -maxdepth 1 -type d | sort | tail -n1)"
+          fi
+
+          echo "latest_report_dir=$LATEST" >> "$GITHUB_OUTPUT"
+
       - name: Upload scenario report artifact
-        if: always() && steps.compare.outputs.latest_report_dir != ''
+        if: always() && steps.locate.outputs.latest_report_dir != ''
         uses: actions/upload-artifact@v4
         with:
           name: mcaw-scenario-report
-          path: ${{ steps.compare.outputs.latest_report_dir }}
+          path: ${{ steps.locate.outputs.latest_report_dir }}
           if-no-files-found: error
 
       - name: Prepare Pages content
-        if: always() && steps.compare.outputs.latest_report_dir != ''
+        if: always() && steps.locate.outputs.latest_report_dir != ''
         run: |
           rm -rf .pages
           mkdir -p .pages
-          cp -R "${{ steps.compare.outputs.latest_report_dir }}"/* .pages/
+          cp -R "${{ steps.locate.outputs.latest_report_dir }}"/* .pages/
 
       - name: Upload Pages artifact
-        if: always() && steps.compare.outputs.latest_report_dir != ''
+        if: always() && steps.locate.outputs.latest_report_dir != ''
         uses: actions/upload-pages-artifact@v3
         with:
           path: .pages
 
       - name: Deploy to GitHub Pages
         id: deployment
-        if: always() && steps.compare.outputs.latest_report_dir != ''
+        if: always() && steps.locate.outputs.latest_report_dir != ''
         uses: actions/deploy-pages@v4
 
       - name: Job summary
@@ -75,8 +91,8 @@ jobs:
           {
             echo "## MCAW Scenario Report"
             echo "- Artifact: **mcaw-scenario-report**"
-            echo "- Report dir: \`${{ steps.compare.outputs.latest_report_dir }}\`"
-            echo "- Gradle exit: \`${{ steps.compare.outputs.gradle_exit_code }}\`"
+            echo "- Report dir: \`${{ steps.locate.outputs.latest_report_dir }}\`"
+            echo "- Compare outcome: **${{ steps.compare.outcome }}**"
             if [[ -n "${{ steps.deployment.outputs.page_url }}" ]]; then
               echo "- GitHub Pages: ${{ steps.deployment.outputs.page_url }}"
             else
@@ -88,12 +104,7 @@ jobs:
       - name: Enforce compare result
         if: always()
         run: |
-          CODE="${{ steps.compare.outputs.gradle_exit_code }}"
-          if [[ -z "$CODE" ]]; then
-            echo "Missing compare exit code" >&2
-            exit 2
-          fi
-          if [[ "$CODE" != "0" ]]; then
-            echo "Scenario compare failed with exit code $CODE" >&2
-            exit "$CODE"
+          if [[ "${{ steps.compare.outcome }}" != "success" ]]; then
+            echo "Scenario compare failed (outcome=${{ steps.compare.outcome }})." >&2
+            exit 1
           fi
