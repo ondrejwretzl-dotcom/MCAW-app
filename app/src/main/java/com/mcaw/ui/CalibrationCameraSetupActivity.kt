@@ -47,6 +47,14 @@ class CalibrationCameraSetupActivity : ComponentActivity() {
     private var boundCamera: Camera? = null
     private var cameraStartRequested: Boolean = false
 
+    // Draft rollback snapshot (cancel/back should not persist unfinished edits).
+    private var initialZoomRatio: Float = 1.0f
+    private var initialRoiTopY: Float = 0.32f
+    private var initialRoiBottomY: Float = 0.92f
+    private var initialRoiTopHalfW: Float = 0.18f
+    private var initialRoiBottomHalfW: Float = 0.46f
+    private var initialRoiCenterX: Float = 0.5f
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AppPreferences.ensureInit(this)
@@ -75,7 +83,13 @@ class CalibrationCameraSetupActivity : ComponentActivity() {
         overlay.roiEditMode = true
         overlay.showGuideLine = true
 
+        initialZoomRatio = AppPreferences.cameraZoomRatio
         val roi = AppPreferences.getRoiTrapezoidNormalized()
+        initialRoiTopY = roi.topY
+        initialRoiBottomY = roi.bottomY
+        initialRoiTopHalfW = roi.topHalfW
+        initialRoiBottomHalfW = roi.bottomHalfW
+        initialRoiCenterX = roi.centerX
         overlay.roiTopY = roi.topY
         overlay.roiBottomY = roi.bottomY
         overlay.roiTopHalfW = roi.topHalfW
@@ -139,6 +153,7 @@ class CalibrationCameraSetupActivity : ComponentActivity() {
         }
 
         btnCancel.setOnClickListener {
+            restoreDraftState()
             setResult(RESULT_CANCELED)
             finish()
         }
@@ -168,8 +183,21 @@ class CalibrationCameraSetupActivity : ComponentActivity() {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == REQ_CAMERA) {
             val ok = grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
-            if (ok) startCamera() else finish()
+            if (ok) {
+                startCamera()
+            } else {
+                restoreDraftState()
+                setResult(RESULT_CANCELED)
+                finish()
+            }
         }
+    }
+
+
+    override fun onBackPressed() {
+        restoreDraftState()
+        setResult(RESULT_CANCELED)
+        super.onBackPressed()
     }
 
     private fun startCamera() {
@@ -212,6 +240,18 @@ class CalibrationCameraSetupActivity : ComponentActivity() {
                 showCameraErrorAndFinish(t)
             }
         }, ContextCompat.getMainExecutor(this))
+    }
+
+
+    private fun restoreDraftState() {
+        AppPreferences.cameraZoomRatio = initialZoomRatio
+        AppPreferences.setRoiTrapezoidNormalized(
+            topY = initialRoiTopY,
+            bottomY = initialRoiBottomY,
+            topHalfW = initialRoiTopHalfW,
+            bottomHalfW = initialRoiBottomHalfW,
+            centerX = initialRoiCenterX
+        )
     }
 
     private fun showCameraErrorAndFinish(t: Throwable) {

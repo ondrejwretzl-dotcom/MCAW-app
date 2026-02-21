@@ -1572,7 +1572,7 @@ fun priority(t: TemporalTracker.TrackedDetection, isLocked: Boolean = false): Fl
      */
     private fun roiTrapezoidPx(frameW: Float, frameH: Float): RoiTrapPx {
         val roiN = AppPreferences.getRoiTrapezoidNormalized()
-        val cx = 0.5f
+        val cx = roiN.centerX.coerceIn(0f, 1f)
 
         val tlxN = (cx - roiN.topHalfW).coerceIn(0f, 1f)
         val trxN = (cx + roiN.topHalfW).coerceIn(0f, 1f)
