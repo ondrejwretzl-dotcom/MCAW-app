@@ -84,12 +84,12 @@
     </LinearLayout>
 
     <TextView
-        android:id="2947id/txtCalibrationHealth"
+        android:id="@+id/txtCalibrationHealth"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginBottom="6dp"
         android:padding="10dp"
-        android:background="/bg_panel_glass"
+        android:background="@drawable/bg_panel_glass"
         android:textColor="#FCD34D"
         android:textSize="13sp"
         android:visibility="gone"
