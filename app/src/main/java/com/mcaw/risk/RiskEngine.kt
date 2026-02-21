@@ -84,6 +84,7 @@ class RiskEngine {
         const val BIT_RED_COMBO_OK = 1 shl 10
         const val BIT_RED_GUARDED = 1 shl 11
         const val BIT_SPEED_LOWCONF = 1 shl 12
+        const val BIT_BOTTOM_OCCLUDED_CLOSE = 1 shl 13
 
         fun reasonVersion(reasonBits: Int): Int = (reasonBits ushr REASON_BITS_VERSION_SHIFT) and 0xF
 
@@ -124,6 +125,7 @@ class RiskEngine {
             if ((payload and BIT_TTC_SLOPE_STRONG) != 0) aux = aux or (1 shl 6)
             if ((payload and BIT_RED_COMBO_OK) != 0) aux = aux or (1 shl 7)
             if ((payload and BIT_RED_GUARDED) != 0) aux = aux or (1 shl 8)
+            if ((payload and BIT_BOTTOM_OCCLUDED_CLOSE) != 0) aux = aux or (1 shl 9)
 
             return core or (aux shl 3)
         }
@@ -143,6 +145,7 @@ class RiskEngine {
             if ((payload and BIT_EGO_BRAKE) != 0) sb.append("EGO_BRAKE ")
             if ((payload and BIT_QUALITY_CONSERV) != 0) sb.append("QCONSERV ")
             if ((payload and BIT_SPEED_LOWCONF) != 0) sb.append("SPD_LOW ")
+            if ((payload and BIT_BOTTOM_OCCLUDED_CLOSE) != 0) sb.append("BOCCL ")
             if ((payload and BIT_RED_COMBO_OK) != 0) sb.append("RED_OK ")
             if ((payload and BIT_RED_GUARDED) != 0) sb.append("RED_GUARD ")
             // trim trailing space
@@ -153,6 +156,7 @@ class RiskEngine {
 
     // Hysteresis on riskScore (prevents blinking)
     private var lastLevel: Int = 0
+    private var bottomOccludedRedHoldUntilMs: Long = 0L
 
     // EMA-integrated riskScore (anti-blink / continuity)
     private var emaRisk: Float = 0f
@@ -215,6 +219,8 @@ class RiskEngine {
         cutInActive: Boolean,
         brakeCueActive: Boolean,
         brakeCueStrength: Float, // 0..1
+        occlusionCloseFactor: Float = 0f,
+        occlusionCloseEligible: Boolean = false,
         // C2: quality acts as a weight (0..1), not a hard gate.
         // 1.0 = full confidence, lower values = more conservative thresholds and lower gain.
         qualityWeight: Float = 1f,
@@ -251,6 +257,8 @@ class RiskEngine {
 
         val brakeScore = if (brakeCueActive) (0.70f + 0.30f * brakeCueStrength.coerceIn(0f, 1f)) else 0f
         val cutInScore = if (cutInActive) 1.0f else 0f
+        val occF = occlusionCloseFactor.coerceIn(0f, 1f)
+        val occlusionBoost = if (occlusionCloseEligible) 0.42f * occF else 0f
 
         // IMU braking: if rider is braking hard, slightly raise risk (predictive) near target.
         val egoBrake = egoBrakingConfidence.coerceIn(0f, 1f)
@@ -262,7 +270,8 @@ class RiskEngine {
             (relScore * 0.20f) +
             (roiScore * 0.10f) +
             (brakeScore * 0.10f) +
-            (cutInScore * 0.05f)
+            (cutInScore * 0.05f) +
+            occlusionBoost
 
         // boost if strong ego braking (but don't make it dominant)
         if (egoBrake >= 0.65f) {
@@ -313,7 +322,14 @@ class RiskEngine {
         // --- Convert risk -> level (with hysteresis) ---
         val preGuardLevel = riskToLevelWithHysteresis(risk, conserv)
         var level = preGuardLevel
-        if (preGuardLevel == 2 && !allowRed) {
+        val occlusionRed = occlusionCloseEligible && occF >= 0.90f
+        if (occlusionRed) {
+            level = 2
+            bottomOccludedRedHoldUntilMs = tsMs + 500L
+        } else if (level < 2 && bottomOccludedRedHoldUntilMs > tsMs) {
+            level = 2
+        }
+        if (preGuardLevel == 2 && !allowRed && !occlusionRed) {
             // Cap to ORANGE when combo confirmation is missing.
             // Also break RED latch immediately to prevent "stuck RED" on spikes.
             lastLevel = 1
@@ -338,6 +354,7 @@ class RiskEngine {
             if (egoBrake >= 0.65f) bits = bits or BIT_EGO_BRAKE
             if (conserv >= 0.15f) bits = bits or BIT_QUALITY_CONSERV
             if (riderSpeedConfidence < 0.60f) bits = bits or BIT_SPEED_LOWCONF
+            if (occlusionRed || (occlusionCloseEligible && occF > 0.5f)) bits = bits or BIT_BOTTOM_OCCLUDED_CLOSE
             if (slopeStrong) bits = bits or BIT_TTC_SLOPE_STRONG
             if (level == 2 && allowRed) bits = bits or BIT_RED_COMBO_OK
             if (level == 1 && preGuardLevel == 2 && !allowRed) bits = bits or BIT_RED_GUARDED
@@ -352,6 +369,7 @@ class RiskEngine {
         // - RED musí obsahovat alespoň jeden z core faktorů (TTC/DIST/REL)
         if (level == 2) {
             bits = bits or BIT_RED_COMBO_OK
+            if (occlusionRed) bits = bits or BIT_BOTTOM_OCCLUDED_CLOSE
             if ((bits and (BIT_TTC or BIT_DIST or BIT_REL)) == 0) {
                 bits = bits or BIT_TTC
             }
@@ -370,7 +388,17 @@ class RiskEngine {
         return out
     }
 
+
+    fun resetState() {
+        lastLevel = 0
+        emaRisk = 0f
+        emaInit = false
+        lastTtcLevel = 0
+        bottomOccludedRedHoldUntilMs = 0L
+    }
+
     fun standingResult(_riderSpeedMps: Float): Result {
+        bottomOccludedRedHoldUntilMs = 0L
         out.level = 0
         out.riskScore = 0f
         out.reasonBits = packReasonBits(BIT_RIDER_STAND)

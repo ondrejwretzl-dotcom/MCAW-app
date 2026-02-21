@@ -17,6 +17,10 @@ object ReasonTextMapper {
      */
     fun short(reasonBits: Int): String {
         if (reasonBits == 0) return ""
+        val payload = RiskEngine.stripReasonVersion(reasonBits)
+        if ((payload and RiskEngine.BIT_BOTTOM_OCCLUDED_CLOSE) != 0) {
+            return "Objekt velmi blízko (na hraně ROI)"
+        }
         return RiskEngine.formatReasonShort(reasonBits)
     }
 
