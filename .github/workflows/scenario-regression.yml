@@ -31,8 +31,10 @@ jobs:
           yes | sdkmanager --licenses
           sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Configure GitHub Pages
+      - name: Configure GitHub Pages (optional)
         if: always()
+        id: pages_cfg
+        continue-on-error: true
         uses: actions/configure-pages@v5
 
       - name: Run scenario compare
@@ -68,21 +70,21 @@ jobs:
           if-no-files-found: error
 
       - name: Prepare Pages content
-        if: always() && steps.locate.outputs.latest_report_dir != ''
+        if: always() && steps.pages_cfg.outcome == 'success' && steps.locate.outputs.latest_report_dir != ''
         run: |
           rm -rf .pages
           mkdir -p .pages
           cp -R "${{ steps.locate.outputs.latest_report_dir }}"/* .pages/
 
       - name: Upload Pages artifact
-        if: always() && steps.locate.outputs.latest_report_dir != ''
+        if: always() && steps.pages_cfg.outcome == 'success' && steps.locate.outputs.latest_report_dir != ''
         uses: actions/upload-pages-artifact@v3
         with:
           path: .pages
 
       - name: Deploy to GitHub Pages
         id: deployment
-        if: always() && steps.locate.outputs.latest_report_dir != ''
+        if: always() && steps.pages_cfg.outcome == 'success' && steps.locate.outputs.latest_report_dir != ''
         uses: actions/deploy-pages@v4
 
       - name: Job summary
@@ -95,6 +97,8 @@ jobs:
             echo "- Compare outcome: **${{ steps.compare.outcome }}**"
             if [[ -n "${{ steps.deployment.outputs.page_url }}" ]]; then
               echo "- GitHub Pages: ${{ steps.deployment.outputs.page_url }}"
+            elif [[ "${{ steps.pages_cfg.outcome }}" != "success" ]]; then
+              echo "- GitHub Pages: skipped (Pages is not enabled/configured for this repository)."
             else
               echo "- GitHub Pages: not deployed (missing report output)."
             fi
