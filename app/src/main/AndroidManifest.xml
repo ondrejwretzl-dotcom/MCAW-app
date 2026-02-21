@@ -44,6 +44,11 @@
             android:name="com.mcaw.ui.CalibrationWizardActivity"
             android:exported="false" />
 
+        <!-- Camera setup (zoom + guide + ROI) -->
+        <activity
+            android:name="com.mcaw.ui.CalibrationCameraSetupActivity"
+            android:exported="false" />
+
         <!-- Camera distance calibration wizard -->
         <activity
             android:name="com.mcaw.ui.CalibrationActivity"

@@ -30,8 +30,7 @@ class CalibrationWizardActivity : ComponentActivity() {
 
     private enum class Step {
         NAME,
-        ZOOM,
-        ROI,
+        CAMERA_SETUP,
         CALIBRATION,
         SUMMARY
     }
@@ -50,25 +49,19 @@ class CalibrationWizardActivity : ComponentActivity() {
     private var editProfileId: String? = null
     private var originalName: String = ""
 
-    private var zoomDone: Boolean = false
-    private var roiDone: Boolean = false
+        private var cameraSetupDone: Boolean = false
     private var calibDone: Boolean = false
 
-    private val launchZoom = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
-        if (res.resultCode == RESULT_OK) {
-            zoomDone = true
-            goTo(Step.ROI)
         }
-    }
 
-    private val launchRoi = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
+        private val launchCameraSetup = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
         if (res.resultCode == RESULT_OK) {
-            roiDone = true
+            cameraSetupDone = true
             goTo(Step.CALIBRATION)
         }
     }
 
-    private val launchCalib = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
+private val launchCalib = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
         if (res.resultCode == RESULT_OK) {
             calibDone = true
             goTo(Step.SUMMARY)
@@ -139,35 +132,37 @@ class CalibrationWizardActivity : ComponentActivity() {
     private fun render() {
         when (step) {
             Step.NAME -> {
-                txtStep.text = if (flowMode == FlowMode.CREATE) "Krok 1/6 – Název profilu" else "Krok 1/6 – Název profilu (editace)"
+                txtStep.text = if (flowMode == FlowMode.CREATE) "Krok 1/4 – Název profilu" else "Krok 1/4 – Název profilu (editace)"
                 inputNameLayout.visibility = View.VISIBLE
-                txtBody.text = "Pojmenuj profil pro tento držák telefonu.\n\nTip: Např. „Zrcátko vlevo“, „Kapotáž“ nebo „Auto – palubka“."
+                txtBody.text = "Pojmenuj profil pro tento držák telefonu.
+
+Tip: Např. „Zrcátko vlevo“, „Kapotáž“ nebo „Auto – palubka“."
                 btnPrimary.text = "Další"
                 btnSecondary.text = "Zrušit"
             }
-            Step.ZOOM -> {
-                txtStep.text = "Krok 2/6 – Zoom"
+            Step.CAMERA_SETUP -> {
+                txtStep.text = "Krok 2/4 – Kamera setup"
                 inputNameLayout.visibility = View.GONE
-                txtBody.text = "Nastav záběr tak, aby bylo auto před tebou dobře vidět.\n\nNeřeš čísla – jde o to, aby kamera viděla dění před tebou."
-                btnPrimary.text = if (zoomDone) "Pokračovat" else "Nastavit zoom"
-                btnSecondary.text = "Zpět"
-            }
-            Step.ROI -> {
-                txtStep.text = "Krok 3/6 – Směr jízdy + ROI"
-                inputNameLayout.visibility = View.GONE
-                txtBody.text = "Posuň svislou čáru na osu pruhu (směr jízdy).\nPak uprav trapezoid tak, aby pokryl oblast před tebou.\n\nTím vyřešíme natočení telefonu (yaw) bez úhlů."
-                btnPrimary.text = if (roiDone) "Pokračovat" else "Nastavit směr + ROI"
+                txtBody.text = "Nastav:
+• Zoom
+• Střed jízdy (svislá čára)
+• ROI (trapezoid)
+
+Oblast pod spodní hranou ROI se nebude vůbec detekovat (kapota/palubka)."
+                btnPrimary.text = if (cameraSetupDone) "Pokračovat" else "Otevřít setup"
                 btnSecondary.text = "Zpět"
             }
             Step.CALIBRATION -> {
-                txtStep.text = "Krok 4/6 – Kalibrace"
+                txtStep.text = "Krok 3/4 – Kalibrace vzdálenosti"
                 inputNameLayout.visibility = View.GONE
-                txtBody.text = "Teď provedeme kalibraci vzdálenosti.\n\nDůležité: Telefon musí být během kroků co nejstabilnější."
+                txtBody.text = "Teď provedeme kalibraci vzdálenosti.
+
+Důležité: telefon musí být během kroků co nejstabilnější."
                 btnPrimary.text = if (calibDone) "Pokračovat" else "Spustit kalibraci"
                 btnSecondary.text = "Zpět"
             }
             Step.SUMMARY -> {
-                txtStep.text = "Krok 5/6 – Souhrn"
+                txtStep.text = "Krok 4/4 – Souhrn"
                 inputNameLayout.visibility = View.GONE
 
                 val h = CalibrationHealth.evaluate()
@@ -182,15 +177,23 @@ class CalibrationWizardActivity : ComponentActivity() {
                 val stabilityLabel = when (AppPreferences.calibrationImuQuality) {
                     1 -> "Stabilita držáku: Dobrá"
                     2 -> "Stabilita držáku: Slabší (vibrace)"
-                    3 -> "Stabilita držáku: Špatná"
+                    3 -> "Stabilita držáku: Špatná (velké vibrace)"
                     else -> "Stabilita držáku: Neznámá"
                 }
 
-                val laneLabel = "Směr jízdy v obraze: nastavuješ v kroku ROI (svislá čára)"
+                txtBody.text = buildString {
+                    append("Profil: ").append(name).append("
 
-                val hint = if (h.distanceTypicalErrorHint.isNotBlank()) "\n${h.distanceTypicalErrorHint}" else ""
-                txtBody.text = "Profil: $name\n\n$distanceLabel$hint\n$stabilityLabel\n$laneLabel\n\n${h.detailText}\n\nPokračuj uložením."
-                btnPrimary.text = "Uložit jako aktivní"
+")
+                    append(distanceLabel).append("
+")
+                    append(stabilityLabel).append("
+
+")
+                    append(h.bannerText)
+                }
+
+                btnPrimary.text = "Uložit a aktivovat"
                 btnSecondary.text = "Uložit jako draft"
             }
         }
@@ -205,25 +208,15 @@ class CalibrationWizardActivity : ComponentActivity() {
                     return
                 }
                 inputNameLayout.error = null
-                goTo(Step.ZOOM)
+                goTo(Step.CAMERA_SETUP)
             }
-            Step.ZOOM -> {
-                if (zoomDone) {
-                    goTo(Step.ROI)
-                    return
-                }
-                val i = Intent(this, CalibrationActivity::class.java)
-                i.putExtra(CalibrationActivity.EXTRA_MODE, CalibrationActivity.MODE_ZOOM_ONLY)
-                launchZoom.launch(i)
-            }
-            Step.ROI -> {
-                if (roiDone) {
+            Step.CAMERA_SETUP -> {
+                if (cameraSetupDone) {
                     goTo(Step.CALIBRATION)
                     return
                 }
-                val i = Intent(this, PreviewActivity::class.java)
-                i.putExtra(PreviewActivity.EXTRA_WIZARD_MODE, true)
-                launchRoi.launch(i)
+                val i = Intent(this, CalibrationCameraSetupActivity::class.java)
+                launchCameraSetup.launch(i)
             }
             Step.CALIBRATION -> {
                 if (calibDone) {
@@ -240,12 +233,12 @@ class CalibrationWizardActivity : ComponentActivity() {
         }
     }
 
-    private fun onSecondary() {
+    private fun onSecondary() {() {
         when (step) {
             Step.NAME -> finish()
-            Step.ZOOM -> goTo(Step.NAME)
-            Step.ROI -> goTo(Step.ZOOM)
-            Step.CALIBRATION -> goTo(Step.ROI)
+            Step.CAMERA_SETUP -> goTo(Step.NAME)
+            Step.CAMERA_SETUP -> goTo(Step.CAMERA_SETUP)
+            Step.CALIBRATION -> goTo(Step.CAMERA_SETUP)
             Step.SUMMARY -> saveProfile(setActive = false)
         }
     }

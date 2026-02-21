@@ -11,13 +11,9 @@ import android.hardware.camera2.CameraManager
 import android.os.Build
 import android.os.Bundle
 import android.view.View
-import android.app.AlertDialog
-import android.widget.EditText
-import android.widget.Toast
 import android.os.Handler
 import android.os.Looper
 import android.widget.TextView
-import com.google.android.material.slider.Slider
 import androidx.activity.ComponentActivity
 import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.core.CameraSelector
@@ -50,39 +46,14 @@ import java.util.concurrent.TimeUnit
 
 class PreviewActivity : ComponentActivity() {
 
-    companion object {
-        const val EXTRA_WIZARD_MODE = "extra_wizard_mode"
-        const val EXTRA_WIZARD_ROI = "extra_wizard_roi"
-    }
-
-
-    private lateinit var previewView: PreviewView
+        private lateinit var previewView: PreviewView
     private lateinit var overlay: OverlayView
     private var analyzer: DetectionAnalyzer? = null
     private lateinit var speedProvider: SpeedProvider
     private lateinit var speedMonitor: SpeedMonitor
-    private lateinit var txtDetectionLabel: TextView
-    private lateinit var btnRoi: TextView
-    private lateinit var txtPreviewStatus: TextView
+    private lateinit var txtDetectionLabel: TextView    private lateinit var txtPreviewStatus: TextView
     private lateinit var txtActiveProfile: TextView
-    private lateinit var txtCalibrationHealth: TextView
-    private lateinit var btnSaveProfile: TextView
-
-    // Wizard-only UI (ROI + guide line)
-    private var wizardMode: Boolean = false
-    private lateinit var sliderGuide: Slider
-    private lateinit var txtWizardHint: TextView
-    private lateinit var btnWizardDone: TextView
-    private lateinit var btnWizardCancel: TextView
-
-    // snapshot to restore on cancel
-    private var snapRoiTopY: Float = Float.NaN
-    private var snapRoiBottomY: Float = Float.NaN
-    private var snapRoiTopHalfW: Float = Float.NaN
-    private var snapRoiBottomHalfW: Float = Float.NaN
-    private var snapRoiCenterX: Float = Float.NaN
-
-    private val searchHandler = Handler(Looper.getMainLooper())
+    private lateinit var txtCalibrationHealth: TextView    private val searchHandler = Handler(Looper.getMainLooper())
     private var searching = true
     private var searchDots = 0
 
@@ -90,9 +61,7 @@ class PreviewActivity : ComponentActivity() {
     private var previewUseCase: Preview? = null
     private var analysisUseCase: ImageAnalysis? = null
     private val analysisExecutor: ExecutorService = Executors.newSingleThreadExecutor()
-    private var isCameraBound: Boolean = false
-    private var speedPausedByEdit: Boolean = false
-    private var boundCamera: androidx.camera.core.Camera? = null
+    private var isCameraBound: Boolean = false    private var boundCamera: androidx.camera.core.Camera? = null
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(ctx: Context?, i: Intent?) {
@@ -100,7 +69,6 @@ class PreviewActivity : ComponentActivity() {
 
             // During ROI edit: ignore detection/ROI updates to prevent "fight" with UI editing.
             // (Analyzer may still have in-flight broadcast, or service might still be running elsewhere.)
-            if (overlay.roiEditMode) {
                 return
             }
 
@@ -179,24 +147,14 @@ class PreviewActivity : ComponentActivity() {
 
         setContentView(R.layout.activity_preview)
 
-        wizardMode = intent.getBooleanExtra(EXTRA_WIZARD_MODE, false)
-
         previewView = findViewById(R.id.previewView)
         previewView.scaleType = PreviewView.ScaleType.FIT_CENTER
         overlay = findViewById(R.id.overlay)
         val txtPreviewBuild = findViewById<TextView>(R.id.txtPreviewBuild)
         txtDetectionLabel = findViewById(R.id.txtDetectionLabel)
-        btnRoi = findViewById(R.id.btnRoi)
         txtPreviewStatus = findViewById(R.id.txtPreviewStatus)
         txtActiveProfile = findViewById(R.id.txtActiveProfile)
         txtCalibrationHealth = findViewById(R.id.txtCalibrationHealth)
-        btnSaveProfile = findViewById(R.id.btnSaveProfile)
-
-        sliderGuide = findViewById(R.id.sliderGuide)
-        txtWizardHint = findViewById(R.id.txtWizardHint)
-        btnWizardDone = findViewById(R.id.btnWizardDone)
-        btnWizardCancel = findViewById(R.id.btnWizardCancel)
-
 
         speedProvider = SpeedProvider(this)
         speedMonitor = SpeedMonitor(speedProvider)
@@ -206,7 +164,6 @@ class PreviewActivity : ComponentActivity() {
         updateActiveProfileLabel()
 
         applyRoiFromPrefs()
-        overlay.onRoiChanged = { topY, bottomY, topHalfW, bottomHalfW, centerX, isFinal ->
             if (isFinal) {
                 AppPreferences.setRoiTrapezoidNormalized(topY, bottomY, topHalfW, bottomHalfW, centerX = centerX)
                 logActivity("roi_set topY=$topY bottomY=$bottomY topHalfW=$topHalfW bottomHalfW=$bottomHalfW centerX=$centerX")
@@ -214,13 +171,9 @@ class PreviewActivity : ComponentActivity() {
             }
         }
 
-        btnRoi.setOnClickListener {
-            val newState = !overlay.roiEditMode
             setRoiEditMode(newState)
         }
 
-        btnRoi.setOnLongClickListener {
-            if (overlay.roiEditMode) {
                 // v edit módu reset -> rovnou přepíš i overlay
                 AppPreferences.resetRoiToDefault()
                 applyRoiFromPrefs()
@@ -233,11 +186,9 @@ class PreviewActivity : ComponentActivity() {
             true
         }
 
-        btnSaveProfile.setOnClickListener {
             showSaveProfileDialog()
         }
 
-                if (wizardMode) {
             setupWizardMode()
             return
         }
@@ -265,15 +216,11 @@ txtPreviewBuild.text =
     }
 
     private fun setRoiEditMode(enabled: Boolean) {
-        if (overlay.roiEditMode == enabled) return
-        overlay.roiEditMode = enabled
-        btnRoi.text = if (enabled) "ROI: UPRAVIT ✓" else "ROI: UPRAVIT"
 
         if (enabled) {
             // Senior UX: ROI edit nesmí soupeřit s detekcí -> zastavit analýzu + broadcasty.
             pauseDetectionForRoiEdit()
         } else {
-            // Uložené hodnoty už jsou v prefs (onRoiChanged isFinal).
             // Pro jistotu znovu načti (sanitizace + jednotný zdroj pravdy).
             applyRoiFromPrefs()
             resumeDetectionAfterRoiEdit()
@@ -344,7 +291,6 @@ txtPreviewBuild.text =
     }
 
     private fun initAndStart() {
-        if (wizardMode) {
             // Wizard ROI mode: no detection models, preview-only.
             analyzer = null
             startCamera()
@@ -370,7 +316,6 @@ txtPreviewBuild.text =
             isCameraBound = true
 
             // Default state: preview + analysis (unless user is editing ROI)
-            if (overlay.roiEditMode) {
                 bindPreviewOnly()
             } else {
                 bindPreviewAndAnalysis()
@@ -493,13 +438,11 @@ txtPreviewBuild.text =
     override fun onStart() {
         super.onStart()
         updateCalibrationHealthUi()
-        if (!wizardMode && !overlay.roiEditMode) {
             speedMonitor.start()
         }
     }
 
     override fun onStop() {
-        if (!wizardMode) {
             speedMonitor.stop()
         }
         super.onStop()
@@ -517,7 +460,6 @@ txtPreviewBuild.text =
     }
 
     private fun updateSearchingLabel() {
-        if (overlay.roiEditMode) return
 
         if (!searching) {
             txtPreviewStatus.text = "Živý náhled aktivní"
@@ -538,7 +480,6 @@ txtPreviewBuild.text =
         SessionActivityLogger.log(msg)
     }
 
-
     private fun updateActiveProfileLabel() {
         val id = ProfileManager.getActiveProfileIdOrNull()
         val name = if (id == null) {
@@ -553,37 +494,19 @@ txtPreviewBuild.text =
         // Wizard ROI mode: no analyzer, no speed monitor, no profile saving UI.
         txtPreviewStatus.text = "Nastavení směru jízdy + ROI"
         txtDetectionLabel.visibility = android.view.View.GONE
-        btnSaveProfile.visibility = android.view.View.GONE
 
         // Snapshot current ROI to restore on cancel.
-        snapRoiTopY = AppPreferences.roiTrapTopY
-        snapRoiBottomY = AppPreferences.roiTrapBottomY
-        snapRoiTopHalfW = AppPreferences.roiTrapTopHalfW
-        snapRoiBottomHalfW = AppPreferences.roiTrapBottomHalfW
-        snapRoiCenterX = AppPreferences.roiTrapCenterX
 
         // Enable ROI edit + guide line.
         overlay.showGuideLine = true
         overlay.guideXNormalized = AppPreferences.roiTrapCenterX
-        sliderGuide.valueFrom = 0f
-        sliderGuide.valueTo = 1f
-        sliderGuide.stepSize = 0f
-        sliderGuide.value = overlay.guideXNormalized
-        sliderGuide.visibility = android.view.View.VISIBLE
-        txtWizardHint.visibility = android.view.View.VISIBLE
-        txtWizardHint.text = "Posuň čáru na osu pruhu. Pak uprav trapezoid."
-
-        btnWizardDone.visibility = android.view.View.VISIBLE
-        btnWizardCancel.visibility = android.view.View.VISIBLE
 
         // Start in edit mode so user can draw trapezoid.
         setRoiEditMode(true)
 
-        sliderGuide.addOnChangeListener { _, value, _ ->
             overlay.guideXNormalized = value
         }
 
-        btnWizardDone.setOnClickListener {
             // Commit guide into ROI center (yaw proxy) and exit edit mode to store final ROI.
             AppPreferences.roiTrapCenterX = overlay.guideXNormalized
             overlay.roiCenterX = overlay.guideXNormalized
@@ -592,13 +515,7 @@ txtPreviewBuild.text =
             finish()
         }
 
-        btnWizardCancel.setOnClickListener {
             // Restore snapshot (best-effort).
-            AppPreferences.roiTrapTopY = snapRoiTopY
-            AppPreferences.roiTrapBottomY = snapRoiBottomY
-            AppPreferences.roiTrapTopHalfW = snapRoiTopHalfW
-            AppPreferences.roiTrapBottomHalfW = snapRoiBottomHalfW
-            AppPreferences.roiTrapCenterX = snapRoiCenterX
             applyRoiFromPrefs()
 
             setResult(RESULT_CANCELED)
@@ -609,60 +526,5 @@ txtPreviewBuild.text =
         bindPreviewOnly()
     }
 
-private fun showSaveProfileDialog() {
-        val activeId = ProfileManager.getActiveProfileIdOrNull()
-        if (!activeId.isNullOrBlank()) {
-            val activeName = ProfileManager.findById(activeId)?.name ?: "?"
-            val actions = arrayOf(
-                "Přepsat aktivní profil: $activeName",
-                "Uložit jako nový profil"
-            )
-            AlertDialog.Builder(this)
-                .setTitle("Uložit profil")
-                .setItems(actions) { _, which ->
-                    when (which) {
-                        0 -> {
-                            val updated = ProfileManager.overwriteProfileFromCurrentPrefs(activeId)
-                            if (updated == null) {
-                                Toast.makeText(this, "Profil nebyl nalezen", Toast.LENGTH_SHORT).show()
-                                logActivity("profile_overwrite_failed id=$activeId")
-                            } else {
-                                ProfileManager.setActiveProfileId(updated.id)
-                                updateActiveProfileLabel()
-                                Toast.makeText(this, "Profil přepsán: ${updated.name}", Toast.LENGTH_SHORT).show()
-                                logActivity("profile_overwritten id=${updated.id} name=${updated.name}")
-                            }
-                        }
-                        1 -> showSaveNewProfileDialog()
-                    }
-                }
-                .setNegativeButton("Zrušit", null)
-                .show()
-            return
-        }
-
-        showSaveNewProfileDialog()
-    }
-
-    private fun showSaveNewProfileDialog() {
-        val input = EditText(this).apply {
-            hint = "Název profilu"
-            setSingleLine()
-        }
-        AlertDialog.Builder(this)
-            .setTitle("Uložit profil")
-            .setMessage("Uloží aktuální ROI + kalibraci (výška, sklon, zoom, distance scale, lane offset).")
-            .setView(input)
-            .setPositiveButton("Uložit") { _, _ ->
-                val name = input.text?.toString()?.trim().orEmpty()
-                val p = ProfileManager.saveProfileFromCurrentPrefs(name)
-                ProfileManager.setActiveProfileId(p.id)
-                updateActiveProfileLabel()
-                Toast.makeText(this, "Profil uložen: ${p.name}", Toast.LENGTH_SHORT).show()
-                logActivity("profile_saved id=${p.id} name=${p.name}")
-            }
-            .setNegativeButton("Zrušit", null)
-            .show()
-    }
 
 }

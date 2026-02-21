@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/frame"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <androidx.camera.view.PreviewView
+        android:id="@+id/previewView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <com.mcaw.ui.OverlayView
+        android:id="@+id/overlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- Top title + hint -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:layout_gravity="top"
+        android:layout_margin="12dp"
+        android:padding="10dp"
+        android:background="#80000000">
+
+        <TextView
+            android:id="@+id/txtTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Kamera setup"
+            android:textColor="#FFFFFF"
+            android:textStyle="bold"
+            android:textSize="15sp"/>
+
+        <TextView
+            android:id="@+id/txtHint"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Nastav zoom, střed jízdy a ROI. Oblast pod spodní hranou ROI se ignoruje."
+            android:textColor="#E5E7EB"
+            android:textSize="12sp"
+            android:layout_marginTop="6dp"/>
+    </LinearLayout>
+
+    <!-- Bottom controls -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:layout_gravity="bottom"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingBottom="12dp">
+
+        <com.google.android.material.slider.Slider
+            android:id="@+id/sliderZoom"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:valueFrom="1.0"
+            android:valueTo="2.0"
+            android:stepSize="0.05" />
+
+        <TextView
+            android:id="@+id/txtZoomValue"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Zoom: 1.00×"
+            android:textColor="#FFFFFF"
+            android:textSize="12sp"
+            android:padding="8dp"
+            android:background="#80000000"
+            android:layout_marginTop="6dp"/>
+
+        <com.google.android.material.slider.Slider
+            android:id="@+id/sliderGuide"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:valueFrom="0.0"
+            android:valueTo="1.0"
+            android:stepSize="0.005"
+            android:layout_marginTop="10dp" />
+
+        <TextView
+            android:id="@+id/txtGuideValue"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Střed jízdy: 0.500"
+            android:textColor="#FFFFFF"
+            android:textSize="12sp"
+            android:padding="8dp"
+            android:background="#80000000"
+            android:layout_marginTop="6dp"/>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="10dp">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnCancel"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Zrušit" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnDone"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Hotovo"
+                android:layout_marginStart="12dp" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/txtRoiHint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="ROI upravíš tažením rohů. Dlouhý stisk vrátí default."
+            android:textColor="#C9D1D9"
+            android:textSize="11sp"
+            android:padding="8dp"
+            android:background="#80000000"
+            android:layout_marginTop="10dp"/>
+    </LinearLayout>
+
+</FrameLayout>

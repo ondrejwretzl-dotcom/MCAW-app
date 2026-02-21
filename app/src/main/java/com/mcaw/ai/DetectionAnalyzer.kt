@@ -332,11 +332,15 @@ private fun updateCutInState(tsMs: Long, box: Box, frameW: Float, frameH: Float)
             val frameH = frameHRotI.toFloat()
 
             val roiTrap = roiTrapezoidPx(frameW, frameH)
+
+            // Hard cut: ignore everything below ROI bottom edge (hood/dashboard).
+            // IMPORTANT: Do NOT hard-gate left/right/top – detection may run outside ROI above the bottom edge.
+            val roiBottomPx = roiTrap.bounds.bottom.toInt().coerceIn(1, frameH.toInt())
             val roiRect = android.graphics.Rect(
-                roiTrap.bounds.left.toInt(),
-                roiTrap.bounds.top.toInt(),
-                roiTrap.bounds.right.toInt(),
-                roiTrap.bounds.bottom.toInt()
+                0,
+                0,
+                frameW.toInt(),
+                roiBottomPx
             )
 
             flog(
