@@ -174,3 +174,11 @@ Doporučené CI přepínače:
    - baseline compare přes `mcaw.baselineSummary=...`
 4. Build summary/artefakt publikovat s odkazem na `index.html`.
 5. Po 1–2 týdnech doladit prahy podle reálných trendů.
+
+## 12) Runbook pro ruční kroky
+
+Detailní návod je v samostatném souboru:
+
+- `docs/SCENARIO_BASELINE_RUNBOOK.md`
+
+A při běhu scénářů se jeho kopie exportuje i do report artifactu jako `RUNBOOK.md` (odkaz z `index.html`).

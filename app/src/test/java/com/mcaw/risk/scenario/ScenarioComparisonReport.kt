@@ -329,6 +329,7 @@ object ScenarioComparisonReport {
               <h1>MCAW scénářové reporty</h1>
         """.trimIndent())
         sb.append("<p>Souhrn scénářů + baseline porovnání (pokud je baseline dostupná).</p>")
+        sb.append("<p><a href='RUNBOOK.md'>📘 Baseline runbook (co spouštět a kdy)</a></p>")
 
         sb.append("<div class=\"cards\">")
         sb.append("<div class=\"card ok\"><strong>PASS</strong><br>${summary.count { it.pass }}</div>")

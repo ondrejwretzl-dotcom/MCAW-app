@@ -120,6 +120,12 @@ class ScenarioSimulationReportTest {
             reportsRelativePath = "."
         )
 
+        // Export runbook into report folder so artifact is self-contained.
+        val runbookSource = File("docs/SCENARIO_BASELINE_RUNBOOK.md")
+        if (runbookSource.exists()) {
+            runbookSource.copyTo(File(outDir, "RUNBOOK.md"), overwrite = true)
+        }
+
         // Baseline update gate (opt-in): writes candidate baseline when quality gates pass.
         val baselineUpdateEnabled = (System.getProperty("mcaw.baseline.updateEnabled") ?: "false")
             .equals("true", ignoreCase = true)
