@@ -2,7 +2,6 @@ package com.mcaw.ui
 
 import android.Manifest
 import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
 import android.widget.TextView
 import androidx.activity.ComponentActivity
@@ -14,11 +13,10 @@ import androidx.camera.view.PreviewView
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.google.android.material.button.MaterialButton
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.slider.Slider
 import com.mcaw.app.R
 import com.mcaw.config.AppPreferences
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
 
 /**
  * Wizard step: camera setup (zoom + lane center guide + ROI trapezoid).
@@ -46,9 +44,6 @@ class CalibrationCameraSetupActivity : ComponentActivity() {
     private var previewUseCase: Preview? = null
     private var boundCamera: Camera? = null
 
-    // Executor is only for CameraX internals here (no frame analysis).
-    private val cameraExecutor: ExecutorService = Executors.newSingleThreadExecutor()
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AppPreferences.ensureInit(this)
@@ -56,6 +51,9 @@ class CalibrationCameraSetupActivity : ComponentActivity() {
         setContentView(R.layout.activity_calibration_camera_setup)
 
         previewView = findViewById(R.id.previewView)
+        // Match runtime preview behaviour for device compatibility.
+        previewView.scaleType = PreviewView.ScaleType.FIT_CENTER
+        previewView.implementationMode = PreviewView.ImplementationMode.COMPATIBLE
         overlay = findViewById(R.id.overlay)
         sliderZoom = findViewById(R.id.sliderZoom)
         txtZoomValue = findViewById(R.id.txtZoomValue)
@@ -77,10 +75,9 @@ class CalibrationCameraSetupActivity : ComponentActivity() {
         overlay.roiCenterX = roi.centerX
         overlay.guideXNormalized = roi.centerX
 
-        overlay.onRoiChanged = { topY, bottomY, topHalfW, bottomHalfW, centerX, isFinal ->
+        overlay.onRoiChanged = { topY, bottomY, topHalfW, bottomHalfW, centerX, _ ->
             // Keep overlay + guide in sync. CenterX acts as lane center.
             overlay.guideXNormalized = centerX
-            // Always write to prefs: this is wizard draft; cost is tiny (UI only).
             AppPreferences.setRoiTrapezoidNormalized(topY, bottomY, topHalfW, bottomHalfW, centerX)
         }
 
@@ -93,32 +90,42 @@ class CalibrationCameraSetupActivity : ComponentActivity() {
             overlay.roiBottomHalfW = r.bottomHalfW
             overlay.roiCenterX = r.centerX
             overlay.guideXNormalized = r.centerX
-            sliderGuide.value = r.centerX
-            updateGuideText(r.centerX)
+            sliderGuide.value = snapToSliderStep(r.centerX, sliderGuide.valueFrom, sliderGuide.valueTo, sliderGuide.stepSize)
+            updateGuideText(sliderGuide.value)
             true
         }
         overlay.isLongClickable = true
 
         // Zoom
-        sliderZoom.value = AppPreferences.cameraZoomRatio
+        sliderZoom.value = snapToSliderStep(
+            AppPreferences.cameraZoomRatio,
+            sliderZoom.valueFrom,
+            sliderZoom.valueTo,
+            sliderZoom.stepSize
+        )
         updateZoomText(sliderZoom.value)
         sliderZoom.addOnChangeListener { _, v, fromUser ->
             if (!fromUser) return@addOnChangeListener
-            AppPreferences.cameraZoomRatio = v
-            updateZoomText(v)
-            boundCamera?.cameraControl?.setZoomRatio(v)
+            val snapped = snapToSliderStep(v, sliderZoom.valueFrom, sliderZoom.valueTo, sliderZoom.stepSize)
+            AppPreferences.cameraZoomRatio = snapped
+            updateZoomText(snapped)
+            boundCamera?.cameraControl?.setZoomRatio(snapped)
         }
 
         // Guide (lane center) -> uses same value as ROI centerX (keeps ego-path signals consistent).
-        sliderGuide.value = roi.centerX
+        sliderGuide.value = snapToSliderStep(roi.centerX, sliderGuide.valueFrom, sliderGuide.valueTo, sliderGuide.stepSize)
         updateGuideText(sliderGuide.value)
         sliderGuide.addOnChangeListener { _, v, fromUser ->
             if (!fromUser) return@addOnChangeListener
-            val cx = v.coerceIn(0f, 1f)
+            val cx = snapToSliderStep(v, sliderGuide.valueFrom, sliderGuide.valueTo, sliderGuide.stepSize)
             overlay.guideXNormalized = cx
             overlay.roiCenterX = cx
             AppPreferences.setRoiTrapezoidNormalized(
-                overlay.roiTopY, overlay.roiBottomY, overlay.roiTopHalfW, overlay.roiBottomHalfW, cx
+                overlay.roiTopY,
+                overlay.roiBottomY,
+                overlay.roiTopHalfW,
+                overlay.roiBottomHalfW,
+                cx
             )
             updateGuideText(cx)
         }
@@ -138,7 +145,6 @@ class CalibrationCameraSetupActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
         cameraProvider?.unbindAll()
-        cameraExecutor.shutdown()
     }
 
     private fun ensureCameraPermissionAndStart() {
@@ -161,20 +167,64 @@ class CalibrationCameraSetupActivity : ComponentActivity() {
     private fun startCamera() {
         val providerFuture = ProcessCameraProvider.getInstance(this)
         providerFuture.addListener({
-            val provider = providerFuture.get()
-            cameraProvider = provider
-            provider.unbindAll()
+            try {
+                val provider = providerFuture.get()
+                cameraProvider = provider
+                provider.unbindAll()
 
-            val selector = CameraSelector.DEFAULT_BACK_CAMERA
+                val selector = CameraSelector.DEFAULT_BACK_CAMERA
 
-            val preview = Preview.Builder().build().also {
-                it.setSurfaceProvider(previewView.surfaceProvider)
+                // Ensure PreviewView has a valid surface before binding.
+                previewView.post {
+                    try {
+                        val preview = Preview.Builder().build().also {
+                            it.setSurfaceProvider(previewView.surfaceProvider)
+                        }
+                        previewUseCase = preview
+
+                        boundCamera = provider.bindToLifecycle(this, selector, preview)
+                        boundCamera?.cameraControl?.setZoomRatio(
+                            snapToSliderStep(
+                                AppPreferences.cameraZoomRatio,
+                                sliderZoom.valueFrom,
+                                sliderZoom.valueTo,
+                                sliderZoom.stepSize
+                            )
+                        )
+                    } catch (t: Throwable) {
+                        showCameraErrorAndFinish(t)
+                    }
+                }
+            } catch (t: Throwable) {
+                showCameraErrorAndFinish(t)
             }
-            previewUseCase = preview
-
-            boundCamera = provider.bindToLifecycle(this, selector, preview)
-            boundCamera?.cameraControl?.setZoomRatio(AppPreferences.cameraZoomRatio)
         }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun showCameraErrorAndFinish(t: Throwable) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Kamera nelze spustit")
+            .setMessage(
+                "Nepodařilo se spustit náhled kamery pro kalibraci.\n\n" +
+                    (t.message ?: t.javaClass.simpleName)
+            )
+            .setPositiveButton("Zavřít") { _, _ ->
+                setResult(RESULT_CANCELED)
+                finish()
+            }
+            .setCancelable(false)
+            .show()
+    }
+
+    private fun snapToSliderStep(value: Float, from: Float, to: Float, step: Float): Float {
+        val clamped = value.coerceIn(from, to)
+        if (step <= 0f) return clamped
+
+        val lowerStepIndex = ((clamped - from) / step).toInt().toFloat()
+        val lower = (from + lowerStepIndex * step).coerceIn(from, to)
+        val upper = (lower + step).coerceIn(from, to)
+
+        return if ((clamped - lower) <= (upper - clamped)) lower else upper
     }
 
     private fun updateZoomText(v: Float) {
