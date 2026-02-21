@@ -212,7 +212,6 @@ class DetectionAnalyzer(
     private var distEmaValid: Boolean = false
     private var bottomOcclusionCounter: Int = 0
     private var bottomOccludedStable: Boolean = false
-    private var lastOcclusionLogState: Boolean = false
     private var lastDistanceInputM: Float = Float.NaN
     private var lastDistanceInputTsMs: Long = -1L
 
@@ -481,9 +480,9 @@ if (AppPreferences.debugOverlay) {
                 )
 
                 resetMotionState()
+                riskEngine.resetState()
                 bottomOcclusionCounter = 0
                 bottomOccludedStable = false
-                lastOcclusionLogState = false
                 lastDistanceInputM = Float.NaN
                 lastDistanceInputTsMs = -1L
                 sendOverlayClear()
@@ -495,6 +494,7 @@ if (AppPreferences.debugOverlay) {
             if (lastSelectedTrackId != bestTrack.id) {
                 lastSelectedTrackId = bestTrack.id
                 resetMotionState(bestTrack.id)
+                riskEngine.resetState()
             }
 
             val best0 = bestTrack.detection
@@ -865,7 +865,6 @@ if (AppPreferences.debugOverlay) {
         if (bottomOccludedStable && bottomOcclusionCounter <= -exitFrames) bottomOccludedStable = false
         if (prev != bottomOccludedStable) {
             flog("bottom_occlusion ${if (bottomOccludedStable) "enter" else "exit"}", force = true)
-            lastOcclusionLogState = bottomOccludedStable
         }
         return bottomOccludedStable
     }

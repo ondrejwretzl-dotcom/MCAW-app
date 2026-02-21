@@ -388,6 +388,15 @@ class RiskEngine {
         return out
     }
 
+
+    fun resetState() {
+        lastLevel = 0
+        emaRisk = 0f
+        emaInit = false
+        lastTtcLevel = 0
+        bottomOccludedRedHoldUntilMs = 0L
+    }
+
     fun standingResult(_riderSpeedMps: Float): Result {
         bottomOccludedRedHoldUntilMs = 0L
         out.level = 0
