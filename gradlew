@@ -140,6 +140,21 @@ location of your Java installation."
     fi
 fi
 
+# Guard against too new JDK versions that break Gradle Kotlin DSL/Groovy script parsing.
+JAVA_VERSION_STR=$("$JAVACMD" -version 2>&1 | awk -F"[\".]" 'NR==1 {print $2}')
+case "$JAVA_VERSION_STR" in
+  "") ;;
+  [0-9]*)
+    if [ "$JAVA_VERSION_STR" -ge 25 ] 2>/dev/null; then
+      die "ERROR: Detected Java $JAVA_VERSION_STR. This project currently requires Java 17-24 to run Gradle reliably.
+
+Use JDK 17 (recommended) and re-run, for example:
+  export JAVA_HOME=/path/to/jdk-17
+  export PATH=\$JAVA_HOME/bin:\$PATH"
+    fi
+  ;;
+esac
+
 # Increase the maximum file descriptors if we can.
 if ! "$cygwin" && ! "$darwin" && ! "$nonstop" ; then
     case $MAX_FD in #(
