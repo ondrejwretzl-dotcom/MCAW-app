@@ -53,6 +53,20 @@
         android:layout_marginStart="12dp"
         android:layout_marginTop="84dp" />
 
+    <TextView
+        android:id="@+id/txtCalibrationHealth"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text=""
+        android:textColor="#FBBF24"
+        android:textSize="12sp"
+        android:padding="8dp"
+        android:background="#80000000"
+        android:layout_gravity="top|start"
+        android:layout_marginStart="12dp"
+        android:layout_marginTop="120dp"
+        android:visibility="gone" />
+
 
     <!-- ROI edit toggle (click) + reset (long press) -->
     <TextView

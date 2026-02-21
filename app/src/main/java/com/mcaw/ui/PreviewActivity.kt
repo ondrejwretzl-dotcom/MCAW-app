@@ -655,13 +655,19 @@ private fun showSaveProfileDialog() {
             .show()
     }
 
-
+    private fun updateCalibrationHealthUi() {
         val h = CalibrationHealth.evaluate()
         if (h.bannerText.isBlank()) {
-            txtCalibrationHealth.visibility = android.view.View.GONE
+            txtCalibrationHealth.visibility = View.GONE
+            txtCalibrationHealth.text = ""
         } else {
-            txtCalibrationHealth.visibility = android.view.View.VISIBLE
+            txtCalibrationHealth.visibility = View.VISIBLE
             txtCalibrationHealth.text = h.bannerText
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        updateCalibrationHealthUi()
     }
 
