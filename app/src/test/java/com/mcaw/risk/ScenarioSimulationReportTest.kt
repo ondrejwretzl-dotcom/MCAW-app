@@ -2,6 +2,7 @@ package com.mcaw.risk
 
 import com.mcaw.risk.scenario.ScenarioCatalogFactory
 import com.mcaw.risk.scenario.ScenarioRunner
+import com.mcaw.risk.scenario.ScenarioComparisonReport
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -40,10 +41,12 @@ class ScenarioSimulationReportTest {
         var allOk = true
         var passCount = 0
         var failCount = 0
+        val runs = ArrayList<com.mcaw.risk.scenario.ScenarioRun>(catalog.scenarios.size)
 
         for (s in catalog.scenarios) {
             val run = ScenarioRunner.runScenario(s)
             ScenarioRunner.writeReports(run, outDir)
+            runs.add(run)
 
             val pass = run.verdicts.all { it.ok }
             allOk = allOk && pass
@@ -70,11 +73,100 @@ class ScenarioSimulationReportTest {
 
         File(outDir, "INDEX.md").writeText(indexMd.toString())
 
+        val summary = ScenarioComparisonReport.summarizeRuns(runs)
+        val summaryFile = File(outDir, "summary.json")
+        ScenarioComparisonReport.writeSummaryJson(summary, summaryFile)
+
+        val baselinePath = (System.getProperty("mcaw.baselineSummary") ?: "").trim()
+        val baselineFile = if (baselinePath.isBlank()) null else File(baselinePath)
+        val baselineSummary = if (baselineFile != null && baselineFile.exists()) {
+            ScenarioComparisonReport.readSummaryJson(baselineFile)
+        } else emptyList()
+
+        // Threshold defaults tuned to the current passing scenario catalog:
+        // - hard latency: 0.60s (avoids noise while catching meaningful warning delays)
+        // - soft latency: 0.25s (early signal for drift)
+        // - hard transitions increase: +2
+        // - soft transitions increase: +1
+        val hardLatencySec = (System.getProperty("mcaw.diff.hardLatencySec") ?: "0.60").toFloatOrNull() ?: 0.60f
+        val softLatencySec = (System.getProperty("mcaw.diff.softLatencySec") ?: "0.25").toFloatOrNull() ?: 0.25f
+        val hardTransitionsInc = (System.getProperty("mcaw.diff.hardTransitionsInc") ?: "2").toIntOrNull() ?: 2
+        val softTransitionsInc = (System.getProperty("mcaw.diff.softTransitionsInc") ?: "1").toIntOrNull() ?: 1
+
+        val diff = if (baselineSummary.isNotEmpty()) {
+            ScenarioComparisonReport.compare(
+                baseline = baselineSummary,
+                current = summary,
+                hardLatencyRegressionSec = hardLatencySec,
+                softLatencyRegressionSec = softLatencySec,
+                hardTransitionsIncrease = hardTransitionsInc,
+                softTransitionsIncrease = softTransitionsInc
+            )
+        } else null
+
+        if (diff != null) {
+            ScenarioComparisonReport.writeDiffJson(
+                diff = diff,
+                outFile = File(outDir, "diff_summary.json"),
+                baselinePath = baselineFile?.absolutePath ?: "",
+                currentPath = summaryFile.absolutePath
+            )
+        }
+
+        ScenarioComparisonReport.writeHtmlIndex(
+            outFile = File(outDir, "index.html"),
+            summary = summary,
+            diff = diff,
+            reportsRelativePath = "."
+        )
+
+        // Baseline update gate (opt-in): writes candidate baseline when quality gates pass.
+        val baselineUpdateEnabled = (System.getProperty("mcaw.baseline.updateEnabled") ?: "false")
+            .equals("true", ignoreCase = true)
+        val baselineCandidatePath = (System.getProperty("mcaw.baseline.candidateOut") ?: "").trim()
+        val baselineRequireAllPass = (System.getProperty("mcaw.baseline.requireAllPass") ?: "true")
+            .equals("true", ignoreCase = true)
+        val baselineMaxSoftRegressions = (System.getProperty("mcaw.baseline.maxSoftRegressions") ?: "0").toIntOrNull() ?: 0
+        val baselineMinImproved = (System.getProperty("mcaw.baseline.minImproved") ?: "0").toIntOrNull() ?: 0
+
+        if (baselineUpdateEnabled && baselineCandidatePath.isNotBlank()) {
+            val decision = ScenarioComparisonReport.decideBaselineUpdate(
+                hasBaseline = baselineSummary.isNotEmpty(),
+                allScenariosPass = allOk,
+                diff = diff,
+                requireAllPass = baselineRequireAllPass,
+                maxSoftRegressions = baselineMaxSoftRegressions,
+                minImproved = baselineMinImproved
+            )
+
+            val decisionFile = File(outDir, "baseline_update_decision.txt")
+            decisionFile.writeText(
+                buildString {
+                    append("shouldUpdate=").append(decision.shouldUpdate).append('\n')
+                    for (r in decision.reasons) append("- ").append(r).append('\n')
+                }
+            )
+
+            if (decision.shouldUpdate) {
+                val candidate = File(baselineCandidatePath)
+                candidate.parentFile?.mkdirs()
+                ScenarioComparisonReport.writeSummaryJson(summary, candidate)
+            }
+        }
+
         val failOnScenario = (System.getProperty("mcaw.failOnScenario") ?: "false").equals("true", ignoreCase = true)
         if (failOnScenario) {
             assertTrue(
                 "Některé scénáře nesplnily očekávání. Viz build/reports/mcaw_scenarios/$stamp/INDEX.md",
                 allOk
+            )
+        }
+
+        val failOnHardRegression = (System.getProperty("mcaw.failOnHardRegression") ?: "false").equals("true", ignoreCase = true)
+        if (failOnHardRegression && diff != null) {
+            assertTrue(
+                "Nalezena tvrdá regrese proti baseline (count=${diff.hardRegressionCount}). Viz $outDir/index.html",
+                diff.hardRegressionCount == 0
             )
         }
     }
