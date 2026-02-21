@@ -780,6 +780,7 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
         if (!activeId.isNullOrBlank()) {
             val p = ProfileManager.findById(activeId)
             if (p != null) {
+                val roi = AppPreferences.getRoiTrapezoidNormalized()
                 val updated = MountProfile(
                     id = p.id,
                     name = p.name,
@@ -797,11 +798,11 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
                     calibrationImuExtraErrAt10m = AppPreferences.calibrationImuExtraErrAt10m,
                     calibrationCombinedErrAt10m = AppPreferences.calibrationCombinedErrAt10m,
                     laneEgoMaxOffset = p.laneEgoMaxOffset,
-                    roiTopY = p.roiTopY,
-                    roiBottomY = p.roiBottomY,
-                    roiTopHalfW = p.roiTopHalfW,
-                    roiBottomHalfW = p.roiBottomHalfW,
-                    roiCenterX = p.roiCenterX
+                    roiTopY = roi.topY,
+                    roiBottomY = roi.bottomY,
+                    roiTopHalfW = roi.topHalfW,
+                    roiBottomHalfW = roi.bottomHalfW,
+                    roiCenterX = roi.centerX
                 )
                 ProfileManager.upsert(updated)
             }
