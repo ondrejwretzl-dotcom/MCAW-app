@@ -16,13 +16,13 @@ import com.mcaw.config.CalibrationHealth
 import com.mcaw.config.ProfileManager
 
 /**
- * Calibration Wizard (create/edit):
- * Name -> Zoom -> Lane direction + ROI -> Calibration -> Human summary -> Save (draft/active).
+ * Calibration Wizard (create/edit) – offline, UI-only flow.
  *
- * Reuses:
- * - CalibrationActivity (zoom-only + full calibration)
- * - PreviewActivity (ROI editor + guide line)
- * - ProfileManager/AppPreferences (storage)
+ * Flow:
+ * 1) Name
+ * 2) Camera setup (zoom + guide + ROI)
+ * 3) Distance calibration
+ * 4) Summary + save
  */
 class CalibrationWizardActivity : ComponentActivity() {
 
@@ -49,19 +49,21 @@ class CalibrationWizardActivity : ComponentActivity() {
     private var editProfileId: String? = null
     private var originalName: String = ""
 
-        private var cameraSetupDone: Boolean = false
+    private var cameraSetupDone: Boolean = false
     private var calibDone: Boolean = false
 
-        }
-
-        private val launchCameraSetup = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
+    private val launchCameraSetup = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { res ->
         if (res.resultCode == RESULT_OK) {
             cameraSetupDone = true
             goTo(Step.CALIBRATION)
         }
     }
 
-private val launchCalib = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
+    private val launchCalib = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { res ->
         if (res.resultCode == RESULT_OK) {
             calibDone = true
             goTo(Step.SUMMARY)
@@ -80,8 +82,6 @@ private val launchCalib = registerForActivityResult(ActivityResultContracts.Star
         btnPrimary = findViewById(R.id.btnPrimary)
         btnSecondary = findViewById(R.id.btnSecondary)
 
-        // Ensure prefs initialized (should already be from App).
-        // Determine available modes.
         val activeId = ProfileManager.getActiveProfileIdOrNull()
         editProfileId = activeId
         originalName = activeId?.let { ProfileManager.getProfileNameById(it) }.orEmpty()
@@ -90,6 +90,11 @@ private val launchCalib = registerForActivityResult(ActivityResultContracts.Star
 
         btnPrimary.setOnClickListener { onPrimary() }
         btnSecondary.setOnClickListener { onSecondary() }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        render()
     }
 
     private fun showModePickerOrContinue(activeId: String?) {
@@ -108,19 +113,21 @@ private val launchCalib = registerForActivityResult(ActivityResultContracts.Star
                 editProfileId = null
                 originalName = ""
                 step = Step.NAME
+                inputName.setText("")
+                cameraSetupDone = false
+                calibDone = false
                 render()
             }
             .setNegativeButton("Upravit aktivní") { _, _ ->
                 flowMode = FlowMode.EDIT
                 step = Step.NAME
                 inputName.setText(originalName)
+                cameraSetupDone = false
+                calibDone = false
                 render()
             }
             .setCancelable(true)
-            .setOnCancelListener {
-                // If user cancels picker, just exit.
-                finish()
-            }
+            .setOnCancelListener { finish() }
             .show()
     }
 
@@ -132,35 +139,48 @@ private val launchCalib = registerForActivityResult(ActivityResultContracts.Star
     private fun render() {
         when (step) {
             Step.NAME -> {
-                txtStep.text = if (flowMode == FlowMode.CREATE) "Krok 1/4 – Název profilu" else "Krok 1/4 – Název profilu (editace)"
+                txtStep.text = if (flowMode == FlowMode.CREATE) {
+                    "Krok 1/4 – Název profilu"
+                } else {
+                    "Krok 1/4 – Název profilu (editace)"
+                }
                 inputNameLayout.visibility = View.VISIBLE
-                txtBody.text = "Pojmenuj profil pro tento držák telefonu.
+                txtBody.text = """
+                    Pojmenuj profil pro tento držák telefonu.
 
-Tip: Např. „Zrcátko vlevo“, „Kapotáž“ nebo „Auto – palubka“."
+                    Tip: Např. „Zrcátko vlevo“, „Kapotáž“ nebo „Auto – palubka“.
+                """.trimIndent()
                 btnPrimary.text = "Další"
                 btnSecondary.text = "Zrušit"
             }
+
             Step.CAMERA_SETUP -> {
                 txtStep.text = "Krok 2/4 – Kamera setup"
                 inputNameLayout.visibility = View.GONE
-                txtBody.text = "Nastav:
-• Zoom
-• Střed jízdy (svislá čára)
-• ROI (trapezoid)
+                txtBody.text = """
+                    Nastav:
+                    • Zoom
+                    • Střed jízdy (svislá čára)
+                    • ROI (trapezoid)
 
-Oblast pod spodní hranou ROI se nebude vůbec detekovat (kapota/palubka)."
+                    Oblast pod spodní hranou ROI se nebude vůbec detekovat (kapota/palubka).
+                """.trimIndent()
                 btnPrimary.text = if (cameraSetupDone) "Pokračovat" else "Otevřít setup"
                 btnSecondary.text = "Zpět"
             }
+
             Step.CALIBRATION -> {
                 txtStep.text = "Krok 3/4 – Kalibrace vzdálenosti"
                 inputNameLayout.visibility = View.GONE
-                txtBody.text = "Teď provedeme kalibraci vzdálenosti.
+                txtBody.text = """
+                    Teď provedeme kalibraci vzdálenosti.
 
-Důležité: telefon musí být během kroků co nejstabilnější."
+                    Důležité: telefon musí být během kroků co nejstabilnější.
+                """.trimIndent()
                 btnPrimary.text = if (calibDone) "Pokračovat" else "Spustit kalibraci"
                 btnSecondary.text = "Zpět"
             }
+
             Step.SUMMARY -> {
                 txtStep.text = "Krok 4/4 – Souhrn"
                 inputNameLayout.visibility = View.GONE
@@ -182,14 +202,9 @@ Důležité: telefon musí být během kroků co nejstabilnější."
                 }
 
                 txtBody.text = buildString {
-                    append("Profil: ").append(name).append("
-
-")
-                    append(distanceLabel).append("
-")
-                    append(stabilityLabel).append("
-
-")
+                    append("Profil: ").append(name).append("\n\n")
+                    append(distanceLabel).append("\n")
+                    append(stabilityLabel).append("\n\n")
                     append(h.bannerText)
                 }
 
@@ -210,34 +225,36 @@ Důležité: telefon musí být během kroků co nejstabilnější."
                 inputNameLayout.error = null
                 goTo(Step.CAMERA_SETUP)
             }
+
             Step.CAMERA_SETUP -> {
                 if (cameraSetupDone) {
                     goTo(Step.CALIBRATION)
                     return
                 }
-                val i = Intent(this, CalibrationCameraSetupActivity::class.java)
-                launchCameraSetup.launch(i)
+                launchCameraSetup.launch(Intent(this, CalibrationCameraSetupActivity::class.java))
             }
+
             Step.CALIBRATION -> {
                 if (calibDone) {
                     goTo(Step.SUMMARY)
                     return
                 }
-                val i = Intent(this, CalibrationActivity::class.java)
-                i.putExtra(CalibrationActivity.EXTRA_MODE, CalibrationActivity.MODE_FULL)
+                val i = Intent(this, CalibrationActivity::class.java).apply {
+                    putExtra(CalibrationActivity.EXTRA_MODE, CalibrationActivity.MODE_FULL)
+                }
                 launchCalib.launch(i)
             }
+
             Step.SUMMARY -> {
                 saveProfile(setActive = true)
             }
         }
     }
 
-    private fun onSecondary() {() {
+    private fun onSecondary() {
         when (step) {
             Step.NAME -> finish()
             Step.CAMERA_SETUP -> goTo(Step.NAME)
-            Step.CAMERA_SETUP -> goTo(Step.CAMERA_SETUP)
             Step.CALIBRATION -> goTo(Step.CAMERA_SETUP)
             Step.SUMMARY -> saveProfile(setActive = false)
         }
@@ -252,7 +269,11 @@ Důležité: telefon musí být během kroků co nejstabilnější."
         if (setActive && !validForActive) {
             MaterialAlertDialogBuilder(this)
                 .setTitle("Nelze uložit jako aktivní")
-                .setMessage("Tento profil teď není spolehlivý.\n\n${health.bannerText}\n\nDokonči kalibraci/ROI a zkus to znovu.\n\nMůžeš ho uložit jako draft.")
+                .setMessage(
+                    "Tento profil teď není spolehlivý.\n\n" +
+                        health.bannerText +
+                        "\n\nDokonči kalibraci/ROI a zkus to znovu.\n\nMůžeš ho uložit jako draft."
+                )
                 .setPositiveButton("Uložit jako draft") { _, _ -> saveProfile(setActive = false) }
                 .setNegativeButton("Zpět") { _, _ -> }
                 .show()
@@ -266,17 +287,17 @@ Důležité: telefon musí být během kroků co nejstabilnější."
             FlowMode.CREATE -> {
                 ProfileManager.saveProfileFromCurrentPrefs(name)
             }
+
             FlowMode.EDIT -> {
                 if (activeId.isNullOrBlank()) {
                     ProfileManager.saveProfileFromCurrentPrefs(name)
                 } else {
-                    // If name changed, ask user if overwrite or save as new.
                     if (originalName.isNotBlank() && originalName != name) {
-                        // Default: overwrite + rename (edit profile)
-                        val updated = ProfileManager.overwriteProfileFromCurrentPrefs(activeId, name)
-                        updated ?: ProfileManager.saveProfileFromCurrentPrefs(name)
+                        ProfileManager.overwriteProfileFromCurrentPrefs(activeId, name)
+                            ?: ProfileManager.saveProfileFromCurrentPrefs(name)
                     } else {
-                        ProfileManager.overwriteProfileFromCurrentPrefs(activeId, name) ?: ProfileManager.saveProfileFromCurrentPrefs(name)
+                        ProfileManager.overwriteProfileFromCurrentPrefs(activeId, name)
+                            ?: ProfileManager.saveProfileFromCurrentPrefs(name)
                     }
                 }
             }
@@ -287,10 +308,5 @@ Důležité: telefon musí být během kroků co nejstabilnější."
         }
 
         finish()
-    }
-
-    override fun onResume() {
-        super.onResume()
-        render()
     }
 }

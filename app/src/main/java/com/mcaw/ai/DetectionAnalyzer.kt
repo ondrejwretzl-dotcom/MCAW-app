@@ -498,10 +498,12 @@ if (AppPreferences.debugOverlay) {
             // In that case, bbox.bottom/height-based signals (ground-plane distance, bbox-TTC) become biased.
             // IMPORTANT: ROI is a selection helper only; we do NOT geometrically clamp boxes to ROI here.
             val roiNNow = AppPreferences.getRoiTrapezoidNormalized()
-            val roiBottomPx = (roiNNow.bottomY.coerceIn(0f, 1f) * frameH).coerceIn(0f, frameH)
+            // Diagnostic-only (float) ROI bottom in pixels based on normalized prefs.
+            // NOTE: actual crop bottom is roiRect.bottom (int).
+            val roiBottomPxF = (roiNNow.bottomY.coerceIn(0f, 1f) * frameH).coerceIn(0f, frameH)
             val cropBottomPx = roiRect.bottom.toFloat().coerceIn(0f, frameH)
             val bottomOcclEpsPx = 8f
-            // Prefer the actual crop bottom (roiRect). Keep roiBottomPx for debug overlay diagnostics.
+            // Prefer the actual crop bottom (roiRect). Keep roiBottomPxF for debug overlay diagnostics.
             val bottomOccluded = (cropBottomPx - bestBox.y2) <= bottomOcclEpsPx
 
             
