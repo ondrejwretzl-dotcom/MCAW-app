@@ -96,7 +96,8 @@
 
 
     <!-- Wizard: guide line alignment (hidden in normal preview) -->
-    <com.google.android.material.slider.Slider
+    <!-- Use platform SeekBar to avoid Material Slider dependency/attrs (valueFrom/valueTo). -->
+    <SeekBar
         android:id="@+id/sliderGuide"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -104,9 +105,8 @@
         android:layout_marginStart="16dp"
         android:layout_marginEnd="16dp"
         android:layout_marginBottom="68dp"
-        app:valueFrom="0.0"
-        app:valueTo="1.0"
-        android:visibility="gone"/>
+        android:max="1000"
+        android:visibility="gone" />
 
     <TextView
         android:id="@+id/txtWizardHint"

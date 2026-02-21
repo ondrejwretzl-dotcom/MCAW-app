@@ -15,8 +15,8 @@ import android.widget.EditText
 import android.widget.Toast
 import android.os.Handler
 import android.os.Looper
+import android.widget.SeekBar
 import android.widget.TextView
-import com.google.android.material.slider.Slider
 import androidx.activity.ComponentActivity
 import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.core.CameraSelector
@@ -69,7 +69,7 @@ class PreviewActivity : ComponentActivity() {
 
     // Wizard-only UI (ROI + guide line)
     private var wizardMode: Boolean = false
-    private lateinit var sliderGuide: Slider
+    private lateinit var sliderGuide: SeekBar
     private lateinit var txtWizardHint: TextView
     private lateinit var btnWizardDone: TextView
     private lateinit var btnWizardCancel: TextView
@@ -552,7 +552,7 @@ txtPreviewBuild.text =
         // Enable ROI edit + guide line.
         overlay.showGuideLine = true
         overlay.guideXNormalized = AppPreferences.roiTrapCenterX
-        sliderGuide.value = overlay.guideXNormalized
+        sliderGuide.progress = (overlay.guideXNormalized.coerceIn(0f, 1f) * 1000f).toInt()
         sliderGuide.visibility = android.view.View.VISIBLE
         txtWizardHint.visibility = android.view.View.VISIBLE
         txtWizardHint.text = "Posuň čáru na osu pruhu. Pak uprav trapezoid."
@@ -563,9 +563,15 @@ txtPreviewBuild.text =
         // Start in edit mode so user can draw trapezoid.
         setRoiEditMode(true)
 
-        sliderGuide.addOnChangeListener { _, value, _ ->
-            overlay.guideXNormalized = value
-        }
+        sliderGuide.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (!fromUser) return
+                overlay.guideXNormalized = (progress / 1000f).coerceIn(0f, 1f)
+            }
+
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+        })
 
         btnWizardDone.setOnClickListener {
             // Commit guide into ROI center (yaw proxy) and exit edit mode to store final ROI.
