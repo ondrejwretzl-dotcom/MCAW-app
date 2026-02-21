@@ -98,3 +98,26 @@ A zvlášť drž pointer na approved latest, např.:
 3. konkrétní `<SCENARIO_ID>.md`
 4. konkrétní `<SCENARIO_ID>.jsonl` (hluboké ladění reasonId/eventů)
 
+
+---
+
+## 7) GitHub Actions workflow map (doporučeno)
+
+Repo obsahuje 2 workflow:
+
+1. `.github/workflows/scenario-regression.yml`
+   - běží compare a publikuje artifact `mcaw-scenario-report`
+   - v artifactu otevři `index.html`
+
+2. `.github/workflows/scenario-baseline-promote.yml`
+   - ručně (workflow_dispatch) vezme artifact z vybraného `run_id`
+   - vyzvedne `summary.json`
+   - promuje baseline do `.ci/baselines/<catalog>/<baseline_id>/summary.json`
+   - přepíše pointer `.ci/baselines/approved_latest.txt`
+
+### Jaké ruční vstupy zadat při promote
+
+- `run_id` = ID běhu, kde je ověřený report
+- `artifact_name` = typicky `mcaw-scenario-report`
+- `baseline_id` = doporučeně commit SHA nebo datum
+- `catalog` = namespace baseline (např. `default`)

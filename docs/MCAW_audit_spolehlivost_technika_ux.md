@@ -182,3 +182,14 @@ Detailní návod je v samostatném souboru:
 - `docs/SCENARIO_BASELINE_RUNBOOK.md`
 
 A při běhu scénářů se jeho kopie exportuje i do report artifactu jako `RUNBOOK.md` (odkaz z `index.html`).
+
+## 13) CI automatizace baseline lifecycle
+
+Přidány workflow:
+
+- `.github/workflows/scenario-regression.yml` (compare + artifact + summary)
+- `.github/workflows/scenario-baseline-promote.yml` (ruční promote z artifact runu)
+
+Tím je pokryto:
+- automatické hlídání hard regresí v běžném běhu,
+- řízený a auditovatelný promote baseline bez ručního kopírování souborů.

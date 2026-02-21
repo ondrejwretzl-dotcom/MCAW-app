@@ -1,0 +1,69 @@
+name: Scenario Baseline Promote
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "GitHub Actions run ID that produced mcaw-scenario-report artifact"
+        required: true
+        type: string
+      artifact_name:
+        description: "Artifact name"
+        required: true
+        default: "mcaw-scenario-report"
+        type: string
+      baseline_id:
+        description: "Baseline ID (e.g., commit SHA or timestamp)"
+        required: true
+        type: string
+      catalog:
+        description: "Baseline catalog namespace"
+        required: true
+        default: "default"
+        type: string
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download report artifact from run
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          run_id: ${{ inputs.run_id }}
+          name: ${{ inputs.artifact_name }}
+          path: .tmp/scenario-report
+
+      - name: Locate summary.json
+        id: summary
+        run: |
+          FILE="$(find .tmp/scenario-report -name summary.json -type f | head -n1)"
+          if [[ -z "$FILE" ]]; then
+            echo "summary.json not found in artifact" >&2
+            exit 2
+          fi
+          echo "summary=$FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Promote baseline
+        run: |
+          scripts/mcaw/promote_baseline.sh \
+            "${{ steps.summary.outputs.summary }}" \
+            "${{ inputs.baseline_id }}" \
+            "${{ inputs.catalog }}"
+
+      - name: Commit promoted baseline
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .ci/baselines
+          git commit -m "Promote scenario baseline ${{ inputs.catalog }}/${{ inputs.baseline_id }}" || {
+            echo "No changes to commit";
+            exit 0;
+          }
+          git push
