@@ -37,6 +37,8 @@ class RiskEngineScenarioTest {
                 cutInActive = f.cutIn,
                 brakeCueActive = f.brakeCue > 0f,
                 brakeCueStrength = f.brakeCue.coerceIn(0f, 1f),
+                occlusionCloseFactor = 0f,
+                occlusionCloseEligible = false,
                 qualityWeight = f.qW,
                 riderSpeedMps = 10f,
                 riderSpeedConfidence = 1f,
@@ -222,4 +224,63 @@ class RiskEngineScenarioTest {
         assertTrue("Musí být označeno, že guard potlačil RED", (payload and RiskEngine.BIT_RED_GUARDED) != 0)
         assertTrue("Nesmí být označeno RED_OK, když RED neprošel", (payload and RiskEngine.BIT_RED_COMBO_OK) == 0)
     }
+
+    @Test
+    fun occlusionClose_withGuards_triggersRedAndReasonAndHold() {
+        val engine = RiskEngine()
+        var redSeen = false
+        var reasonSeen = false
+
+        for (i in 0 until 6) {
+            val r = engine.evaluate(
+                tsMs = i * 100L,
+                effectiveMode = 1,
+                distanceM = 6.0f,
+                approachSpeedMps = 0.2f,
+                ttcSec = Float.POSITIVE_INFINITY,
+                ttcSlopeSecPerSec = 0f,
+                roiContainment = 0.9f,
+                egoOffsetN = 0.1f,
+                cutInActive = false,
+                brakeCueActive = false,
+                brakeCueStrength = 0f,
+                occlusionCloseFactor = 1f,
+                occlusionCloseEligible = true,
+                qualityWeight = 1.0f,
+                riderSpeedMps = 10f,
+                riderSpeedConfidence = 1f,
+                egoBrakingConfidence = 0f,
+                leanDeg = Float.NaN
+            )
+            if (r.level == 2) redSeen = true
+            val payload = RiskEngine.stripReasonVersion(r.reasonBits)
+            if ((payload and RiskEngine.BIT_BOTTOM_OCCLUDED_CLOSE) != 0) reasonSeen = true
+        }
+
+        assertTrue(redSeen)
+        assertTrue(reasonSeen)
+
+        val hold = engine.evaluate(
+            tsMs = 650L,
+            effectiveMode = 1,
+            distanceM = 30f,
+            approachSpeedMps = 0f,
+            ttcSec = Float.POSITIVE_INFINITY,
+            ttcSlopeSecPerSec = 0f,
+            roiContainment = 0.9f,
+            egoOffsetN = 0.1f,
+            cutInActive = false,
+            brakeCueActive = false,
+            brakeCueStrength = 0f,
+            occlusionCloseFactor = 0f,
+            occlusionCloseEligible = false,
+            qualityWeight = 1.0f,
+            riderSpeedMps = 10f,
+            riderSpeedConfidence = 1f,
+            egoBrakingConfidence = 0f,
+            leanDeg = Float.NaN
+        )
+        assertEquals(2, hold.level)
+    }
+
 }
