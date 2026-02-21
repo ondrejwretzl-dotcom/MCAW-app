@@ -10,6 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      pages: write
+      id-token: write
 
     steps:
       - name: Checkout
@@ -29,25 +31,69 @@ jobs:
           yes | sdkmanager --licenses
           sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
+      - name: Configure GitHub Pages
+        if: always()
+        uses: actions/configure-pages@v5
+
       - name: Run scenario compare
         id: compare
+        continue-on-error: true
         env:
           FAIL_ON_HARD: "true"
           FAIL_ON_SCENARIO: "false"
         run: scripts/mcaw/scenario_compare_ci.sh
 
       - name: Upload scenario report artifact
+        if: always() && steps.compare.outputs.latest_report_dir != ''
         uses: actions/upload-artifact@v4
         with:
           name: mcaw-scenario-report
           path: ${{ steps.compare.outputs.latest_report_dir }}
           if-no-files-found: error
 
+      - name: Prepare Pages content
+        if: always() && steps.compare.outputs.latest_report_dir != ''
+        run: |
+          rm -rf .pages
+          mkdir -p .pages
+          cp -R "${{ steps.compare.outputs.latest_report_dir }}"/* .pages/
+
+      - name: Upload Pages artifact
+        if: always() && steps.compare.outputs.latest_report_dir != ''
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .pages
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        if: always() && steps.compare.outputs.latest_report_dir != ''
+        uses: actions/deploy-pages@v4
+
       - name: Job summary
+        if: always()
         run: |
           {
             echo "## MCAW Scenario Report"
             echo "- Artifact: **mcaw-scenario-report**"
             echo "- Report dir: \`${{ steps.compare.outputs.latest_report_dir }}\`"
-            echo "- Open artifact and view **index.html** (includes RUNBOOK.md link)."
+            echo "- Gradle exit: \`${{ steps.compare.outputs.gradle_exit_code }}\`"
+            if [[ -n "${{ steps.deployment.outputs.page_url }}" ]]; then
+              echo "- GitHub Pages: ${{ steps.deployment.outputs.page_url }}"
+            else
+              echo "- GitHub Pages: not deployed (missing report output)."
+            fi
+            echo "- Open **index.html** (includes RUNBOOK.md link)."
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Enforce compare result
+        if: always()
+        run: |
+          CODE="${{ steps.compare.outputs.gradle_exit_code }}"
+          if [[ -z "$CODE" ]]; then
+            echo "Missing compare exit code" >&2
+            exit 2
+          fi
+          if [[ "$CODE" != "0" ]]; then
+            echo "Scenario compare failed with exit code $CODE" >&2
+            exit "$CODE"
+          fi

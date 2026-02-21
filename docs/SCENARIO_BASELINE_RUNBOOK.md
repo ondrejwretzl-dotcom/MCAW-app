@@ -121,3 +121,15 @@ Repo obsahuje 2 workflow:
 - `artifact_name` = typicky `mcaw-scenario-report`
 - `baseline_id` = doporučeně commit SHA nebo datum
 - `catalog` = namespace baseline (např. `default`)
+
+---
+
+## 8) Kam koukat bez stahování artifactu
+
+Po běhu workflow `Scenario Regression`:
+
+1. Otevři detail běhu v GitHub Actions.
+2. V **Job summary** je uveden odkaz **GitHub Pages** (`page_url`).
+3. Otevři tento URL a rovnou uvidíš `index.html` + odkazy na report soubory.
+
+Pozn.: workflow je nastavené tak, aby se report publikoval i když compare krok skončí non-zero (abys měl co debugovat).

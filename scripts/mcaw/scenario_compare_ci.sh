@@ -22,25 +22,30 @@ else
   echo "No baseline pointer file at $BASELINE_POINTER (first run mode)."
 fi
 
+set +e
 ./gradlew :app:testDebugUnitTest --no-daemon "${GRADLE_PROPS[@]}"
+GRADLE_EXIT=$?
+set -e
 
 REPORT_ROOT="app/build/reports/mcaw_scenarios"
 if [[ ! -d "$REPORT_ROOT" ]]; then
   REPORT_ROOT="build/reports/mcaw_scenarios"
 fi
 
-if [[ ! -d "$REPORT_ROOT" ]]; then
-  echo "Scenario report root not found." >&2
-  exit 2
+LATEST_DIR=""
+if [[ -d "$REPORT_ROOT" ]]; then
+  LATEST_DIR="$(find "$REPORT_ROOT" -mindepth 1 -maxdepth 1 -type d | sort | tail -n1)"
 fi
 
-LATEST_DIR="$(find "$REPORT_ROOT" -mindepth 1 -maxdepth 1 -type d | sort | tail -n1)"
 if [[ -z "$LATEST_DIR" ]]; then
-  echo "No scenario report directory found in $REPORT_ROOT" >&2
-  exit 3
+  echo "No scenario report directory found. Root checked: $REPORT_ROOT"
+else
+  echo "Latest report dir: $LATEST_DIR"
 fi
 
-echo "Latest report dir: $LATEST_DIR"
 if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
   echo "latest_report_dir=$LATEST_DIR" >> "$GITHUB_OUTPUT"
+  echo "gradle_exit_code=$GRADLE_EXIT" >> "$GITHUB_OUTPUT"
 fi
+
+exit "$GRADLE_EXIT"

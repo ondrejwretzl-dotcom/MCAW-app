@@ -193,3 +193,9 @@ Přidány workflow:
 Tím je pokryto:
 - automatické hlídání hard regresí v běžném běhu,
 - řízený a auditovatelný promote baseline bez ručního kopírování souborů.
+
+## 14) Dostupnost výstupu bez artifact downloadu
+
+`scenario-regression.yml` publikuje report i do GitHub Pages a do Job Summary zapisuje `page_url`.
+
+Tím je možné otevřít `index.html` přímo v browseru bez stahování artifactu.
