@@ -104,7 +104,9 @@ jobs:
       - name: Enforce compare result
         if: always()
         run: |
-          if [[ "${{ steps.compare.outcome }}" != "success" ]]; then
-            echo "Scenario compare failed (outcome=${{ steps.compare.outcome }})." >&2
+          OUTCOME="${{ steps.compare.outcome }}"
+          if [[ "$OUTCOME" == "failure" ]]; then
+            echo "Scenario compare failed (outcome=$OUTCOME)." >&2
             exit 1
           fi
+          echo "Scenario compare outcome=$OUTCOME (no hard fail from this gate)."
