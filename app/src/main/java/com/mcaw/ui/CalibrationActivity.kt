@@ -283,7 +283,9 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
                     restartAll()
                 } else {
                     stage = Stage.VERIFY
+                    overlay.crosshairEnabled = true
                     overlay.setPointNormalized(0.5f, 0.70f)
+                    overlay.postInvalidateOnAnimation()
                     updateUiForStage()
                     onPointChanged(overlay.xNorm, overlay.yNorm, fromUser = false)
                 }
@@ -291,8 +293,9 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
             Stage.VERIFY -> {
                 // Save fitted values and finish.
                 applyCalibrationToPreferencesAndProfile()
-                    SessionActivityLogger.log("calibration_saved cam_h=${AppPreferences.cameraMountHeightM} pitch_deg=${AppPreferences.cameraPitchDownDeg} rms=${AppPreferences.calibrationRmsM} max=${AppPreferences.calibrationMaxErrM} imu_std=${AppPreferences.calibrationImuStdDeg}")
-                                    Toast.makeText(this, "Kalibrace uložena", Toast.LENGTH_SHORT).show()
+                SessionActivityLogger.log("calibration_saved cam_h=${AppPreferences.cameraMountHeightM} pitch_deg=${AppPreferences.cameraPitchDownDeg} rms=${AppPreferences.calibrationRmsM} max=${AppPreferences.calibrationMaxErrM} imu_std=${AppPreferences.calibrationImuStdDeg}")
+                Toast.makeText(this, "Kalibrace uložena", Toast.LENGTH_SHORT).show()
+                setResult(RESULT_OK)
                 finish()
             }
         }

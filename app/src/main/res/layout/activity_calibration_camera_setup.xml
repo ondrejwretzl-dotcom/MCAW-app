@@ -10,6 +10,31 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
+    <LinearLayout
+        android:id="@+id/loadingContainer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#CC000000"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:clickable="false"
+        android:focusable="false">
+
+        <ProgressBar
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:indeterminate="true" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="Inicializuji kameru…"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
     <com.mcaw.ui.OverlayView
         android:id="@+id/overlay"
         android:layout_width="match_parent"
@@ -102,10 +127,12 @@
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnCancel"
                 style="@style/Widget.Material3.Button.TonalButton"
+                app:backgroundTint="#E91E63"
+                android:textColor="#FFFFFF"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="Zrušit" />
+                android:text="Krok zpět" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnDone"

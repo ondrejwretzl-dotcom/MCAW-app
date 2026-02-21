@@ -3,6 +3,7 @@ package com.mcaw.ui
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.view.View
 import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.camera.core.Camera
@@ -12,8 +13,8 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.button.MaterialButton
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.slider.Slider
 import com.mcaw.app.R
 import com.mcaw.config.AppPreferences
@@ -36,6 +37,7 @@ class CalibrationCameraSetupActivity : ComponentActivity() {
     private lateinit var sliderZoom: Slider
     private lateinit var txtZoomValue: TextView
     private lateinit var sliderGuide: Slider
+    private lateinit var loadingContainer: View
     private lateinit var txtGuideValue: TextView
     private lateinit var btnDone: MaterialButton
     private lateinit var btnCancel: MaterialButton
@@ -43,6 +45,15 @@ class CalibrationCameraSetupActivity : ComponentActivity() {
     private var cameraProvider: ProcessCameraProvider? = null
     private var previewUseCase: Preview? = null
     private var boundCamera: Camera? = null
+    private var cameraStartRequested: Boolean = false
+
+    // Draft rollback snapshot (cancel/back should not persist unfinished edits).
+    private var initialZoomRatio: Float = 1.0f
+    private var initialRoiTopY: Float = 0.32f
+    private var initialRoiBottomY: Float = 0.92f
+    private var initialRoiTopHalfW: Float = 0.18f
+    private var initialRoiBottomHalfW: Float = 0.46f
+    private var initialRoiCenterX: Float = 0.5f
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -58,16 +69,27 @@ class CalibrationCameraSetupActivity : ComponentActivity() {
         sliderZoom = findViewById(R.id.sliderZoom)
         txtZoomValue = findViewById(R.id.txtZoomValue)
         sliderGuide = findViewById(R.id.sliderGuide)
+        loadingContainer = findViewById(R.id.loadingContainer)
         txtGuideValue = findViewById(R.id.txtGuideValue)
         btnDone = findViewById(R.id.btnDone)
         btnCancel = findViewById(R.id.btnCancel)
+
+        previewView.previewStreamState.observe(this) { state ->
+            loadingContainer.visibility = if (state == PreviewView.StreamState.STREAMING) View.GONE else View.VISIBLE
+        }
 
         // Overlay setup: show ROI + guide, allow edit.
         overlay.showTelemetry = false
         overlay.roiEditMode = true
         overlay.showGuideLine = true
 
+        initialZoomRatio = AppPreferences.cameraZoomRatio
         val roi = AppPreferences.getRoiTrapezoidNormalized()
+        initialRoiTopY = roi.topY
+        initialRoiBottomY = roi.bottomY
+        initialRoiTopHalfW = roi.topHalfW
+        initialRoiBottomHalfW = roi.bottomHalfW
+        initialRoiCenterX = roi.centerX
         overlay.roiTopY = roi.topY
         overlay.roiBottomY = roi.bottomY
         overlay.roiTopHalfW = roi.topHalfW
@@ -75,10 +97,9 @@ class CalibrationCameraSetupActivity : ComponentActivity() {
         overlay.roiCenterX = roi.centerX
         overlay.guideXNormalized = roi.centerX
 
-        overlay.onRoiChanged = { topY, bottomY, topHalfW, bottomHalfW, centerX, isFinal ->
+        overlay.onRoiChanged = { topY, bottomY, topHalfW, bottomHalfW, centerX, _ ->
             // Keep overlay + guide in sync. CenterX acts as lane center.
             overlay.guideXNormalized = centerX
-            // Always write to prefs: this is wizard draft; cost is tiny (UI only).
             AppPreferences.setRoiTrapezoidNormalized(topY, bottomY, topHalfW, bottomHalfW, centerX)
         }
 
@@ -91,37 +112,48 @@ class CalibrationCameraSetupActivity : ComponentActivity() {
             overlay.roiBottomHalfW = r.bottomHalfW
             overlay.roiCenterX = r.centerX
             overlay.guideXNormalized = r.centerX
-            sliderGuide.value = r.centerX
-            updateGuideText(r.centerX)
+            sliderGuide.value = snapToSliderStep(r.centerX, sliderGuide.valueFrom, sliderGuide.valueTo, sliderGuide.stepSize)
+            updateGuideText(sliderGuide.value)
             true
         }
         overlay.isLongClickable = true
 
         // Zoom
-        sliderZoom.value = AppPreferences.cameraZoomRatio
+        sliderZoom.value = snapToSliderStep(
+            AppPreferences.cameraZoomRatio,
+            sliderZoom.valueFrom,
+            sliderZoom.valueTo,
+            sliderZoom.stepSize
+        )
         updateZoomText(sliderZoom.value)
         sliderZoom.addOnChangeListener { _, v, fromUser ->
             if (!fromUser) return@addOnChangeListener
-            AppPreferences.cameraZoomRatio = v
-            updateZoomText(v)
-            boundCamera?.cameraControl?.setZoomRatio(v)
+            val snapped = snapToSliderStep(v, sliderZoom.valueFrom, sliderZoom.valueTo, sliderZoom.stepSize)
+            AppPreferences.cameraZoomRatio = snapped
+            updateZoomText(snapped)
+            boundCamera?.cameraControl?.setZoomRatio(snapped)
         }
 
         // Guide (lane center) -> uses same value as ROI centerX (keeps ego-path signals consistent).
-        sliderGuide.value = roi.centerX
+        sliderGuide.value = snapToSliderStep(roi.centerX, sliderGuide.valueFrom, sliderGuide.valueTo, sliderGuide.stepSize)
         updateGuideText(sliderGuide.value)
         sliderGuide.addOnChangeListener { _, v, fromUser ->
             if (!fromUser) return@addOnChangeListener
-            val cx = v.coerceIn(0f, 1f)
+            val cx = snapToSliderStep(v, sliderGuide.valueFrom, sliderGuide.valueTo, sliderGuide.stepSize)
             overlay.guideXNormalized = cx
             overlay.roiCenterX = cx
             AppPreferences.setRoiTrapezoidNormalized(
-                overlay.roiTopY, overlay.roiBottomY, overlay.roiTopHalfW, overlay.roiBottomHalfW, cx
+                overlay.roiTopY,
+                overlay.roiBottomY,
+                overlay.roiTopHalfW,
+                overlay.roiBottomHalfW,
+                cx
             )
             updateGuideText(cx)
         }
 
         btnCancel.setOnClickListener {
+            restoreDraftState()
             setResult(RESULT_CANCELED)
             finish()
         }
@@ -151,11 +183,27 @@ class CalibrationCameraSetupActivity : ComponentActivity() {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == REQ_CAMERA) {
             val ok = grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
-            if (ok) startCamera() else finish()
+            if (ok) {
+                startCamera()
+            } else {
+                restoreDraftState()
+                setResult(RESULT_CANCELED)
+                finish()
+            }
         }
     }
 
+
+    override fun onBackPressed() {
+        restoreDraftState()
+        setResult(RESULT_CANCELED)
+        super.onBackPressed()
+    }
+
     private fun startCamera() {
+        if (cameraStartRequested) return
+        cameraStartRequested = true
+        loadingContainer.visibility = View.VISIBLE
         val providerFuture = ProcessCameraProvider.getInstance(this)
         providerFuture.addListener({
             try {
@@ -174,15 +222,36 @@ class CalibrationCameraSetupActivity : ComponentActivity() {
                         previewUseCase = preview
 
                         boundCamera = provider.bindToLifecycle(this, selector, preview)
-                        boundCamera?.cameraControl?.setZoomRatio(AppPreferences.cameraZoomRatio)
+                        boundCamera?.cameraControl?.setZoomRatio(
+                            snapToSliderStep(
+                                AppPreferences.cameraZoomRatio,
+                                sliderZoom.valueFrom,
+                                sliderZoom.valueTo,
+                                sliderZoom.stepSize
+                            )
+                        )
                     } catch (t: Throwable) {
+                        cameraStartRequested = false
                         showCameraErrorAndFinish(t)
                     }
                 }
             } catch (t: Throwable) {
+                cameraStartRequested = false
                 showCameraErrorAndFinish(t)
             }
         }, ContextCompat.getMainExecutor(this))
+    }
+
+
+    private fun restoreDraftState() {
+        AppPreferences.cameraZoomRatio = initialZoomRatio
+        AppPreferences.setRoiTrapezoidNormalized(
+            topY = initialRoiTopY,
+            bottomY = initialRoiBottomY,
+            topHalfW = initialRoiTopHalfW,
+            bottomHalfW = initialRoiBottomHalfW,
+            centerX = initialRoiCenterX
+        )
     }
 
     private fun showCameraErrorAndFinish(t: Throwable) {
@@ -198,6 +267,17 @@ class CalibrationCameraSetupActivity : ComponentActivity() {
             }
             .setCancelable(false)
             .show()
+    }
+
+    private fun snapToSliderStep(value: Float, from: Float, to: Float, step: Float): Float {
+        val clamped = value.coerceIn(from, to)
+        if (step <= 0f) return clamped
+
+        val lowerStepIndex = ((clamped - from) / step).toInt().toFloat()
+        val lower = (from + lowerStepIndex * step).coerceIn(from, to)
+        val upper = (lower + step).coerceIn(from, to)
+
+        return if ((clamped - lower) <= (upper - clamped)) lower else upper
     }
 
     private fun updateZoomText(v: Float) {
