@@ -551,7 +551,12 @@ txtPreviewBuild.text =
 
         // Enable ROI edit + guide line.
         overlay.showGuideLine = true
-        overlay.guideXNormalized = AppPreferences.roiTrapCenterX
+        // Slider attrs (valueFrom/valueTo) are set in code to avoid AAPT failures on some builds.
+        sliderGuide.valueFrom = 0f
+        sliderGuide.valueTo = 1f
+        sliderGuide.stepSize = 0f
+
+        overlay.guideXNormalized = AppPreferences.roiTrapCenterX.coerceIn(0f, 1f)
         sliderGuide.value = overlay.guideXNormalized
         sliderGuide.visibility = android.view.View.VISIBLE
         txtWizardHint.visibility = android.view.View.VISIBLE
@@ -564,7 +569,7 @@ txtPreviewBuild.text =
         setRoiEditMode(true)
 
         sliderGuide.addOnChangeListener { _, value, _ ->
-            overlay.guideXNormalized = value
+            overlay.guideXNormalized = value.coerceIn(0f, 1f)
         }
 
         btnWizardDone.setOnClickListener {
