@@ -53,20 +53,6 @@
         android:layout_marginStart="12dp"
         android:layout_marginTop="84dp" />
 
-    <TextView
-        android:id="@+id/txtCalibrationHealth"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text=""
-        android:textColor="#FBBF24"
-        android:textSize="12sp"
-        android:padding="8dp"
-        android:background="#80000000"
-        android:layout_gravity="top|start"
-        android:layout_marginStart="12dp"
-        android:layout_marginTop="120dp"
-        android:visibility="gone" />
-
 
     <!-- ROI edit toggle (click) + reset (long press) -->
     <TextView
@@ -110,8 +96,7 @@
 
 
     <!-- Wizard: guide line alignment (hidden in normal preview) -->
-    <!-- Use platform SeekBar to avoid Material Slider dependency/attrs (valueFrom/valueTo). -->
-    <SeekBar
+    <com.google.android.material.slider.Slider
         android:id="@+id/sliderGuide"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -119,8 +104,9 @@
         android:layout_marginStart="16dp"
         android:layout_marginEnd="16dp"
         android:layout_marginBottom="68dp"
-        android:max="1000"
-        android:visibility="gone" />
+        app:valueFrom="0.0"
+        app:valueTo="1.0"
+        android:visibility="gone"/>
 
     <TextView
         android:id="@+id/txtWizardHint"

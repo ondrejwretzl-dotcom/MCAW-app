@@ -79,19 +79,6 @@
                 android:textColor="#9CA3AF"
                 android:textSize="12sp" />
 
-            <TextView
-                android:id="@+id/txtCalibrationHealth"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
-                android:gravity="end"
-                android:maxLines="2"
-                android:ellipsize="end"
-                android:text=""
-                android:textColor="#FBBF24"
-                android:textSize="12sp"
-                android:visibility="gone" />
-
         </LinearLayout>
 
     </LinearLayout>
