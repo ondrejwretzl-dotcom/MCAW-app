@@ -5,46 +5,45 @@ import android.os.Handler
 import android.os.HandlerThread
 import java.util.ArrayDeque
 
-/**
- * Volitelný DEBUG trace logger.
- *
- * - zapisuje CSV mimo analyzer thread
- * - throttling je řízen volajícím (DetectionAnalyzer)
- * - bez alokací ve frame loop: object pool + fronta
- */
 class SessionTraceLogger(
     private val context: Context,
     private val fileName: String,
     prealloc: Int = 64
 ) {
-    private class TargetEvent {
+    private class TrackEvent {
         var tsMs: Long = 0L
-        var kind: Int = 0
         var lockedId: Long = -1L
+        var lockedAgeFrames: Int = 0
+        var lockedMisses: Int = 0
         var bestId: Long = -1L
-        var bestPri: Float = 0f
-        var lockedPri: Float = 0f
-        var candId: Long = -1L
-        var candCount: Int = 0
-        var alertLevel: Int = 0
-        var mode: Int = 0
+        var bestScore: Float = 0f
+        var lockedScore: Float = 0f
+        var switchPending: Int = 0
+        var switchCount: Int = 0
+        var graceActive: Int = 0
+        var graceRemainingMs: Long = 0L
+        var bottomOccluded: Int = 0
+        var matchIou: Float = Float.NaN
+        var matchCenterDx: Float = Float.NaN
+        var matchCenterDy: Float = Float.NaN
+        var switchReason: Int = 0
     }
 
     @Volatile
     private var started = false
 
     private val lock = Any()
-    private val pool = ArrayDeque<TargetEvent>(prealloc)
-    private val queue = ArrayDeque<TargetEvent>(prealloc)
+    private val pool = ArrayDeque<TrackEvent>(prealloc)
+    private val queue = ArrayDeque<TrackEvent>(prealloc)
     private val lineQueue = ArrayDeque<String>(prealloc)
 
     private var ht: HandlerThread? = null
     private var h: Handler? = null
 
-    private val sb = StringBuilder(128)
+    private val sb = StringBuilder(256)
 
     init {
-        repeat(prealloc) { pool.addLast(TargetEvent()) }
+        repeat(prealloc) { pool.addLast(TrackEvent()) }
     }
 
     fun start() {
@@ -67,35 +66,47 @@ class SessionTraceLogger(
         ht = null
     }
 
-    fun logTarget(
+    fun logTrack(
         tsMs: Long,
-        kind: Int,
         lockedId: Long,
+        lockedAgeFrames: Int,
+        lockedMisses: Int,
         bestId: Long,
-        bestPri: Float,
-        lockedPri: Float,
-        candId: Long,
-        candCount: Int,
-        alertLevel: Int,
-        mode: Int
+        bestScore: Float,
+        lockedScore: Float,
+        switchPending: Int,
+        switchCount: Int,
+        graceActive: Int,
+        graceRemainingMs: Long,
+        bottomOccluded: Int,
+        matchIou: Float,
+        matchCenterDx: Float,
+        matchCenterDy: Float,
+        switchReason: Int
     ) {
         if (!started) return
 
-        val ev: TargetEvent = synchronized(lock) {
+        val ev: TrackEvent = synchronized(lock) {
             if (pool.isEmpty()) return
             pool.removeFirst()
         }
 
         ev.tsMs = tsMs
-        ev.kind = kind
         ev.lockedId = lockedId
+        ev.lockedAgeFrames = lockedAgeFrames
+        ev.lockedMisses = lockedMisses
         ev.bestId = bestId
-        ev.bestPri = bestPri
-        ev.lockedPri = lockedPri
-        ev.candId = candId
-        ev.candCount = candCount
-        ev.alertLevel = alertLevel
-        ev.mode = mode
+        ev.bestScore = bestScore
+        ev.lockedScore = lockedScore
+        ev.switchPending = switchPending
+        ev.switchCount = switchCount
+        ev.graceActive = graceActive
+        ev.graceRemainingMs = graceRemainingMs
+        ev.bottomOccluded = bottomOccluded
+        ev.matchIou = matchIou
+        ev.matchCenterDx = matchCenterDx
+        ev.matchCenterDy = matchCenterDy
+        ev.switchReason = switchReason
 
         val shouldPostDrain: Boolean = synchronized(lock) {
             val wasEmpty = queue.isEmpty()
@@ -112,7 +123,6 @@ class SessionTraceLogger(
     fun logLine(rawLine: String) {
         if (!started) return
 
-        // This is for debug text lines (e.g., 'S,...'). Allocation is acceptable because it's debug-only.
         val shouldPostDrain: Boolean = synchronized(lock) {
             val wasEmpty = queue.isEmpty() && lineQueue.isEmpty()
             lineQueue.addLast(rawLine)
@@ -126,24 +136,29 @@ class SessionTraceLogger(
 
     private fun drainOnce() {
         while (true) {
-            // Prefer structured target events first.
-            val ev: TargetEvent? = synchronized(lock) {
+            val ev: TrackEvent? = synchronized(lock) {
                 if (queue.isEmpty()) null else queue.removeFirst()
             }
             if (ev != null) {
                 sb.setLength(0)
-                TraceContract.appendTargetLine(
+                TraceContract.appendTrackLine(
                     sb = sb,
                     tsMs = ev.tsMs,
-                    kind = ev.kind,
                     lockedId = ev.lockedId,
+                    lockedAgeFrames = ev.lockedAgeFrames,
+                    lockedMisses = ev.lockedMisses,
                     bestId = ev.bestId,
-                    bestPri = ev.bestPri,
-                    lockedPri = ev.lockedPri,
-                    candId = ev.candId,
-                    candCount = ev.candCount,
-                    alertLevel = ev.alertLevel,
-                    mode = ev.mode
+                    bestScore = ev.bestScore,
+                    lockedScore = ev.lockedScore,
+                    switchPending = ev.switchPending,
+                    switchCount = ev.switchCount,
+                    graceActive = ev.graceActive,
+                    graceRemainingMs = ev.graceRemainingMs,
+                    bottomOccluded = ev.bottomOccluded,
+                    matchIou = ev.matchIou,
+                    matchCenterDx = ev.matchCenterDx,
+                    matchCenterDy = ev.matchCenterDy,
+                    switchReason = ev.switchReason
                 )
                 PublicLogWriter.appendLogLine(context, fileName, sb.toString().trimEnd())
                 synchronized(lock) { pool.addLast(ev) }

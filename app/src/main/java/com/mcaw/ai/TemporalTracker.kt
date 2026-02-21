@@ -9,8 +9,14 @@ class TemporalTracker(
     private val minConsecutiveForAlert: Int = 2,
     private val iouMatchThreshold: Float = 0.2f, // puvodne 0.3
     private val maxMisses: Int = 3, // puvodne 2
-    private val emaAlpha: Float = 0.25f // puvodne 0.5
+    private val emaAlpha: Float = 0.25f, // puvodne 0.5
+    private val lockGraceMs: Long = 400L,
+    private val lockGraceMaxMissFrames: Int = 3,
+    private val switchConfirmFrames: Int = 3,
+    private val switchMargin: Float = 0.08f,
+    private val minLockAgeFramesBeforeSwitch: Int = 3
 ) {
+    enum class SwitchReason { NONE, GRACE_EXPIRED, BETTER_STABLE, LOST, OCCLUSION_MATCH }
     data class TrackedDetection(
         val id: Long,
         val detection: Detection,
@@ -28,11 +34,23 @@ class TemporalTracker(
 
     private val tracks = mutableListOf<Track>()
     private var nextId = 1L
+    private var lockedTrackId: Long? = null
+    private var lockedAgeFrames: Int = 0
+    private var lockedMissFrames: Int = 0
+    private var lockMissingSinceMs: Long = -1L
+    private var switchCandidateId: Long? = null
+    private var switchCandidateCount: Int = 0
+    private var lastSwitchReason: SwitchReason = SwitchReason.NONE
+    private var lastOcclusionMatchUsed = false
+    private var frameCounter: Long = 0L
 
     // Reuse buffer to avoid per-frame allocations (growth is rare).
     private var matchedFlags = BooleanArray(0)
 
-    fun update(detections: List<Detection>): List<TrackedDetection> {
+    fun update(detections: List<Detection>, tsMs: Long = -1L, bottomOccluded: Boolean = false): List<TrackedDetection> {
+        frameCounter += 1
+        lastSwitchReason = SwitchReason.NONE
+        lastOcclusionMatchUsed = false
         if (matchedFlags.size < detections.size) {
             matchedFlags = BooleanArray(max(detections.size, matchedFlags.size * 2))
         }
@@ -53,7 +71,9 @@ class TemporalTracker(
                 if (!isCompatible(prevLabel, det.label)) continue
 
                 val iouVal = iou(prevBox, det.box)
-                if (iouVal < iouMatchThreshold) continue
+                val isLockedTrack = track.id == lockedTrackId
+                val occlusionMatched = isLockedTrack && bottomOccluded && isOcclusionFallbackMatch(prevBox, det.box)
+                if (iouVal < iouMatchThreshold && !occlusionMatched) continue
 
                 // Small center proximity bonus keeps lock stable when IoU ties.
                 val centerBonus = centerProximity(prevBox, det.box) * 0.12f
@@ -61,6 +81,7 @@ class TemporalTracker(
                 if (score > bestScore) {
                     bestScore = score
                     bestIdx = i
+                    lastOcclusionMatchUsed = occlusionMatched
                 }
             }
 
@@ -85,6 +106,7 @@ class TemporalTracker(
         }
 
         tracks.removeAll { it.misses > maxMisses }
+        updateLockState(tsMs)
 
         return tracks.map {
             TrackedDetection(
@@ -97,7 +119,29 @@ class TemporalTracker(
         }
     }
 
-    fun clear() = tracks.clear()
+    fun clear() {
+        tracks.clear()
+        lockedTrackId = null
+        lockedAgeFrames = 0
+        lockedMissFrames = 0
+        lockMissingSinceMs = -1L
+        switchCandidateId = null
+        switchCandidateCount = 0
+        lastSwitchReason = SwitchReason.NONE
+        lastOcclusionMatchUsed = false
+    }
+
+    fun getLockedTrackId(): Long? = lockedTrackId
+    fun getLockedAgeFrames(): Int = lockedAgeFrames
+    fun getLockedMissFrames(): Int = lockedMissFrames
+    fun isLockGraceActive(tsMs: Long): Boolean {
+        val lockId = lockedTrackId ?: return false
+        val track = tracks.firstOrNull { it.id == lockId } ?: return false
+        if (track.misses <= 0) return false
+        return graceActive(track.misses, tsMs)
+    }
+    fun getLastSwitchReason(): SwitchReason = lastSwitchReason
+    fun wasLastMatchOcclusionFallback(): Boolean = lastOcclusionMatchUsed
 
     private enum class LabelGroup { VEHICLE, PERSON, OTHER, UNKNOWN }
 
@@ -156,5 +200,118 @@ class TemporalTracker(
         // Normalized manhattan distance in [0..2], proximity in [0..1].
         val d = min(2f, kotlin.math.abs(ax - bx) + kotlin.math.abs(ay - by))
         return 1f - (d * 0.5f)
+    }
+
+    private fun isOcclusionFallbackMatch(prev: Box, curr: Box): Boolean {
+        val minHeight = min(prev.y2 - prev.y1, curr.y2 - curr.y1)
+        val minArea = min(prev.area, curr.area)
+        if (minHeight < 36f || minArea < 1500f) return false
+
+        val prevCx = (prev.x1 + prev.x2) * 0.5f
+        val prevCy = (prev.y1 + prev.y2) * 0.5f
+        val currCx = (curr.x1 + curr.x2) * 0.5f
+        val currCy = (curr.y1 + curr.y2) * 0.5f
+        val centerMaxPx = max(minHeight * 0.45f, 24f)
+        val dx = kotlin.math.abs(currCx - prevCx)
+        val dy = kotlin.math.abs(currCy - prevCy)
+        if (dx > centerMaxPx || dy > centerMaxPx) return false
+
+        val overlapX = max(0f, min(prev.x2, curr.x2) - max(prev.x1, curr.x1))
+        val minWidth = min(prev.x2 - prev.x1, curr.x2 - curr.x1).coerceAtLeast(1f)
+        return (overlapX / minWidth) >= 0.45f
+    }
+
+    private fun updateLockState(tsMs: Long) {
+        val visibleTracks = tracks.filter { it.misses == 0 }
+        val bestVisible = visibleTracks.maxByOrNull { trackScore(it) }
+        val lockId = lockedTrackId
+        val locked = if (lockId != null) tracks.firstOrNull { it.id == lockId } else null
+
+        if (locked == null) {
+            if (bestVisible != null) {
+                lockedTrackId = bestVisible.id
+                lockedAgeFrames = 1
+                lockedMissFrames = 0
+                lockMissingSinceMs = -1L
+                switchCandidateId = null
+                switchCandidateCount = 0
+            }
+            return
+        }
+
+        if (locked.misses == 0) {
+            lockedAgeFrames += 1
+            lockedMissFrames = 0
+            lockMissingSinceMs = -1L
+        } else {
+            lockedMissFrames = locked.misses
+            if (lockMissingSinceMs < 0L) lockMissingSinceMs = tsMs
+            if (!graceActive(lockedMissFrames, tsMs)) {
+                if (bestVisible != null && bestVisible.id != locked.id) {
+                    lockedTrackId = bestVisible.id
+                    lockedAgeFrames = 1
+                    lockedMissFrames = 0
+                    lockMissingSinceMs = -1L
+                    switchCandidateId = null
+                    switchCandidateCount = 0
+                    lastSwitchReason = SwitchReason.GRACE_EXPIRED
+                } else if (tracks.none { it.id == locked.id }) {
+                    lockedTrackId = null
+                    lockedAgeFrames = 0
+                    lockedMissFrames = 0
+                    switchCandidateId = null
+                    switchCandidateCount = 0
+                    lastSwitchReason = SwitchReason.LOST
+                }
+                return
+            }
+        }
+
+        if (bestVisible == null || bestVisible.id == lockedTrackId) {
+            switchCandidateId = null
+            switchCandidateCount = 0
+            return
+        }
+
+        val lockedScore = trackScore(locked)
+        val bestScore = trackScore(bestVisible)
+        val canSwitch =
+            lockedAgeFrames >= minLockAgeFramesBeforeSwitch &&
+                bestScore >= (lockedScore + switchMargin) &&
+                !graceActive(lockedMissFrames, tsMs)
+
+        if (!canSwitch) {
+            switchCandidateId = null
+            switchCandidateCount = 0
+            return
+        }
+
+        if (switchCandidateId == bestVisible.id) {
+            switchCandidateCount += 1
+        } else {
+            switchCandidateId = bestVisible.id
+            switchCandidateCount = 1
+        }
+
+        if (switchCandidateCount >= switchConfirmFrames) {
+            lockedTrackId = bestVisible.id
+            lockedAgeFrames = 1
+            lockedMissFrames = 0
+            lockMissingSinceMs = -1L
+            switchCandidateId = null
+            switchCandidateCount = 0
+            lastSwitchReason = SwitchReason.BETTER_STABLE
+        }
+    }
+
+    // Keep score on the same [0..1] scale used by detector confidence.
+    // Switch margin tuning (e.g., 0.08) relies on this stable scale.
+    private fun trackScore(track: Track): Float = track.detection.score.coerceIn(0f, 1f)
+
+    private fun graceActive(missFrames: Int, tsMs: Long): Boolean {
+        if (missFrames <= 0) return false
+        if (missFrames > lockGraceMaxMissFrames) return false
+        if (tsMs < 0L || lockMissingSinceMs < 0L) return true
+        return (tsMs - lockMissingSinceMs) <= lockGraceMs
     }
 }
