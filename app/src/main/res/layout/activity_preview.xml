@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/frame"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
@@ -92,5 +93,60 @@
         android:background="#80000000"
         android:layout_gravity="bottom|end"
         android:layout_margin="12dp" />
+
+
+    <!-- Wizard: guide line alignment (hidden in normal preview) -->
+    <com.google.android.material.slider.Slider
+        android:id="@+id/sliderGuide"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:layout_marginBottom="68dp"
+        app:valueFrom="0.0"
+        app:valueTo="1.0"
+        android:visibility="gone"/>
+
+    <TextView
+        android:id="@+id/txtWizardHint"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Wizard"
+        android:textColor="#FFFFFF"
+        android:textSize="12sp"
+        android:padding="8dp"
+        android:background="#80000000"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="112dp"
+        android:visibility="gone"/>
+
+    <TextView
+        android:id="@+id/btnWizardDone"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="HOTOVO"
+        android:textColor="#FFFFFF"
+        android:textSize="12sp"
+        android:padding="10dp"
+        android:background="#803B82F6"
+        android:layout_gravity="bottom|start"
+        android:layout_marginStart="12dp"
+        android:layout_marginBottom="12dp"
+        android:visibility="gone"/>
+
+    <TextView
+        android:id="@+id/btnWizardCancel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="ZRUŠIT"
+        android:textColor="#FFFFFF"
+        android:textSize="12sp"
+        android:padding="10dp"
+        android:background="#80AA0000"
+        android:layout_gravity="bottom|end"
+        android:layout_marginEnd="12dp"
+        android:layout_marginBottom="12dp"
+        android:visibility="gone"/>
 
 </FrameLayout>

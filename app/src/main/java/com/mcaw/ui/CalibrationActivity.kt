@@ -79,6 +79,8 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
     private var previewUseCase: Preview? = null
     private var boundCamera: Camera? = null
 
+    private var zoomOnly: Boolean = false
+
     private lateinit var sliderZoom: Slider
     private lateinit var txtZoomValue: TextView
 
@@ -122,6 +124,8 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
         ProfileManager.ensureInit(this)
         setContentView(R.layout.activity_calibration)
 
+        zoomOnly = intent.getStringExtra(EXTRA_MODE) == MODE_ZOOM_ONLY
+
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         accelSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
 
@@ -156,7 +160,15 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
         overlay.crosshairEnabled = false
 
         btnBack.setOnClickListener { onBackClicked() }
-        btnConfirm.setOnClickListener { onConfirmClicked() }
+        btnConfirm.setOnClickListener {
+            if (zoomOnly) {
+                // Zoom-only step: zoom is already saved to preferences via the slider.
+                setResult(RESULT_OK)
+                finish()
+            } else {
+                onConfirmClicked()
+            }
+        }
 
         updateUiForStage()
         startCamera()
@@ -197,6 +209,11 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
     }
 
     private fun onBackClicked() {
+        if (zoomOnly) {
+            setResult(RESULT_CANCELED)
+            finish()
+            return
+        }
         when (stage) {
             Stage.RESULT -> {
                 when {

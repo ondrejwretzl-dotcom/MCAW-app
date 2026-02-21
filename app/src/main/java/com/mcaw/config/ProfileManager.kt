@@ -108,6 +108,19 @@ object ProfileManager {
         )
     }
 
+    /**
+     * Overwrites an existing profile with current AppPreferences values and optionally renames it.
+     * Returns the updated profile or null if the profile doesn't exist.
+     */
+    fun overwriteProfileFromCurrentPrefs(profileId: String, newName: String): MountProfile? {
+        check(::prefs.isInitialized) { "ProfileManager not initialized" }
+        val existing = findById(profileId) ?: return null
+        val updated = buildProfileFromCurrentPrefs(id = existing.id, name = newName.ifBlank { existing.name })
+        upsert(updated)
+        return updated
+    }
+
+
     fun upsert(profile: MountProfile) {
         check(::prefs.isInitialized) { "ProfileManager not initialized" }
         val list = listProfiles().toMutableList()

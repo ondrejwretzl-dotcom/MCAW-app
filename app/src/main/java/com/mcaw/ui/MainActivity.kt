@@ -36,6 +36,7 @@ import com.mcaw.util.SessionLogFile
 import com.mcaw.util.LabelMapper
 import com.mcaw.util.ReasonTextMapper
 import com.mcaw.config.ProfileManager
+import com.mcaw.config.CalibrationHealth
 
 import java.util.concurrent.TimeUnit
 
@@ -56,6 +57,7 @@ class MainActivity : ComponentActivity() {
     private var activityDialogText: TextView? = null
     private lateinit var txtBuildInfo: TextView
     private lateinit var txtProfileInfo: TextView
+    private lateinit var txtCalibrationHealth: TextView
     private lateinit var btnProfileInline: com.google.android.material.button.MaterialButton
     private lateinit var root: View
     private lateinit var panelMetrics: MaterialCardView
@@ -158,7 +160,9 @@ class MainActivity : ComponentActivity() {
             } else {
                 // Units are rendered on a separate line in the layout for readability in sunlight.
                 txtTtc.text = if (ttc.isFinite()) "%.2f".format(ttc) else "--.-"
-                txtDistance.text = if (distance.isFinite()) "%.1f".format(distance) else "--.-"
+                val h = CalibrationHealth.evaluate()
+                updateCalibrationHealthUi()
+                txtDistance.text = if (h.distanceReliable && distance.isFinite()) "%.1f".format(distance) else "—"
             }
 
             // Rider speed from analyzer (primary)
@@ -170,7 +174,8 @@ class MainActivity : ComponentActivity() {
 
             if (hasTarget) {
                 txtSpeed.text = if (speedKmh.isFinite()) "%.1f".format(speedKmh) else "--.-"
-                txtObjectSpeed.text = if (objKmh.isFinite()) "%.1f".format(objKmh) else "--.-"
+                val h2 = CalibrationHealth.evaluate()
+                txtObjectSpeed.text = if (h2.speedReliable && objKmh.isFinite()) "%.1f".format(objKmh) else "—"
                 txtDetectedObject.text = if (mappedLabel.isNotBlank()) mappedLabel else "--"
             }
 
@@ -201,11 +206,22 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun applyNoTargetUi() {
+    private     private fun updateCalibrationHealthUi() {
+        val h = CalibrationHealth.evaluate()
+        if (h.bannerText.isBlank()) {
+            txtCalibrationHealth.visibility = View.GONE
+            txtCalibrationHealth.text = ""
+        } else {
+            txtCalibrationHealth.visibility = View.VISIBLE
+            txtCalibrationHealth.text = h.bannerText
+        }
+    }
+
+fun applyNoTargetUi() {
         txtTtc.text = "--.-"
-        txtDistance.text = "--.-"
+        txtDistance.text = "—"
         txtSpeed.text = "--.-"
-        txtObjectSpeed.text = "--.-"
+        txtObjectSpeed.text = "—"
         txtDetectedObject.text = "--"
     }
 
@@ -229,6 +245,7 @@ class MainActivity : ComponentActivity() {
         txtDetectedObject = findViewById(R.id.txtDetectedObject)
         txtBuildInfo = findViewById(R.id.txtBuildInfo)
         txtProfileInfo = findViewById(R.id.txtProfileInfo)
+        txtCalibrationHealth = findViewById(R.id.txtCalibrationHealth)
         btnProfileInline = findViewById(R.id.btnProfileInline)
         root = findViewById(R.id.root)
         panelMetrics = findViewById(R.id.panelMetrics)
@@ -250,7 +267,7 @@ class MainActivity : ComponentActivity() {
         }
 
         btnCalibration.setOnClickListener {
-            startActivity(Intent(this, CalibrationActivity::class.java))
+            startActivity(Intent(this, CalibrationWizardActivity::class.java))
         }
         updateWhy(0, "")
         updateBrakeLamp(false)

@@ -16,6 +16,7 @@ import android.widget.Toast
 import android.os.Handler
 import android.os.Looper
 import android.widget.TextView
+import com.google.android.material.slider.Slider
 import androidx.activity.ComponentActivity
 import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.core.CameraSelector
@@ -34,6 +35,7 @@ import com.mcaw.app.BuildConfig
 import com.mcaw.app.R
 import com.mcaw.config.AppPreferences
 import com.mcaw.config.ProfileManager
+import com.mcaw.config.CalibrationHealth
 import com.mcaw.location.SpeedMonitor
 import com.mcaw.location.SpeedProvider
 import com.mcaw.util.LabelMapper
@@ -47,6 +49,12 @@ import java.util.concurrent.TimeUnit
 
 class PreviewActivity : ComponentActivity() {
 
+    companion object {
+        const val EXTRA_WIZARD_MODE = "extra_wizard_mode"
+        const val EXTRA_WIZARD_ROI = "extra_wizard_roi"
+    }
+
+
     private lateinit var previewView: PreviewView
     private lateinit var overlay: OverlayView
     private var analyzer: DetectionAnalyzer? = null
@@ -56,7 +64,22 @@ class PreviewActivity : ComponentActivity() {
     private lateinit var btnRoi: TextView
     private lateinit var txtPreviewStatus: TextView
     private lateinit var txtActiveProfile: TextView
+    private lateinit var txtCalibrationHealth: TextView
     private lateinit var btnSaveProfile: TextView
+
+    // Wizard-only UI (ROI + guide line)
+    private var wizardMode: Boolean = false
+    private lateinit var sliderGuide: Slider
+    private lateinit var txtWizardHint: TextView
+    private lateinit var btnWizardDone: TextView
+    private lateinit var btnWizardCancel: TextView
+
+    // snapshot to restore on cancel
+    private var snapRoiTopY: Float = Float.NaN
+    private var snapRoiBottomY: Float = Float.NaN
+    private var snapRoiTopHalfW: Float = Float.NaN
+    private var snapRoiBottomHalfW: Float = Float.NaN
+    private var snapRoiCenterX: Float = Float.NaN
 
     private val searchHandler = Handler(Looper.getMainLooper())
     private var searching = true
@@ -121,7 +144,8 @@ class PreviewActivity : ComponentActivity() {
                 i.getFloatExtra("right", 0f),
                 i.getFloatExtra("bottom", 0f)
             )
-            overlay.distance = i.getFloatExtra("dist", -1f)
+            val h = CalibrationHealth.evaluate()
+            overlay.distance = if (h.distanceReliable) i.getFloatExtra("dist", -1f) else Float.NaN
             overlay.roiMinDistM = i.getFloatExtra("roi_min_dist_m", Float.NaN)
             overlay.roiBottomTouch = i.getBooleanExtra("roi_bottom_touch", false)
             overlay.speed = i.getFloatExtra("speed", -1f) // REL (approach)
@@ -154,6 +178,8 @@ class PreviewActivity : ComponentActivity() {
 
         setContentView(R.layout.activity_preview)
 
+        wizardMode = intent.getBooleanExtra(EXTRA_WIZARD_MODE, false)
+
         previewView = findViewById(R.id.previewView)
         previewView.scaleType = PreviewView.ScaleType.FIT_CENTER
         overlay = findViewById(R.id.overlay)
@@ -162,7 +188,14 @@ class PreviewActivity : ComponentActivity() {
         btnRoi = findViewById(R.id.btnRoi)
         txtPreviewStatus = findViewById(R.id.txtPreviewStatus)
         txtActiveProfile = findViewById(R.id.txtActiveProfile)
+        txtCalibrationHealth = findViewById(R.id.txtCalibrationHealth)
         btnSaveProfile = findViewById(R.id.btnSaveProfile)
+
+        sliderGuide = findViewById(R.id.sliderGuide)
+        txtWizardHint = findViewById(R.id.txtWizardHint)
+        btnWizardDone = findViewById(R.id.btnWizardDone)
+        btnWizardCancel = findViewById(R.id.btnWizardCancel)
+
 
         speedProvider = SpeedProvider(this)
         speedMonitor = SpeedMonitor(speedProvider)
@@ -203,7 +236,12 @@ class PreviewActivity : ComponentActivity() {
             showSaveProfileDialog()
         }
 
-        txtPreviewBuild.text =
+                if (wizardMode) {
+            setupWizardMode()
+            return
+        }
+
+txtPreviewBuild.text =
             "MCAW ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) · ${BuildConfig.BUILD_ID}"
 
         updateSearchingLabel()
@@ -305,6 +343,12 @@ class PreviewActivity : ComponentActivity() {
     }
 
     private fun initAndStart() {
+        if (wizardMode) {
+            // Wizard ROI mode: no detection models, preview-only.
+            analyzer = null
+            startCamera()
+            return
+        }
         val yolo = runCatching { YoloOnnxDetector(this, "yolov8n.onnx") }.getOrNull()
         val eff = runCatching { EfficientDetTFLiteDetector(this, "efficientdet_lite0.tflite") }.getOrNull()
         if (yolo == null && eff == null) {
@@ -447,13 +491,15 @@ class PreviewActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
-        if (!overlay.roiEditMode) {
+        if (!wizardMode && !overlay.roiEditMode) {
             speedMonitor.start()
         }
     }
 
     override fun onStop() {
-        speedMonitor.stop()
+        if (!wizardMode) {
+            speedMonitor.stop()
+        }
         super.onStop()
     }
 
@@ -490,7 +536,64 @@ class PreviewActivity : ComponentActivity() {
         txtActiveProfile.text = "Profil: $name"
     }
 
-    private fun showSaveProfileDialog() {
+    private fun setupWizardMode() {
+        // Wizard ROI mode: no analyzer, no speed monitor, no profile saving UI.
+        txtPreviewStatus.text = "Nastavení směru jízdy + ROI"
+        txtDetectionLabel.visibility = android.view.View.GONE
+        btnSaveProfile.visibility = android.view.View.GONE
+
+        // Snapshot current ROI to restore on cancel.
+        snapRoiTopY = AppPreferences.roiTrapTopY
+        snapRoiBottomY = AppPreferences.roiTrapBottomY
+        snapRoiTopHalfW = AppPreferences.roiTrapTopHalfW
+        snapRoiBottomHalfW = AppPreferences.roiTrapBottomHalfW
+        snapRoiCenterX = AppPreferences.roiTrapCenterX
+
+        // Enable ROI edit + guide line.
+        overlay.showGuideLine = true
+        overlay.guideXNormalized = AppPreferences.roiTrapCenterX
+        sliderGuide.value = overlay.guideXNormalized
+        sliderGuide.visibility = android.view.View.VISIBLE
+        txtWizardHint.visibility = android.view.View.VISIBLE
+        txtWizardHint.text = "Posuň čáru na osu pruhu. Pak uprav trapezoid."
+
+        btnWizardDone.visibility = android.view.View.VISIBLE
+        btnWizardCancel.visibility = android.view.View.VISIBLE
+
+        // Start in edit mode so user can draw trapezoid.
+        setRoiEditMode(true)
+
+        sliderGuide.addOnChangeListener { _, value, _ ->
+            overlay.guideXNormalized = value
+        }
+
+        btnWizardDone.setOnClickListener {
+            // Commit guide into ROI center (yaw proxy) and exit edit mode to store final ROI.
+            AppPreferences.roiTrapCenterX = overlay.guideXNormalized
+            overlay.roiCenterX = overlay.guideXNormalized
+            setRoiEditMode(false)
+            setResult(RESULT_OK)
+            finish()
+        }
+
+        btnWizardCancel.setOnClickListener {
+            // Restore snapshot (best-effort).
+            AppPreferences.roiTrapTopY = snapRoiTopY
+            AppPreferences.roiTrapBottomY = snapRoiBottomY
+            AppPreferences.roiTrapTopHalfW = snapRoiTopHalfW
+            AppPreferences.roiTrapBottomHalfW = snapRoiBottomHalfW
+            AppPreferences.roiTrapCenterX = snapRoiCenterX
+            applyRoiFromPrefs()
+
+            setResult(RESULT_CANCELED)
+            finish()
+        }
+
+        // Ensure we only bind preview.
+        bindPreviewOnly()
+    }
+
+private fun showSaveProfileDialog() {
         val activeId = ProfileManager.getActiveProfileIdOrNull()
         if (!activeId.isNullOrBlank()) {
             val activeName = ProfileManager.findById(activeId)?.name ?: "?"
@@ -546,4 +649,13 @@ class PreviewActivity : ComponentActivity() {
             .show()
     }
 
-}
+
+        val h = CalibrationHealth.evaluate()
+        if (h.bannerText.isBlank()) {
+            txtCalibrationHealth.visibility = android.view.View.GONE
+        } else {
+            txtCalibrationHealth.visibility = android.view.View.VISIBLE
+            txtCalibrationHealth.text = h.bannerText
+        }
+    }
+

@@ -44,6 +44,28 @@ class OverlayView @JvmOverloads constructor(
         style = Paint.Style.FILL
     }
 
+    private val guidePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE
+        style = Paint.Style.STROKE
+        strokeWidth = 3f
+        pathEffect = DashPathEffect(floatArrayOf(14f, 10f), 0f)
+        alpha = 210
+    }
+
+    /** Wizard-only: show a vertical guide line that user aligns with lane direction. */
+    var showGuideLine: Boolean = false
+        set(v) {
+            field = v
+            invalidate()
+        }
+
+    /** Normalized X [0..1] for the guide line (independent from ROI center while editing). */
+    var guideXNormalized: Float = 0.5f
+        set(v) {
+            field = v.coerceIn(0f, 1f)
+            invalidate()
+        }
+
     private val textBgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.argb(140, 0, 0, 0)
         style = Paint.Style.FILL
@@ -365,6 +387,11 @@ class OverlayView @JvmOverloads constructor(
         val roiPath = mapRoiToViewPath() ?: return
         canvas.drawPath(roiPath, roiFillPaint)
         canvas.drawPath(roiPath, roiPaint)
+
+        if (showGuideLine) {
+            val x = guideXNormalized.coerceIn(0f, 1f) * width.toFloat()
+            canvas.drawLine(x, 0f, x, height.toFloat(), guidePaint)
+        }
 
         val b = box
         if (b != null) {
