@@ -1,0 +1,53 @@
+name: Scenario Regression
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  scenario-compare:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: |
+          yes | sdkmanager --licenses
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Run scenario compare
+        id: compare
+        env:
+          FAIL_ON_HARD: "true"
+          FAIL_ON_SCENARIO: "false"
+        run: scripts/mcaw/scenario_compare_ci.sh
+
+      - name: Upload scenario report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcaw-scenario-report
+          path: ${{ steps.compare.outputs.latest_report_dir }}
+          if-no-files-found: error
+
+      - name: Job summary
+        run: |
+          {
+            echo "## MCAW Scenario Report"
+            echo "- Artifact: **mcaw-scenario-report**"
+            echo "- Report dir: \`${{ steps.compare.outputs.latest_report_dir }}\`"
+            echo "- Open artifact and view **index.html** (includes RUNBOOK.md link)."
+          } >> "$GITHUB_STEP_SUMMARY"
