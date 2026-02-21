@@ -94,6 +94,18 @@
         android:layout_gravity="bottom|end"
         android:layout_margin="12dp" />
 
+    <TextView
+        android:id="3247id/txtCalibrationHealth"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:layout_margin="12dp"
+        android:padding="8dp"
+        android:background="#80000000"
+        android:textColor="#FCD34D"
+        android:textSize="12sp"
+        android:visibility="gone"
+        android:text="" />
 
     <!-- Wizard: guide line alignment (hidden in normal preview) -->
     <com.google.android.material.slider.Slider

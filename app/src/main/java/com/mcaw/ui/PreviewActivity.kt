@@ -491,6 +491,7 @@ txtPreviewBuild.text =
 
     override fun onStart() {
         super.onStart()
+        updateCalibrationHealthUi()
         if (!wizardMode && !overlay.roiEditMode) {
             speedMonitor.start()
         }
@@ -501,6 +502,17 @@ txtPreviewBuild.text =
             speedMonitor.stop()
         }
         super.onStop()
+    }
+
+    private fun updateCalibrationHealthUi() {
+        val h = com.mcaw.config.CalibrationHealth.evaluate()
+        if (h.bannerText.isBlank()) {
+            txtCalibrationHealth.visibility = View.GONE
+            txtCalibrationHealth.text = ""
+        } else {
+            txtCalibrationHealth.visibility = View.VISIBLE
+            txtCalibrationHealth.text = h.bannerText
+        }
     }
 
     private fun updateSearchingLabel() {
@@ -551,12 +563,10 @@ txtPreviewBuild.text =
 
         // Enable ROI edit + guide line.
         overlay.showGuideLine = true
-        // Slider attrs (valueFrom/valueTo) are set in code to avoid AAPT failures on some builds.
+        overlay.guideXNormalized = AppPreferences.roiTrapCenterX
         sliderGuide.valueFrom = 0f
         sliderGuide.valueTo = 1f
         sliderGuide.stepSize = 0f
-
-        overlay.guideXNormalized = AppPreferences.roiTrapCenterX.coerceIn(0f, 1f)
         sliderGuide.value = overlay.guideXNormalized
         sliderGuide.visibility = android.view.View.VISIBLE
         txtWizardHint.visibility = android.view.View.VISIBLE
@@ -569,7 +579,7 @@ txtPreviewBuild.text =
         setRoiEditMode(true)
 
         sliderGuide.addOnChangeListener { _, value, _ ->
-            overlay.guideXNormalized = value.coerceIn(0f, 1f)
+            overlay.guideXNormalized = value
         }
 
         btnWizardDone.setOnClickListener {
@@ -654,13 +664,4 @@ private fun showSaveProfileDialog() {
             .show()
     }
 
-
-        val h = CalibrationHealth.evaluate()
-        if (h.bannerText.isBlank()) {
-            txtCalibrationHealth.visibility = android.view.View.GONE
-        } else {
-            txtCalibrationHealth.visibility = android.view.View.VISIBLE
-            txtCalibrationHealth.text = h.bannerText
-        }
-    }
-
+}

@@ -44,6 +44,13 @@ import java.util.concurrent.TimeUnit
  */
 class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener {
 
+    companion object {
+        const val EXTRA_MODE = "mcaw_calib_mode"
+        const val MODE_FULL = "full"
+        const val MODE_ZOOM_ONLY = "zoom_only"
+    }
+
+
     private enum class Stage {
         INTRO,
         P1,

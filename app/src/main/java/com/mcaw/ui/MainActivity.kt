@@ -206,7 +206,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private     private fun updateCalibrationHealthUi() {
+    private fun updateCalibrationHealthUi() {
         val h = CalibrationHealth.evaluate()
         if (h.bannerText.isBlank()) {
             txtCalibrationHealth.visibility = View.GONE
@@ -217,7 +217,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-fun applyNoTargetUi() {
+    private fun applyNoTargetUi() {
         txtTtc.text = "--.-"
         txtDistance.text = "—"
         txtSpeed.text = "--.-"
