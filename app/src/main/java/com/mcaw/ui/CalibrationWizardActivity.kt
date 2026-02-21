@@ -57,7 +57,8 @@ class CalibrationWizardActivity : ComponentActivity() {
     ) { res ->
         if (res.resultCode == RESULT_OK) {
             cameraSetupDone = true
-            goTo(Step.CALIBRATION)
+            // Do not auto-advance: user may want to re-check or continue via button.
+            render()
         }
     }
 
@@ -66,12 +67,19 @@ class CalibrationWizardActivity : ComponentActivity() {
     ) { res ->
         if (res.resultCode == RESULT_OK) {
             calibDone = true
-            goTo(Step.SUMMARY)
+            // Do not auto-advance: allow user to decide (and re-run if needed).
+            render()
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Wizard is UI-only flow, but still needs profile/prefs initialized.
+        // (SharedPreferences here is OK; no IO in frame pipeline.)
+        AppPreferences.ensureInit(this)
+        ProfileManager.ensureInit(this)
+
         setContentView(R.layout.activity_calibration_wizard)
 
         txtTitle = findViewById(R.id.txtTitle)
@@ -122,6 +130,10 @@ class CalibrationWizardActivity : ComponentActivity() {
                 flowMode = FlowMode.EDIT
                 step = Step.NAME
                 inputName.setText(originalName)
+
+                // Working copy: load active profile into prefs so user edits draft based on it.
+                ProfileManager.applyActiveProfileToPreferences()
+
                 cameraSetupDone = false
                 calibDone = false
                 render()
@@ -165,8 +177,10 @@ class CalibrationWizardActivity : ComponentActivity() {
 
                     Oblast pod spodní hranou ROI se nebude vůbec detekovat (kapota/palubka).
                 """.trimIndent()
-                btnPrimary.text = if (cameraSetupDone) "Pokračovat" else "Otevřít setup"
-                btnSecondary.text = "Zpět"
+                // ROI is often adjusted more frequently than distance/pitch calibration.
+                // Keep this step always editable.
+                btnPrimary.text = "Otevřít setup"
+                btnSecondary.text = if (cameraSetupDone) "Pokračovat" else "Zpět"
             }
 
             Step.CALIBRATION -> {
@@ -177,8 +191,9 @@ class CalibrationWizardActivity : ComponentActivity() {
 
                     Důležité: telefon musí být během kroků co nejstabilnější.
                 """.trimIndent()
-                btnPrimary.text = if (calibDone) "Pokračovat" else "Spustit kalibraci"
-                btnSecondary.text = "Zpět"
+                // Calibration can be re-run; allow it even after completion.
+                btnPrimary.text = "Spustit kalibraci"
+                btnSecondary.text = if (calibDone) "Pokračovat" else "Zpět"
             }
 
             Step.SUMMARY -> {
@@ -209,7 +224,7 @@ class CalibrationWizardActivity : ComponentActivity() {
                 }
 
                 btnPrimary.text = "Uložit a aktivovat"
-                btnSecondary.text = "Uložit jako draft"
+                btnSecondary.text = "Upravit kroky"
             }
         }
     }
@@ -227,18 +242,10 @@ class CalibrationWizardActivity : ComponentActivity() {
             }
 
             Step.CAMERA_SETUP -> {
-                if (cameraSetupDone) {
-                    goTo(Step.CALIBRATION)
-                    return
-                }
                 launchCameraSetup.launch(Intent(this, CalibrationCameraSetupActivity::class.java))
             }
 
             Step.CALIBRATION -> {
-                if (calibDone) {
-                    goTo(Step.SUMMARY)
-                    return
-                }
                 val i = Intent(this, CalibrationActivity::class.java).apply {
                     putExtra(CalibrationActivity.EXTRA_MODE, CalibrationActivity.MODE_FULL)
                 }
@@ -254,10 +261,50 @@ class CalibrationWizardActivity : ComponentActivity() {
     private fun onSecondary() {
         when (step) {
             Step.NAME -> finish()
-            Step.CAMERA_SETUP -> goTo(Step.NAME)
-            Step.CALIBRATION -> goTo(Step.CAMERA_SETUP)
-            Step.SUMMARY -> saveProfile(setActive = false)
+            Step.CAMERA_SETUP -> {
+                if (cameraSetupDone) goTo(Step.CALIBRATION) else goTo(Step.NAME)
+            }
+            Step.CALIBRATION -> {
+                if (calibDone) goTo(Step.SUMMARY) else goTo(Step.CAMERA_SETUP)
+            }
+            Step.SUMMARY -> {
+                showEditStepsDialog()
+            }
         }
+    }
+
+    private fun showEditStepsDialog() {
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Upravit kroky")
+            .setItems(
+                arrayOf(
+                    "Kamera setup (zoom / střed / ROI)",
+                    "Kalibrace vzdálenosti + pitch",
+                    "Uložit jako draft"
+                )
+            ) { dlg, which ->
+                when (which) {
+                    0 -> {
+                        dlg.dismiss()
+                        goTo(Step.CAMERA_SETUP)
+                        launchCameraSetup.launch(Intent(this, CalibrationCameraSetupActivity::class.java))
+                    }
+                    1 -> {
+                        dlg.dismiss()
+                        goTo(Step.CALIBRATION)
+                        val i = Intent(this, CalibrationActivity::class.java).apply {
+                            putExtra(CalibrationActivity.EXTRA_MODE, CalibrationActivity.MODE_FULL)
+                        }
+                        launchCalib.launch(i)
+                    }
+                    else -> {
+                        dlg.dismiss()
+                        saveProfile(setActive = false)
+                    }
+                }
+            }
+            .setCancelable(true)
+            .show()
     }
 
     private fun saveProfile(setActive: Boolean) {

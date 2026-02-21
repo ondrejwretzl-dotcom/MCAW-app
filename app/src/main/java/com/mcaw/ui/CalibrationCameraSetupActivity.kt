@@ -2,7 +2,6 @@ package com.mcaw.ui
 
 import android.Manifest
 import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
 import android.widget.TextView
 import androidx.activity.ComponentActivity
@@ -13,12 +12,11 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.slider.Slider
 import com.mcaw.app.R
 import com.mcaw.config.AppPreferences
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
 
 /**
  * Wizard step: camera setup (zoom + lane center guide + ROI trapezoid).
@@ -46,9 +44,6 @@ class CalibrationCameraSetupActivity : ComponentActivity() {
     private var previewUseCase: Preview? = null
     private var boundCamera: Camera? = null
 
-    // Executor is only for CameraX internals here (no frame analysis).
-    private val cameraExecutor: ExecutorService = Executors.newSingleThreadExecutor()
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AppPreferences.ensureInit(this)
@@ -56,6 +51,9 @@ class CalibrationCameraSetupActivity : ComponentActivity() {
         setContentView(R.layout.activity_calibration_camera_setup)
 
         previewView = findViewById(R.id.previewView)
+        // Match runtime preview behaviour for device compatibility.
+        previewView.scaleType = PreviewView.ScaleType.FIT_CENTER
+        previewView.implementationMode = PreviewView.ImplementationMode.COMPATIBLE
         overlay = findViewById(R.id.overlay)
         sliderZoom = findViewById(R.id.sliderZoom)
         txtZoomValue = findViewById(R.id.txtZoomValue)
@@ -138,7 +136,6 @@ class CalibrationCameraSetupActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
         cameraProvider?.unbindAll()
-        cameraExecutor.shutdown()
     }
 
     private fun ensureCameraPermissionAndStart() {
@@ -161,20 +158,46 @@ class CalibrationCameraSetupActivity : ComponentActivity() {
     private fun startCamera() {
         val providerFuture = ProcessCameraProvider.getInstance(this)
         providerFuture.addListener({
-            val provider = providerFuture.get()
-            cameraProvider = provider
-            provider.unbindAll()
+            try {
+                val provider = providerFuture.get()
+                cameraProvider = provider
+                provider.unbindAll()
 
-            val selector = CameraSelector.DEFAULT_BACK_CAMERA
+                val selector = CameraSelector.DEFAULT_BACK_CAMERA
 
-            val preview = Preview.Builder().build().also {
-                it.setSurfaceProvider(previewView.surfaceProvider)
+                // Ensure PreviewView has a valid surface before binding.
+                previewView.post {
+                    try {
+                        val preview = Preview.Builder().build().also {
+                            it.setSurfaceProvider(previewView.surfaceProvider)
+                        }
+                        previewUseCase = preview
+
+                        boundCamera = provider.bindToLifecycle(this, selector, preview)
+                        boundCamera?.cameraControl?.setZoomRatio(AppPreferences.cameraZoomRatio)
+                    } catch (t: Throwable) {
+                        showCameraErrorAndFinish(t)
+                    }
+                }
+            } catch (t: Throwable) {
+                showCameraErrorAndFinish(t)
             }
-            previewUseCase = preview
-
-            boundCamera = provider.bindToLifecycle(this, selector, preview)
-            boundCamera?.cameraControl?.setZoomRatio(AppPreferences.cameraZoomRatio)
         }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun showCameraErrorAndFinish(t: Throwable) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Kamera nelze spustit")
+            .setMessage(
+                "Nepodařilo se spustit náhled kamery pro kalibraci.\n\n" +
+                    (t.message ?: t.javaClass.simpleName)
+            )
+            .setPositiveButton("Zavřít") { _, _ ->
+                setResult(RESULT_CANCELED)
+                finish()
+            }
+            .setCancelable(false)
+            .show()
     }
 
     private fun updateZoomText(v: Float) {
