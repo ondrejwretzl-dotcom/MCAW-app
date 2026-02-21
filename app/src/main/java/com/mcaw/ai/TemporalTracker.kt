@@ -304,8 +304,9 @@ class TemporalTracker(
         }
     }
 
-    private fun trackScore(track: Track): Float =
-        track.detection.score + (track.consecutive.coerceAtMost(6) * 0.03f)
+    // Keep score on the same [0..1] scale used by detector confidence.
+    // Switch margin tuning (e.g., 0.08) relies on this stable scale.
+    private fun trackScore(track: Track): Float = track.detection.score.coerceIn(0f, 1f)
 
     private fun graceActive(missFrames: Int, tsMs: Long): Boolean {
         if (missFrames <= 0) return false
