@@ -1,0 +1,85 @@
+name: Agent force commit to main (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "What to do"
+        required: true
+        default: "apply_java25_guard"
+        type: choice
+        options:
+          - apply_java25_guard
+          - revert_java25_guard
+
+permissions:
+  contents: write
+
+jobs:
+  commit-to-main:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Apply selected change
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${{ inputs.mode }}" = "apply_java25_guard" ]; then
+            # vloží guard po bloku detekce JAVACMD
+            awk '
+              BEGIN {inserted=0}
+              {
+                print $0
+                if (!inserted && $0 ~ /^fi$/) {
+                  print ""
+                  print "# Guard against too new JDK versions that break Gradle Kotlin DSL/Groovy script parsing."
+                  print "JAVA_VERSION_STR=$(\"$JAVACMD\" -version 2>&1 | awk -F\"[\\\".]\" '\''NR==1 {print $2}'\'')"
+                  print "case \"$JAVA_VERSION_STR\" in"
+                  print "  \"\") ;;"
+                  print "  [0-9]*)"
+                  print "    if [ \"$JAVA_VERSION_STR\" -ge 25 ] 2>/dev/null; then"
+                  print "      die \"ERROR: Detected Java $JAVA_VERSION_STR. This project currently requires Java 17-24 to run Gradle reliably."
+                  print ""
+                  print "Use JDK 17 (recommended) and re-run, for example:"
+                  print "  export JAVA_HOME=/path/to/jdk-17"
+                  print "  export PATH=\\$JAVA_HOME/bin:\\$PATH\""
+                  print "    fi"
+                  print "  ;;"
+                  print "esac"
+                  inserted=1
+                }
+              }
+            ' gradlew > gradlew.tmp
+            mv gradlew.tmp gradlew
+            chmod +x gradlew
+          else
+            # revert: odstraní blok guardu (pokud existuje)
+            perl -0777 -i -pe 's/\n# Guard against too new JDK versions that break Gradle Kotlin DSL\/Groovy script parsing\.\nJAVA_VERSION_STR=\$\("\$JAVACMD" -version 2>&1 \| awk -F"\[\\\"\.\]" '\''NR==1 \{print \$2\}'\''\)\ncase "\$JAVA_VERSION_STR" in\n  ""\) ;;\n  \[0-9\]\*\)\n    if \[ "\$JAVA_VERSION_STR" -ge 25 \] 2>\/dev\/null; then\n      die "ERROR: Detected Java \$JAVA_VERSION_STR\. This project currently requires Java 17-24 to run Gradle reliably\.\n\nUse JDK 17 \(recommended\) and re-run, for example:\n  export JAVA_HOME=\/path\/to\/jdk-17\n  export PATH=\\\$JAVA_HOME\/bin:\\\$PATH"\n    fi\n  ;;\nesac\n/\n/s' gradlew || true
+          fi
+
+      - name: Commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if git diff --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          git add gradlew
+          git commit -m "build: ${{
+            inputs.mode == 'apply_java25_guard' && 'add Java 25 fail-fast guard to gradlew' || 'remove Java 25 fail-fast guard from gradlew'
+          }}"
+
+      - name: Push directly to main
+        shell: bash
+        run: |
+          git push origin HEAD:main
