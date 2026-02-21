@@ -10,9 +10,9 @@ import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.os.Build
 import android.os.Bundle
-import android.view.View
 import android.os.Handler
 import android.os.Looper
+import android.view.View
 import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.camera.camera2.interop.Camera2CameraInfo
@@ -31,29 +31,39 @@ import com.mcaw.ai.YoloOnnxDetector
 import com.mcaw.app.BuildConfig
 import com.mcaw.app.R
 import com.mcaw.config.AppPreferences
-import com.mcaw.config.ProfileManager
 import com.mcaw.config.CalibrationHealth
+import com.mcaw.config.ProfileManager
 import com.mcaw.location.SpeedMonitor
 import com.mcaw.location.SpeedProvider
 import com.mcaw.util.LabelMapper
 import com.mcaw.util.ReasonTextMapper
-import com.mcaw.util.PublicLogWriter
-import com.mcaw.util.SessionLogFile
 import com.mcaw.util.SessionActivityLogger
+import com.mcaw.util.SessionLogFile
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
+/**
+ * PreviewActivity = runtime-only live preview.
+ * - No ROI/guide/zoom edit UI.
+ * - Uses active profile values applied into AppPreferences.
+ */
 class PreviewActivity : ComponentActivity() {
 
-        private lateinit var previewView: PreviewView
+    private lateinit var previewView: PreviewView
     private lateinit var overlay: OverlayView
+
     private var analyzer: DetectionAnalyzer? = null
+
     private lateinit var speedProvider: SpeedProvider
     private lateinit var speedMonitor: SpeedMonitor
-    private lateinit var txtDetectionLabel: TextView    private lateinit var txtPreviewStatus: TextView
+
+    private lateinit var txtDetectionLabel: TextView
+    private lateinit var txtPreviewStatus: TextView
     private lateinit var txtActiveProfile: TextView
-    private lateinit var txtCalibrationHealth: TextView    private val searchHandler = Handler(Looper.getMainLooper())
+    private lateinit var txtCalibrationHealth: TextView
+
+    private val searchHandler = Handler(Looper.getMainLooper())
     private var searching = true
     private var searchDots = 0
 
@@ -61,18 +71,14 @@ class PreviewActivity : ComponentActivity() {
     private var previewUseCase: Preview? = null
     private var analysisUseCase: ImageAnalysis? = null
     private val analysisExecutor: ExecutorService = Executors.newSingleThreadExecutor()
-    private var isCameraBound: Boolean = false    private var boundCamera: androidx.camera.core.Camera? = null
+    private var isCameraBound: Boolean = false
+    private var boundCamera: androidx.camera.core.Camera? = null
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(ctx: Context?, i: Intent?) {
             if (i == null) return
 
-            // During ROI edit: ignore detection/ROI updates to prevent "fight" with UI editing.
-            // (Analyzer may still have in-flight broadcast, or service might still be running elsewhere.)
-                return
-            }
-
-            // ROI always (even on clear)
+            // ROI values may be broadcast (debug/service). Preview uses them only for visualization.
             if (i.hasExtra("roi_trap_top_y_n")) {
                 overlay.roiTopY = i.getFloatExtra("roi_trap_top_y_n", overlay.roiTopY)
                 overlay.roiBottomY = i.getFloatExtra("roi_trap_bottom_y_n", overlay.roiBottomY)
@@ -113,6 +119,7 @@ class PreviewActivity : ComponentActivity() {
                 i.getFloatExtra("right", 0f),
                 i.getFloatExtra("bottom", 0f)
             )
+
             val h = CalibrationHealth.evaluate()
             overlay.distance = if (h.distanceReliable) i.getFloatExtra("dist", -1f) else Float.NaN
             overlay.roiMinDistM = i.getFloatExtra("roi_min_dist_m", Float.NaN)
@@ -125,11 +132,14 @@ class PreviewActivity : ComponentActivity() {
             overlay.riderSpeedAgeMs = i.getLongExtra("rider_speed_age_ms", 0L)
             overlay.ttc = i.getFloatExtra("ttc", -1f)
             overlay.alertLevel = i.getIntExtra("alert_level", 0)
+
             val legacyReason = i.getStringExtra("alert_reason") ?: ""
             val reasonBits = i.getIntExtra("reason_bits", 0)
             overlay.alertReason = ReasonTextMapper.shortOrFallback(reasonBits, legacyReason)
+
             overlay.riskScore = i.getFloatExtra("risk_score", Float.NaN)
             overlay.brakeCueActive = i.getBooleanExtra("brake_cue", false)
+
             val mapped = LabelMapper.mapLabel(i.getStringExtra("label"))
             overlay.label = mapped
             txtDetectionLabel.text = "Detekce: $mapped"
@@ -139,6 +149,7 @@ class PreviewActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
         AppPreferences.ensureInit(this)
         ProfileManager.ensureInit(this)
         // Apply active profile (if any) before we load ROI and camera params.
@@ -149,7 +160,9 @@ class PreviewActivity : ComponentActivity() {
 
         previewView = findViewById(R.id.previewView)
         previewView.scaleType = PreviewView.ScaleType.FIT_CENTER
+
         overlay = findViewById(R.id.overlay)
+
         val txtPreviewBuild = findViewById<TextView>(R.id.txtPreviewBuild)
         txtDetectionLabel = findViewById(R.id.txtDetectionLabel)
         txtPreviewStatus = findViewById(R.id.txtPreviewStatus)
@@ -162,38 +175,9 @@ class PreviewActivity : ComponentActivity() {
 
         overlay.showTelemetry = AppPreferences.debugOverlay
         updateActiveProfileLabel()
-
         applyRoiFromPrefs()
-            if (isFinal) {
-                AppPreferences.setRoiTrapezoidNormalized(topY, bottomY, topHalfW, bottomHalfW, centerX = centerX)
-                logActivity("roi_set topY=$topY bottomY=$bottomY topHalfW=$topHalfW bottomHalfW=$bottomHalfW centerX=$centerX")
-                applyZoomAndFocusIfPossible(reason = "roi")
-            }
-        }
 
-            setRoiEditMode(newState)
-        }
-
-                // v edit módu reset -> rovnou přepíš i overlay
-                AppPreferences.resetRoiToDefault()
-                applyRoiFromPrefs()
-                logActivity("roi_reset_default")
-                return@setOnLongClickListener true
-            }
-            AppPreferences.resetRoiToDefault()
-            applyRoiFromPrefs()
-            logActivity("roi_reset_default")
-            true
-        }
-
-            showSaveProfileDialog()
-        }
-
-            setupWizardMode()
-            return
-        }
-
-txtPreviewBuild.text =
+        txtPreviewBuild.text =
             "MCAW ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) · ${BuildConfig.BUILD_ID}"
 
         updateSearchingLabel()
@@ -215,64 +199,6 @@ txtPreviewBuild.text =
         }
     }
 
-    private fun setRoiEditMode(enabled: Boolean) {
-
-        if (enabled) {
-            // Senior UX: ROI edit nesmí soupeřit s detekcí -> zastavit analýzu + broadcasty.
-            pauseDetectionForRoiEdit()
-        } else {
-            // Pro jistotu znovu načti (sanitizace + jednotný zdroj pravdy).
-            applyRoiFromPrefs()
-            resumeDetectionAfterRoiEdit()
-        }
-    }
-
-    private fun pauseDetectionForRoiEdit() {
-        logActivity("roi_edit_start")
-
-        // Zastav analyzátor (ponech preview obraz).
-        bindPreviewOnly()
-
-        // Vizuálně vyčisti detekci a přepni status.
-        overlay.box = null
-        overlay.alertLevel = 0
-        overlay.brakeCueActive = false
-        txtDetectionLabel.text = "Detekce: pozastaveno (edit ROI)"
-        txtPreviewStatus.text = "EDIT ROI · detekce pozastavena"
-
-        // Speed monitor v edit módu nepotřebujeme (šetří CPU/GPS).
-        speedPausedByEdit = true
-        speedMonitor.stop()
-
-        searching = false
-        stopSearching()
-    }
-
-    private fun resumeDetectionAfterRoiEdit() {
-        logActivity("roi_edit_stop")
-
-        // Obnov analýzu.
-        bindPreviewAndAnalysis()
-
-        // Status UI zpět.
-        searching = true
-        updateSearchingLabel()
-
-        if (speedPausedByEdit) {
-            speedPausedByEdit = false
-            speedMonitor.start()
-        }
-    }
-
-    private fun applyRoiFromPrefs() {
-        val roi = AppPreferences.getRoiTrapezoidNormalized()
-        overlay.roiTopY = roi.topY
-        overlay.roiBottomY = roi.bottomY
-        overlay.roiTopHalfW = roi.topHalfW
-        overlay.roiBottomHalfW = roi.bottomHalfW
-        overlay.roiCenterX = roi.centerX
-    }
-
     override fun onRequestPermissionsResult(
         requestCode: Int,
         permissions: Array<out String>,
@@ -291,19 +217,16 @@ txtPreviewBuild.text =
     }
 
     private fun initAndStart() {
-            // Wizard ROI mode: no detection models, preview-only.
-            analyzer = null
-            startCamera()
-            return
-        }
         val yolo = runCatching { YoloOnnxDetector(this, "yolov8n.onnx") }.getOrNull()
         val eff = runCatching { EfficientDetTFLiteDetector(this, "efficientdet_lite0.tflite") }.getOrNull()
+
         if (yolo == null && eff == null) {
             txtDetectionLabel.text = "Detekce: nelze načíst modely"
             logActivity("models_failed")
         } else {
             logActivity("models_loaded yolo=${yolo != null} efficient=${eff != null}")
         }
+
         analyzer = DetectionAnalyzer(this, yolo, eff, speedProvider)
         startCamera()
     }
@@ -314,34 +237,8 @@ txtPreviewBuild.text =
             val provider = providerFuture.get()
             cameraProvider = provider
             isCameraBound = true
-
-            // Default state: preview + analysis (unless user is editing ROI)
-                bindPreviewOnly()
-            } else {
-                bindPreviewAndAnalysis()
-            }
+            bindPreviewAndAnalysis()
         }, ContextCompat.getMainExecutor(this))
-    }
-
-    private fun bindPreviewOnly() {
-        val provider = cameraProvider ?: return
-        if (!isCameraBound) return
-
-        provider.unbindAll()
-
-        previewUseCase = Preview.Builder().build().also {
-            it.setSurfaceProvider(previewView.surfaceProvider)
-        }
-
-        val camera = provider.bindToLifecycle(
-            this,
-            CameraSelector.DEFAULT_BACK_CAMERA,
-            previewUseCase
-        )
-        boundCamera = camera
-        updateCameraCalibration(camera)
-        applyZoomAndFocusIfPossible(reason = "bind_preview")
-        analysisUseCase = null
     }
 
     private fun bindPreviewAndAnalysis() {
@@ -396,7 +293,7 @@ txtPreviewBuild.text =
 
     /**
      * Applies camera zoom and autofocus metering point derived from ROI (user intent).
-     * This is lightweight and safe to call repeatedly.
+     * Lightweight and safe to call repeatedly.
      */
     private fun applyZoomAndFocusIfPossible(reason: String) {
         val camera = boundCamera ?: return
@@ -425,6 +322,26 @@ txtPreviewBuild.text =
             }
     }
 
+    private fun applyRoiFromPrefs() {
+        val roi = AppPreferences.getRoiTrapezoidNormalized()
+        overlay.roiTopY = roi.topY
+        overlay.roiBottomY = roi.bottomY
+        overlay.roiTopHalfW = roi.topHalfW
+        overlay.roiBottomHalfW = roi.bottomHalfW
+        overlay.roiCenterX = roi.centerX
+    }
+
+    override fun onStart() {
+        super.onStart()
+        updateCalibrationHealthUi()
+        speedMonitor.start()
+    }
+
+    override fun onStop() {
+        speedMonitor.stop()
+        super.onStop()
+    }
+
     override fun onDestroy() {
         runCatching { unregisterReceiver(receiver) }
         speedMonitor.stop()
@@ -435,21 +352,8 @@ txtPreviewBuild.text =
         super.onDestroy()
     }
 
-    override fun onStart() {
-        super.onStart()
-        updateCalibrationHealthUi()
-            speedMonitor.start()
-        }
-    }
-
-    override fun onStop() {
-            speedMonitor.stop()
-        }
-        super.onStop()
-    }
-
     private fun updateCalibrationHealthUi() {
-        val h = com.mcaw.config.CalibrationHealth.evaluate()
+        val h = CalibrationHealth.evaluate()
         if (h.bannerText.isBlank()) {
             txtCalibrationHealth.visibility = View.GONE
             txtCalibrationHealth.text = ""
@@ -460,7 +364,6 @@ txtPreviewBuild.text =
     }
 
     private fun updateSearchingLabel() {
-
         if (!searching) {
             txtPreviewStatus.text = "Živý náhled aktivní"
             stopSearching()
@@ -476,10 +379,6 @@ txtPreviewBuild.text =
         searchHandler.removeCallbacksAndMessages(null)
     }
 
-    private fun logActivity(msg: String) {
-        SessionActivityLogger.log(msg)
-    }
-
     private fun updateActiveProfileLabel() {
         val id = ProfileManager.getActiveProfileIdOrNull()
         val name = if (id == null) {
@@ -490,41 +389,7 @@ txtPreviewBuild.text =
         txtActiveProfile.text = "Profil: $name"
     }
 
-    private fun setupWizardMode() {
-        // Wizard ROI mode: no analyzer, no speed monitor, no profile saving UI.
-        txtPreviewStatus.text = "Nastavení směru jízdy + ROI"
-        txtDetectionLabel.visibility = android.view.View.GONE
-
-        // Snapshot current ROI to restore on cancel.
-
-        // Enable ROI edit + guide line.
-        overlay.showGuideLine = true
-        overlay.guideXNormalized = AppPreferences.roiTrapCenterX
-
-        // Start in edit mode so user can draw trapezoid.
-        setRoiEditMode(true)
-
-            overlay.guideXNormalized = value
-        }
-
-            // Commit guide into ROI center (yaw proxy) and exit edit mode to store final ROI.
-            AppPreferences.roiTrapCenterX = overlay.guideXNormalized
-            overlay.roiCenterX = overlay.guideXNormalized
-            setRoiEditMode(false)
-            setResult(RESULT_OK)
-            finish()
-        }
-
-            // Restore snapshot (best-effort).
-            applyRoiFromPrefs()
-
-            setResult(RESULT_CANCELED)
-            finish()
-        }
-
-        // Ensure we only bind preview.
-        bindPreviewOnly()
+    private fun logActivity(msg: String) {
+        SessionActivityLogger.log(msg)
     }
-
-
 }
