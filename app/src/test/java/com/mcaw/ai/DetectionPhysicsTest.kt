@@ -1,6 +1,7 @@
 package com.mcaw.ai
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -8,12 +9,15 @@ class DetectionPhysicsTest {
 
     @Test
     fun groundPlaneDistanceAtY_isMonotonic() {
-        val dTop = DetectionPhysics.estimateDistanceGroundPlaneMetersAtYPx(300f, 1080, 1000f, 1.2f, 6f)!!
-        val dMid = DetectionPhysics.estimateDistanceGroundPlaneMetersAtYPx(700f, 1080, 1000f, 1.2f, 6f)!!
-        val dBottom = DetectionPhysics.estimateDistanceGroundPlaneMetersAtYPx(1000f, 1080, 1000f, 1.2f, 6f)!!
+        val dTop = DetectionPhysics.estimateDistanceGroundPlaneMetersAtYPx(500f, 1080, 1000f, 1.2f, 6f)
+        val dMid = DetectionPhysics.estimateDistanceGroundPlaneMetersAtYPx(700f, 1080, 1000f, 1.2f, 6f)
+        val dBottom = DetectionPhysics.estimateDistanceGroundPlaneMetersAtYPx(1000f, 1080, 1000f, 1.2f, 6f)
 
-        assertTrue(dTop > dMid)
-        assertTrue(dMid > dBottom)
+        assertNotNull(dTop)
+        assertNotNull(dMid)
+        assertNotNull(dBottom)
+        assertTrue(dTop!! > dMid!!)
+        assertTrue(dMid > dBottom!!)
     }
 
     @Test
@@ -32,4 +36,11 @@ class DetectionPhysicsTest {
         assertEquals(4f, DetectionPhysics.minFinite(4f, Float.POSITIVE_INFINITY)!!, 0.0001f)
         assertEquals(null, DetectionPhysics.minFinite(Float.NaN, Float.NEGATIVE_INFINITY))
     }
+
+    @Test
+    fun groundPlaneDistanceAtY_canBeNullAboveHorizon() {
+        val dist = DetectionPhysics.estimateDistanceGroundPlaneMetersAtYPx(120f, 1080, 1000f, 1.2f, 4f)
+        assertEquals(null, dist)
+    }
+
 }
