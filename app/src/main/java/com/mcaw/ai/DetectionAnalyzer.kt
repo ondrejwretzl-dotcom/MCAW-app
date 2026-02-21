@@ -210,6 +210,11 @@ class DetectionAnalyzer(
 
     private var distEma: Float = Float.NaN
     private var distEmaValid: Boolean = false
+    private var bottomOcclusionCounter: Int = 0
+    private var bottomOccludedStable: Boolean = false
+    private var lastOcclusionLogState: Boolean = false
+    private var lastDistanceInputM: Float = Float.NaN
+    private var lastDistanceInputTsMs: Long = -1L
 
     // Rider speed smoothing (GPS speed is noisy, especially at low speeds)
     private var riderSpeedEma: Float = 0f
@@ -476,6 +481,11 @@ if (AppPreferences.debugOverlay) {
                 )
 
                 resetMotionState()
+                bottomOcclusionCounter = 0
+                bottomOccludedStable = false
+                lastOcclusionLogState = false
+                lastDistanceInputM = Float.NaN
+                lastDistanceInputTsMs = -1L
                 sendOverlayClear()
                 sendMetricsClear()
                 return
@@ -502,49 +512,59 @@ if (AppPreferences.debugOverlay) {
             // NOTE: actual crop bottom is roiRect.bottom (int).
             val roiBottomPxF = (roiNNow.bottomY.coerceIn(0f, 1f) * frameH).coerceIn(0f, frameH)
             val cropBottomPx = roiRect.bottom.toFloat().coerceIn(0f, frameH)
-            val bottomOcclEpsPx = 8f
-            // Prefer the actual crop bottom (roiRect). Keep roiBottomPxF for debug overlay diagnostics.
-            val bottomOccluded = (cropBottomPx - bestBox.y2) <= bottomOcclEpsPx
+            val zoomFactor = AppPreferences.cameraZoomRatio.coerceAtLeast(1f)
+            val bottomOcclEpsPx = DetectionPhysics.computeBottomOcclusionEpsPx(frameHRotI, zoomFactor)
+            val bottomOccludedRaw = (cropBottomPx - bestBox.y2) <= bottomOcclEpsPx
+            val bottomOccluded = updateBottomOcclusionState(bottomOccludedRaw)
 
-            
-// Distance estimation: blend bbox-height monocular + ground-plane (height + pitch) for robustness.
-val focalPx = estimateFocalLengthPx(frameHRotI)
-val distFromHeight = DetectionPhysics.estimateDistanceMeters(
-    bbox = bestBox,
-    frameHeightPx = frameHRotI,
-    focalPx = focalPx,
-    realHeightM = if (label == "motorcycle" || label == "bicycle") 1.3f else 1.5f
-)
+            // Distance estimation: blend bbox-height monocular + ground-plane (height + pitch) for robustness.
+            val focalPx = estimateFocalLengthPx(frameHRotI)
+            val distFromHeight = DetectionPhysics.estimateDistanceMeters(
+                bbox = bestBox,
+                frameHeightPx = frameHRotI,
+                focalPx = focalPx,
+                realHeightM = if (label == "motorcycle" || label == "bicycle") 1.3f else 1.5f
+            )
 
-// Ground-plane is NOT reliable when bbox bottom is affected by crop-bottom occlusion.
-val distFromGround = if (!bottomOccluded) {
-    DetectionPhysics.estimateDistanceGroundPlaneMeters(
-        bbox = bestBox,
-        frameHeightPx = frameHRotI,
-        focalPx = focalPx,
-        camHeightM = AppPreferences.cameraMountHeightM,
-        pitchDownDeg = AppPreferences.cameraPitchDownDeg
-    )
-} else {
-    null
-}
+            // Ground-plane is NOT reliable when bbox bottom is affected by crop-bottom occlusion.
+            val distFromGround = if (!bottomOccluded) {
+                DetectionPhysics.estimateDistanceGroundPlaneMeters(
+                    bbox = bestBox,
+                    frameHeightPx = frameHRotI,
+                    focalPx = focalPx,
+                    camHeightM = AppPreferences.cameraMountHeightM,
+                    pitchDownDeg = AppPreferences.cameraPitchDownDeg
+                )
+            } else {
+                null
+            }
+            val distCropBound = DetectionPhysics.estimateDistanceGroundPlaneMetersAtYPx(
+                yBottomPx = cropBottomPx,
+                frameHeightPx = frameHRotI,
+                focalPx = focalPx,
+                camHeightM = AppPreferences.cameraMountHeightM,
+                pitchDownDeg = AppPreferences.cameraPitchDownDeg
+            )
 
-// Weight ground estimate more when bbox bottom is near the bottom of frame (likely on road).
-val yBottomN = (bestBox.y2 / frameH).coerceIn(0f, 1f)
-val wGround = ((yBottomN - 0.65f) / 0.35f).coerceIn(0f, 1f)
-val distanceRaw = when {
-    distFromHeight != null && distFromGround != null -> (distFromGround * wGround) + (distFromHeight * (1f - wGround))
-    distFromGround != null -> distFromGround
-    else -> distFromHeight
-}
+            // Weight ground estimate more when bbox bottom is near the bottom of frame (likely on road).
+            val yBottomN = (bestBox.y2 / frameH).coerceIn(0f, 1f)
+            val wGround = ((yBottomN - 0.65f) / 0.35f).coerceIn(0f, 1f)
+            val distanceRaw = when {
+                distFromHeight != null && distFromGround != null -> (distFromGround * wGround) + (distFromHeight * (1f - wGround))
+                distFromGround != null -> distFromGround
+                else -> distFromHeight
+            }
 
-val distanceScaled =
-    if (distanceRaw != null && distanceRaw.isFinite()) distanceRaw * AppPreferences.distanceScale else distanceRaw
+            val distanceScaled =
+                if (distanceRaw != null && distanceRaw.isFinite()) distanceRaw * AppPreferences.distanceScale else distanceRaw
+            val distanceCandidate = distanceScaled?.takeIf { it.isFinite() }
 
-
-            // If bbox bottom is affected by crop-bottom occlusion, distance/ttc signals get distorted.
-            // Freeze distance briefly (use last EMA) instead of ingesting biased samples.
-            val distanceInput = if (bottomOccluded && distEmaValid && distEma.isFinite()) distEma else (distanceScaled ?: Float.NaN)
+            val distanceInputRaw = if (bottomOccluded) {
+                DetectionPhysics.minFinite(distanceCandidate, distCropBound) ?: if (distEmaValid && distEma.isFinite()) distEma else Float.NaN
+            } else {
+                distanceCandidate ?: Float.NaN
+            }
+            val distanceInput = stabilizeDistanceInput(distanceInputRaw, tsMs)
             val distanceM = smoothDistance(distanceInput)
 
             // REL speed (signed internal) from sliding-window + EMA
@@ -666,13 +686,23 @@ val risk = if (riderStanding) {
         cutInActive = (cutInBoostUntilMs > 0L && tsMs <= cutInBoostUntilMs),
         brakeCueActive = brakeCue.active,
         brakeCueStrength = brakeCue.strength,
-	        qualityWeight = qualityWeight,
+        occlusionCloseFactor = if (bottomOccluded) 1f else 0f,
+        occlusionCloseEligible = isBottomOcclusionRedEligible(bestTrack, bestBox, frameW, frameH, label),
+        qualityWeight = qualityWeight,
         riderSpeedMps = riderSpeedMps,
         riderSpeedConfidence = riderSpeedConfidence,
         egoBrakingConfidence = imu.brakeConfidence,
         leanDeg = imu.leanDeg
     )
 }
+
+
+            if (AppPreferences.debugOverlay && (frameIndex % logEveryNFrames == 0L)) {
+                val payload = RiskEngine.stripReasonVersion(risk.reasonBits)
+                traceLogger?.logLine(
+                    "M,$tsMs,METRICS,${bestTrack.id},${bestTrack.consecutiveDetections},$zoomFactor,${cropBottomPx.toInt()},${roiBottomPxF.toInt()},${bestBox.y2.toInt()},${bottomOcclEpsPx.toInt()},${if (bottomOccluded) 1 else 0},${distFromHeight ?: Float.NaN},${distFromGround ?: Float.NaN},${distCropBound ?: Float.NaN},$distanceInput,$approachSpeedMps,$ttcFromDist,$ttc,${String.format(java.util.Locale.US, "%.3f", risk.riskScore)},${risk.level},$payload,${RiskEngine.reasonId(risk.reasonBits)}"
+                )
+            }
 
 val prevLevel = lastAlertLevel
 val level = risk.level
@@ -820,6 +850,50 @@ if (AppPreferences.debugOverlay) {
         runCatching { AlertNotifier.shutdown(ctx) }
         runCatching { traceLogger?.close() }
         runCatching { eventLogger.close() }
+    }
+
+    private fun updateBottomOcclusionState(raw: Boolean): Boolean {
+        val enterFrames = 2
+        val exitFrames = 2
+        bottomOcclusionCounter = if (raw) {
+            (bottomOcclusionCounter + 1).coerceAtMost(enterFrames)
+        } else {
+            (bottomOcclusionCounter - 1).coerceAtLeast(-exitFrames)
+        }
+        val prev = bottomOccludedStable
+        if (!bottomOccludedStable && bottomOcclusionCounter >= enterFrames) bottomOccludedStable = true
+        if (bottomOccludedStable && bottomOcclusionCounter <= -exitFrames) bottomOccludedStable = false
+        if (prev != bottomOccludedStable) {
+            flog("bottom_occlusion ${if (bottomOccludedStable) "enter" else "exit"}", force = true)
+            lastOcclusionLogState = bottomOccludedStable
+        }
+        return bottomOccludedStable
+    }
+
+    private fun stabilizeDistanceInput(distanceM: Float, tsMs: Long): Float {
+        if (!distanceM.isFinite()) return distanceM
+        val prev = lastDistanceInputM
+        val prevTs = lastDistanceInputTsMs
+        lastDistanceInputM = distanceM
+        lastDistanceInputTsMs = tsMs
+        if (!prev.isFinite() || prevTs <= 0L) return distanceM
+        val dtSec = ((tsMs - prevTs).coerceAtLeast(1L)).toFloat() / 1000f
+        val maxRiseM = (2.5f * dtSec).coerceAtMost(1.2f)
+        return if (distanceM > prev + maxRiseM) prev + maxRiseM else distanceM
+    }
+
+    private fun isBottomOcclusionRedEligible(
+        bestTrack: TemporalTracker.TrackedDetection,
+        box: Box,
+        frameW: Float,
+        frameH: Float,
+        label: String
+    ): Boolean {
+        val minAge = 4
+        val minScore = 0.35f
+        val minArea = 0.02f * frameW * frameH
+        val vehicle = label == "car" || label == "truck" || label == "bus" || label == "motorcycle"
+        return vehicle && bestTrack.consecutiveDetections >= minAge && bestTrack.detection.score >= minScore && box.area >= minArea
     }
 
     private fun smoothDistance(distanceM: Float): Float {

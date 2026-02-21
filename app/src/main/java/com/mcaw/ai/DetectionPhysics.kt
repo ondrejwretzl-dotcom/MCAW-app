@@ -5,6 +5,21 @@ import kotlin.math.ln
 
 object DetectionPhysics {
 
+    fun minFinite(a: Float?, b: Float?): Float? {
+        val af = a?.takeIf { it.isFinite() }
+        val bf = b?.takeIf { it.isFinite() }
+        return when {
+            af != null && bf != null -> minOf(af, bf)
+            af != null -> af
+            else -> bf
+        }
+    }
+
+    fun computeBottomOcclusionEpsPx(frameHeightPx: Int, zoomFactor: Float): Float {
+        val base = maxOf(8f, 0.01f * frameHeightPx.coerceAtLeast(1).toFloat())
+        return base * zoomFactor.coerceAtLeast(1f)
+    }
+
     /**
      * Hrubý monokulární odhad vzdálenosti dle výšky boxu v pixelech.
      * Vyžaduje odhad fokální délky v pixelech (focalPx) a reálnou výšku objektu (m).
