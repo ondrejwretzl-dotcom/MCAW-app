@@ -2,6 +2,7 @@ package com.mcaw.risk
 
 import com.mcaw.risk.scenario.ScenarioCatalogFactory
 import com.mcaw.risk.scenario.ScenarioRunner
+import com.mcaw.risk.scenario.ScenarioComparisonReport
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -40,10 +41,12 @@ class ScenarioSimulationReportTest {
         var allOk = true
         var passCount = 0
         var failCount = 0
+        val runs = ArrayList<com.mcaw.risk.scenario.ScenarioRun>(catalog.scenarios.size)
 
         for (s in catalog.scenarios) {
             val run = ScenarioRunner.runScenario(s)
             ScenarioRunner.writeReports(run, outDir)
+            runs.add(run)
 
             val pass = run.verdicts.all { it.ok }
             allOk = allOk && pass
@@ -70,11 +73,56 @@ class ScenarioSimulationReportTest {
 
         File(outDir, "INDEX.md").writeText(indexMd.toString())
 
+        val summary = ScenarioComparisonReport.summarizeRuns(runs)
+        val summaryFile = File(outDir, "summary.json")
+        ScenarioComparisonReport.writeSummaryJson(summary, summaryFile)
+
+        val baselinePath = (System.getProperty("mcaw.baselineSummary") ?: "").trim()
+        val baselineFile = if (baselinePath.isBlank()) null else File(baselinePath)
+        val baselineSummary = if (baselineFile != null && baselineFile.exists()) {
+            ScenarioComparisonReport.readSummaryJson(baselineFile)
+        } else emptyList()
+
+        val diff = if (baselineSummary.isNotEmpty()) {
+            ScenarioComparisonReport.compare(
+                baseline = baselineSummary,
+                current = summary,
+                hardLatencyRegressionSec = (System.getProperty("mcaw.diff.hardLatencySec") ?: "0.50").toFloatOrNull() ?: 0.50f,
+                softLatencyRegressionSec = (System.getProperty("mcaw.diff.softLatencySec") ?: "0.20").toFloatOrNull() ?: 0.20f,
+                hardTransitionsIncrease = (System.getProperty("mcaw.diff.hardTransitionsInc") ?: "2").toIntOrNull() ?: 2,
+                softTransitionsIncrease = (System.getProperty("mcaw.diff.softTransitionsInc") ?: "1").toIntOrNull() ?: 1
+            )
+        } else null
+
+        if (diff != null) {
+            ScenarioComparisonReport.writeDiffJson(
+                diff = diff,
+                outFile = File(outDir, "diff_summary.json"),
+                baselinePath = baselineFile?.absolutePath ?: "",
+                currentPath = summaryFile.absolutePath
+            )
+        }
+
+        ScenarioComparisonReport.writeHtmlIndex(
+            outFile = File(outDir, "index.html"),
+            summary = summary,
+            diff = diff,
+            reportsRelativePath = "."
+        )
+
         val failOnScenario = (System.getProperty("mcaw.failOnScenario") ?: "false").equals("true", ignoreCase = true)
         if (failOnScenario) {
             assertTrue(
                 "Některé scénáře nesplnily očekávání. Viz build/reports/mcaw_scenarios/$stamp/INDEX.md",
                 allOk
+            )
+        }
+
+        val failOnHardRegression = (System.getProperty("mcaw.failOnHardRegression") ?: "false").equals("true", ignoreCase = true)
+        if (failOnHardRegression && diff != null) {
+            assertTrue(
+                "Nalezena tvrdá regrese proti baseline (count=${diff.hardRegressionCount}). Viz $outDir/index.html",
+                diff.hardRegressionCount == 0
             )
         }
     }
