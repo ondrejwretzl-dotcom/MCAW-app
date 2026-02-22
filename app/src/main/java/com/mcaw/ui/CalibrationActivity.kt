@@ -384,9 +384,9 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
             }
             Stage.RESULT -> {
                 val header = when {
-                    lastGeomQuality == QualityLevel.BAD -> "Kalibrace špatná"
-                    lastGeomQuality == QualityLevel.UNCERTAIN -> "Kalibrace nejistá"
-                    lastImuQuality != QualityLevel.OK -> "Geometrie OK, stabilita nízká"
+                    lastGeomQuality == QualityLevel.BAD -> "Kalibrace nepřesná"
+                    lastGeomQuality == QualityLevel.UNCERTAIN -> "Kalibrace použitelná, ale nejistá"
+                    lastImuQuality != QualityLevel.OK -> "Geometrie dobrá, telefon vibroval"
                     else -> "Kalibrace OK"
                 }
                 txtStep.text = header
@@ -401,7 +401,7 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
                     lastGeomQuality == QualityLevel.UNCERTAIN ->
                         "Geometrie je nejistá. Doporučeno zopakovat krok %d (největší odchylka).".format(worstStepIndex + 1)
                     lastImuQuality != QualityLevel.OK ->
-                        "Geometrie je přesná, ale telefon se pravděpodobně hýbal. Může to přidat chybu (viz odhad). Můžeš pokračovat a uložit, nebo zopakovat."
+                        "Geometrie je dobrá. Telefon ale během měření vibroval, takže odhad může víc kolísat. Pro běžné použití můžeš pokračovat, pro vyšší přesnost měření zopakuj."
                     else ->
                         "Pokračuj na kontrolu (posuň bod a ověř odhad)."
                 }
@@ -720,18 +720,18 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
         // User-requested tolerance target: around ±1.5 m at 10 m is still operationally usable.
         // Keep BAD only for clearly unstable geometry, and use UNCERTAIN for mid-quality fits.
         val byRms = when {
-            rms <= 0.80f -> QualityLevel.OK
-            rms <= 1.50f -> QualityLevel.UNCERTAIN
+            rms <= 0.90f -> QualityLevel.OK
+            rms <= 1.60f -> QualityLevel.UNCERTAIN
             else -> QualityLevel.BAD
         }
         val byMax = when {
-            maxAbs <= 1.50f -> QualityLevel.OK
-            maxAbs <= 2.50f -> QualityLevel.UNCERTAIN
+            maxAbs <= 1.80f -> QualityLevel.OK
+            maxAbs <= 3.00f -> QualityLevel.UNCERTAIN
             else -> QualityLevel.BAD
         }
         val byImu = when {
-            imuStd <= 0.50f -> QualityLevel.OK
-            imuStd <= 1.50f -> QualityLevel.UNCERTAIN
+            imuStd <= 0.80f -> QualityLevel.OK
+            imuStd <= 2.00f -> QualityLevel.UNCERTAIN
             else -> QualityLevel.BAD
         }
 
@@ -741,7 +741,7 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
             byRms == QualityLevel.UNCERTAIN || byMax == QualityLevel.UNCERTAIN -> QualityLevel.UNCERTAIN
             else -> QualityLevel.OK
         }
-        // IMU quality is a separate signal. Never hard-fails a geometrically good calibration.
+        // IMU quality is a separate signal. It should not hard-fail good geometry.
         lastImuQuality = byImu
 
         // Translate IMU jitter (deg) to a rough additional distance error at 10m.
@@ -750,14 +750,21 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
         lastImuExtraErrAt10m = (10.0 * kotlin.math.tan(Math.toRadians(imuStd.toDouble()))).toFloat().coerceAtLeast(0f)
         lastCombinedErrAt10m = kotlin.math.sqrt((rms * rms + lastImuExtraErrAt10m * lastImuExtraErrAt10m).toDouble()).toFloat()
 
+        val byCombined = when {
+            lastCombinedErrAt10m <= 1.50f -> QualityLevel.OK
+            lastCombinedErrAt10m <= 2.80f -> QualityLevel.UNCERTAIN
+            else -> QualityLevel.BAD
+        }
+
         // Overall quality shown in UI:
-        // - BAD only if geometry is BAD
-        // - UNCERTAIN if geometry is UNCERTAIN OR IMU is UNCERTAIN/BAD
-        // - OK only if both signals are OK
+        // - BAD only for clearly bad geometry
+        // - UNCERTAIN for medium geometry OR medium combined operational error
+        // - OK for solid geometry + combined <= 1.5m@10m
         lastQuality = when {
             lastGeomQuality == QualityLevel.BAD -> QualityLevel.BAD
             lastGeomQuality == QualityLevel.UNCERTAIN -> QualityLevel.UNCERTAIN
-            lastImuQuality != QualityLevel.OK -> QualityLevel.UNCERTAIN
+            byCombined == QualityLevel.BAD -> QualityLevel.UNCERTAIN
+            byCombined == QualityLevel.UNCERTAIN -> QualityLevel.UNCERTAIN
             else -> QualityLevel.OK
         }
     }
