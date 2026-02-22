@@ -136,6 +136,52 @@ var calibrationSavedUptimeMs: Long
     set(v) = prefs.edit().putLong("calib_saved_uptime_ms", v.coerceAtLeast(0L)).apply()
 
 /**
+ * ROI/zoom impact on calibration validity:
+ * 0 = none (calibration geometry aligned),
+ * 1 = caution (quick verify recommended),
+ * 2 = recalibration required (distance metrics should be considered stale).
+ */
+var calibrationRoiImpactLevel: Int
+    get() = prefs.getInt("calib_roi_impact_level", 0).coerceIn(0, 2)
+    set(v) = prefs.edit().putInt("calib_roi_impact_level", v.coerceIn(0, 2)).apply()
+
+/** Last ROI/zoom signature used when calibration was confirmed as valid. */
+var calibrationRefRoiTopY: Float
+    get() = prefs.getFloat("calib_ref_roi_top_y", Float.NaN)
+    set(v) = prefs.edit().putFloat("calib_ref_roi_top_y", v).apply()
+
+var calibrationRefRoiBottomY: Float
+    get() = prefs.getFloat("calib_ref_roi_bottom_y", Float.NaN)
+    set(v) = prefs.edit().putFloat("calib_ref_roi_bottom_y", v).apply()
+
+var calibrationRefRoiTopHalfW: Float
+    get() = prefs.getFloat("calib_ref_roi_top_halfw", Float.NaN)
+    set(v) = prefs.edit().putFloat("calib_ref_roi_top_halfw", v).apply()
+
+var calibrationRefRoiBottomHalfW: Float
+    get() = prefs.getFloat("calib_ref_roi_bottom_halfw", Float.NaN)
+    set(v) = prefs.edit().putFloat("calib_ref_roi_bottom_halfw", v).apply()
+
+var calibrationRefRoiCenterX: Float
+    get() = prefs.getFloat("calib_ref_roi_center_x", Float.NaN)
+    set(v) = prefs.edit().putFloat("calib_ref_roi_center_x", v).apply()
+
+var calibrationRefZoomRatio: Float
+    get() = prefs.getFloat("calib_ref_zoom_ratio", Float.NaN)
+    set(v) = prefs.edit().putFloat("calib_ref_zoom_ratio", v).apply()
+
+fun saveCalibrationGeometryReferenceFromCurrentSetup() {
+    val roi = getRoiTrapezoidNormalized()
+    calibrationRefRoiTopY = roi.topY
+    calibrationRefRoiBottomY = roi.bottomY
+    calibrationRefRoiTopHalfW = roi.topHalfW
+    calibrationRefRoiBottomHalfW = roi.bottomHalfW
+    calibrationRefRoiCenterX = roi.centerX
+    calibrationRefZoomRatio = cameraZoomRatio
+    calibrationRoiImpactLevel = 0
+}
+
+/**
  * Quality gating: při špatné kvalitě (tma / motion blur) přepne alerting do konzervativního režimu.
  */
 var qualityGatingEnabled: Boolean

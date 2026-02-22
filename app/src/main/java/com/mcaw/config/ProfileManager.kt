@@ -99,12 +99,19 @@ object ProfileManager {
             calibrationImuQuality = AppPreferences.calibrationImuQuality,
             calibrationImuExtraErrAt10m = AppPreferences.calibrationImuExtraErrAt10m,
             calibrationCombinedErrAt10m = AppPreferences.calibrationCombinedErrAt10m,
+            calibrationRoiImpactLevel = AppPreferences.calibrationRoiImpactLevel,
             laneEgoMaxOffset = AppPreferences.laneEgoMaxOffset,
             roiTopY = roi.topY,
             roiBottomY = roi.bottomY,
             roiTopHalfW = roi.topHalfW,
             roiBottomHalfW = roi.bottomHalfW,
             roiCenterX = roi.centerX,
+            calibrationRefRoiTopY = AppPreferences.calibrationRefRoiTopY,
+            calibrationRefRoiBottomY = AppPreferences.calibrationRefRoiBottomY,
+            calibrationRefRoiTopHalfW = AppPreferences.calibrationRefRoiTopHalfW,
+            calibrationRefRoiBottomHalfW = AppPreferences.calibrationRefRoiBottomHalfW,
+            calibrationRefRoiCenterX = AppPreferences.calibrationRefRoiCenterX,
+            calibrationRefZoomRatio = AppPreferences.calibrationRefZoomRatio,
         )
     }
 
@@ -168,6 +175,7 @@ object ProfileManager {
         AppPreferences.calibrationImuQuality = p.calibrationImuQuality
         AppPreferences.calibrationImuExtraErrAt10m = p.calibrationImuExtraErrAt10m
         AppPreferences.calibrationCombinedErrAt10m = p.calibrationCombinedErrAt10m
+        AppPreferences.calibrationRoiImpactLevel = p.calibrationRoiImpactLevel
 
         // ROI
         AppPreferences.setRoiTrapezoidNormalized(
@@ -177,6 +185,12 @@ object ProfileManager {
             bottomHalfW = p.roiBottomHalfW,
             centerX = p.roiCenterX
         )
+        AppPreferences.calibrationRefRoiTopY = p.calibrationRefRoiTopY
+        AppPreferences.calibrationRefRoiBottomY = p.calibrationRefRoiBottomY
+        AppPreferences.calibrationRefRoiTopHalfW = p.calibrationRefRoiTopHalfW
+        AppPreferences.calibrationRefRoiBottomHalfW = p.calibrationRefRoiBottomHalfW
+        AppPreferences.calibrationRefRoiCenterX = p.calibrationRefRoiCenterX
+        AppPreferences.calibrationRefZoomRatio = p.calibrationRefZoomRatio
         return true
     }
 
@@ -205,12 +219,19 @@ object ProfileManager {
             put("calibrationImuQuality", p.calibrationImuQuality)
             put("calibrationImuExtraErrAt10m", p.calibrationImuExtraErrAt10m.toDouble())
             put("calibrationCombinedErrAt10m", p.calibrationCombinedErrAt10m.toDouble())
+            put("calibrationRoiImpactLevel", p.calibrationRoiImpactLevel)
             put("laneEgoMaxOffset", p.laneEgoMaxOffset.toDouble())
             put("roiTopY", p.roiTopY.toDouble())
             put("roiBottomY", p.roiBottomY.toDouble())
             put("roiTopHalfW", p.roiTopHalfW.toDouble())
             put("roiBottomHalfW", p.roiBottomHalfW.toDouble())
             put("roiCenterX", p.roiCenterX.toDouble())
+            put("calibrationRefRoiTopY", p.calibrationRefRoiTopY.toDouble())
+            put("calibrationRefRoiBottomY", p.calibrationRefRoiBottomY.toDouble())
+            put("calibrationRefRoiTopHalfW", p.calibrationRefRoiTopHalfW.toDouble())
+            put("calibrationRefRoiBottomHalfW", p.calibrationRefRoiBottomHalfW.toDouble())
+            put("calibrationRefRoiCenterX", p.calibrationRefRoiCenterX.toDouble())
+            put("calibrationRefZoomRatio", p.calibrationRefZoomRatio.toDouble())
         }
     }
 
@@ -234,12 +255,19 @@ object ProfileManager {
             calibrationImuQuality = o.optInt("calibrationImuQuality", 0),
             calibrationImuExtraErrAt10m = o.optDouble("calibrationImuExtraErrAt10m", 0.0).toFloat(),
             calibrationCombinedErrAt10m = o.optDouble("calibrationCombinedErrAt10m", 0.0).toFloat(),
+            calibrationRoiImpactLevel = o.optInt("calibrationRoiImpactLevel", 0),
             laneEgoMaxOffset = o.optDouble("laneEgoMaxOffset", 0.55).toFloat(),
             roiTopY = o.optDouble("roiTopY", 0.32).toFloat(),
             roiBottomY = o.optDouble("roiBottomY", 0.92).toFloat(),
             roiTopHalfW = o.optDouble("roiTopHalfW", 0.18).toFloat(),
             roiBottomHalfW = o.optDouble("roiBottomHalfW", 0.46).toFloat(),
             roiCenterX = o.optDouble("roiCenterX", 0.5).toFloat(),
+            calibrationRefRoiTopY = o.optDouble("calibrationRefRoiTopY", Double.NaN).toFloat(),
+            calibrationRefRoiBottomY = o.optDouble("calibrationRefRoiBottomY", Double.NaN).toFloat(),
+            calibrationRefRoiTopHalfW = o.optDouble("calibrationRefRoiTopHalfW", Double.NaN).toFloat(),
+            calibrationRefRoiBottomHalfW = o.optDouble("calibrationRefRoiBottomHalfW", Double.NaN).toFloat(),
+            calibrationRefRoiCenterX = o.optDouble("calibrationRefRoiCenterX", Double.NaN).toFloat(),
+            calibrationRefZoomRatio = o.optDouble("calibrationRefZoomRatio", Double.NaN).toFloat(),
         )
     }
 }

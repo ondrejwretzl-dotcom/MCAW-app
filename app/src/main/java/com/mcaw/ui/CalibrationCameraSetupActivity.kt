@@ -30,6 +30,8 @@ class CalibrationCameraSetupActivity : ComponentActivity() {
 
     companion object {
         private const val REQ_CAMERA = 11
+        const val EXTRA_ROI_IMPACT_LEVEL = "extra_roi_impact_level"
+        const val EXTRA_ROI_IMPACT_MESSAGE = "extra_roi_impact_message"
     }
 
     private lateinit var previewView: PreviewView
@@ -54,6 +56,42 @@ class CalibrationCameraSetupActivity : ComponentActivity() {
     private var initialRoiTopHalfW: Float = 0.18f
     private var initialRoiBottomHalfW: Float = 0.46f
     private var initialRoiCenterX: Float = 0.5f
+
+    private data class RoiSetupSnapshot(
+        val topY: Float,
+        val bottomY: Float,
+        val topHalfW: Float,
+        val bottomHalfW: Float,
+        val centerX: Float,
+        val zoomRatio: Float
+    )
+
+    private fun currentSnapshot(): RoiSetupSnapshot = RoiSetupSnapshot(
+        topY = overlay.roiTopY,
+        bottomY = overlay.roiBottomY,
+        topHalfW = overlay.roiTopHalfW,
+        bottomHalfW = overlay.roiBottomHalfW,
+        centerX = overlay.roiCenterX,
+        zoomRatio = AppPreferences.cameraZoomRatio
+    )
+
+    private fun computeImpactLevel(before: RoiSetupSnapshot, after: RoiSetupSnapshot): Int {
+        val dBottom = kotlin.math.abs(after.bottomY - before.bottomY)
+        val dTop = kotlin.math.abs(after.topY - before.topY)
+        val dZoom = kotlin.math.abs(after.zoomRatio - before.zoomRatio)
+
+        return when {
+            dBottom > 0.05f || dTop > 0.06f || dZoom > 0.20f -> 2
+            dBottom > 0.02f || dTop > 0.03f || dZoom > 0.10f -> 1
+            else -> 0
+        }
+    }
+
+    private fun impactMessage(level: Int): String = when (level.coerceIn(0, 2)) {
+        2 -> "Změna ROI/zoom je velká – pro přesné vzdálenosti doporučujeme plnou rekalibraci."
+        1 -> "Změna ROI/zoom je střední – doporučujeme rychlou kontrolu přesnosti vzdálenosti."
+        else -> "ROI/zoom upraveny. Kalibrace vzdálenosti zůstává platná."
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -158,7 +196,23 @@ class CalibrationCameraSetupActivity : ComponentActivity() {
             finish()
         }
         btnDone.setOnClickListener {
-            setResult(RESULT_OK)
+            val before = RoiSetupSnapshot(
+                topY = initialRoiTopY,
+                bottomY = initialRoiBottomY,
+                topHalfW = initialRoiTopHalfW,
+                bottomHalfW = initialRoiBottomHalfW,
+                centerX = initialRoiCenterX,
+                zoomRatio = initialZoomRatio
+            )
+            val impact = computeImpactLevel(before, currentSnapshot())
+            AppPreferences.calibrationRoiImpactLevel = impact
+            setResult(
+                RESULT_OK,
+                android.content.Intent().apply {
+                    putExtra(EXTRA_ROI_IMPACT_LEVEL, impact)
+                    putExtra(EXTRA_ROI_IMPACT_MESSAGE, impactMessage(impact))
+                }
+            )
             finish()
         }
 
