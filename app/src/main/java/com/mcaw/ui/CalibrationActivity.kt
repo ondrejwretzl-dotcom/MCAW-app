@@ -10,6 +10,7 @@ import android.hardware.SensorManager
 import android.os.Bundle
 import android.os.SystemClock
 import android.text.InputType
+import android.view.View
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -78,6 +79,9 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
     private lateinit var txtStep: TextView
     private lateinit var txtInstruction: TextView
     private lateinit var txtHint: TextView
+    private lateinit var btnToggleTopPanel: TextView
+    private lateinit var rowZoom: android.widget.LinearLayout
+    private var topPanelExpanded: Boolean = true
 
     private lateinit var btnBack: com.google.android.material.button.MaterialButton
     private lateinit var btnConfirm: com.google.android.material.button.MaterialButton
@@ -141,6 +145,8 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
         txtStep = findViewById(R.id.txtStep)
         txtInstruction = findViewById(R.id.txtInstruction)
         txtHint = findViewById(R.id.txtHint)
+        btnToggleTopPanel = findViewById(R.id.btnToggleTopPanel)
+        rowZoom = findViewById(R.id.rowZoom)
 
         // Zoom / framing control (stored in prefs; profile persistence handled elsewhere)
         txtZoomValue = findViewById(R.id.txtZoomValue)
@@ -151,6 +157,12 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
         val initialZoom = AppPreferences.cameraZoomRatio.coerceIn(1.0f, 2.0f)
         sliderZoom.value = initialZoom
         updateZoomLabel(initialZoom)
+
+        btnToggleTopPanel.setOnClickListener {
+            topPanelExpanded = !topPanelExpanded
+            applyTopPanelExpandedState()
+        }
+        applyTopPanelExpandedState()
         sliderZoom.addOnChangeListener { _, v, fromUser ->
             val z = v.coerceIn(1.0f, 2.0f)
             updateZoomLabel(z)
@@ -331,6 +343,13 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
                 restartAll()
             }
         }
+    }
+
+    private fun applyTopPanelExpandedState() {
+        txtInstruction.visibility = if (topPanelExpanded) View.VISIBLE else View.GONE
+        txtHint.visibility = if (topPanelExpanded) View.VISIBLE else View.GONE
+        rowZoom.visibility = if (topPanelExpanded) View.VISIBLE else View.GONE
+        btnToggleTopPanel.text = if (topPanelExpanded) "Skrýt" else "Rozbalit"
     }
 
     private fun updateUiForStage() {
@@ -698,14 +717,16 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
         lastImuStdDeg = imuStd
 
         // Quality thresholds tuned for A1 distances (3–14m). Conservative and explainable.
+        // User-requested tolerance target: around ±1.5 m at 10 m is still operationally usable.
+        // Keep BAD only for clearly unstable geometry, and use UNCERTAIN for mid-quality fits.
         val byRms = when {
-            rms <= 0.35f -> QualityLevel.OK
-            rms <= 0.80f -> QualityLevel.UNCERTAIN
+            rms <= 0.80f -> QualityLevel.OK
+            rms <= 1.50f -> QualityLevel.UNCERTAIN
             else -> QualityLevel.BAD
         }
         val byMax = when {
-            maxAbs <= 0.70f -> QualityLevel.OK
-            maxAbs <= 1.50f -> QualityLevel.UNCERTAIN
+            maxAbs <= 1.50f -> QualityLevel.OK
+            maxAbs <= 2.50f -> QualityLevel.UNCERTAIN
             else -> QualityLevel.BAD
         }
         val byImu = when {
@@ -773,6 +794,7 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
         AppPreferences.calibrationImuExtraErrAt10m = lastImuExtraErrAt10m
         AppPreferences.calibrationCombinedErrAt10m = lastCombinedErrAt10m
         AppPreferences.calibrationSavedUptimeMs = SystemClock.uptimeMillis()
+        AppPreferences.saveCalibrationGeometryReferenceFromCurrentSetup()
         // Keep distanceScale unchanged unless user explicitly tunes it elsewhere.
 
         // If there is an active profile, persist to it as well (single source of truth).
@@ -797,12 +819,19 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
                     calibrationImuQuality = AppPreferences.calibrationImuQuality,
                     calibrationImuExtraErrAt10m = AppPreferences.calibrationImuExtraErrAt10m,
                     calibrationCombinedErrAt10m = AppPreferences.calibrationCombinedErrAt10m,
+                    calibrationRoiImpactLevel = AppPreferences.calibrationRoiImpactLevel,
                     laneEgoMaxOffset = p.laneEgoMaxOffset,
                     roiTopY = roi.topY,
                     roiBottomY = roi.bottomY,
                     roiTopHalfW = roi.topHalfW,
                     roiBottomHalfW = roi.bottomHalfW,
-                    roiCenterX = roi.centerX
+                    roiCenterX = roi.centerX,
+                    calibrationRefRoiTopY = AppPreferences.calibrationRefRoiTopY,
+                    calibrationRefRoiBottomY = AppPreferences.calibrationRefRoiBottomY,
+                    calibrationRefRoiTopHalfW = AppPreferences.calibrationRefRoiTopHalfW,
+                    calibrationRefRoiBottomHalfW = AppPreferences.calibrationRefRoiBottomHalfW,
+                    calibrationRefRoiCenterX = AppPreferences.calibrationRefRoiCenterX,
+                    calibrationRefZoomRatio = AppPreferences.calibrationRefZoomRatio
                 )
                 ProfileManager.upsert(updated)
             }

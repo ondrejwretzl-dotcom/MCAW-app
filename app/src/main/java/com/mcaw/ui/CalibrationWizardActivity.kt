@@ -53,14 +53,38 @@ class CalibrationWizardActivity : ComponentActivity() {
 
     private var cameraSetupDone: Boolean = false
     private var calibDone: Boolean = false
+    private var roiImpactLevel: Int = 0
+    private var roiImpactMessage: String = ""
 
     private val launchCameraSetup = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { res ->
         if (res.resultCode == RESULT_OK) {
             cameraSetupDone = true
+            roiImpactLevel = res.data?.getIntExtra(CalibrationCameraSetupActivity.EXTRA_ROI_IMPACT_LEVEL, AppPreferences.calibrationRoiImpactLevel)
+                ?: AppPreferences.calibrationRoiImpactLevel
+            roiImpactMessage = res.data?.getStringExtra(CalibrationCameraSetupActivity.EXTRA_ROI_IMPACT_MESSAGE).orEmpty()
             Toast.makeText(this, "Kamera setup uložen", Toast.LENGTH_SHORT).show()
-            goTo(Step.CALIBRATION)
+
+            val hasUsableCalibration = AppPreferences.calibrationQuality != 0
+            when {
+                roiImpactLevel >= 2 -> {
+                    calibDone = false
+                    goTo(Step.CALIBRATION)
+                }
+                roiImpactLevel == 1 -> {
+                    calibDone = false
+                    goTo(Step.CALIBRATION)
+                }
+                hasUsableCalibration -> {
+                    calibDone = true
+                    goTo(Step.SUMMARY)
+                }
+                else -> {
+                    calibDone = false
+                    goTo(Step.CALIBRATION)
+                }
+            }
         } else {
             render()
         }
@@ -131,6 +155,8 @@ class CalibrationWizardActivity : ComponentActivity() {
                 inputName.setText("")
                 cameraSetupDone = false
                 calibDone = false
+                roiImpactLevel = 0
+                roiImpactMessage = ""
                 render()
             }
             .setNegativeButton("Upravit aktivní") { _, _ ->
@@ -143,6 +169,8 @@ class CalibrationWizardActivity : ComponentActivity() {
 
                 cameraSetupDone = false
                 calibDone = false
+                roiImpactLevel = 0
+                roiImpactMessage = ""
                 render()
             }
             .setCancelable(true)
@@ -189,7 +217,7 @@ class CalibrationWizardActivity : ComponentActivity() {
                 // ROI is often adjusted more frequently than distance/pitch calibration.
                 // Keep this step always editable.
                 btnPrimary.text = "Otevřít setup"
-                btnSecondary.text = if (cameraSetupDone) "Pokračovat" else "Zpět"
+                btnSecondary.text = if (cameraSetupDone) "Uložit a ukončit" else "Zpět"
                 if (!cameraSetupDone) {
                     txtStepHint.visibility = View.VISIBLE
                     txtStepHint.text = "Nejdřív otevři setup a potvrď hodnoty tlačítkem Hotovo."
@@ -199,17 +227,30 @@ class CalibrationWizardActivity : ComponentActivity() {
             Step.CALIBRATION -> {
                 txtStep.text = "Krok 3/4 – Kalibrace vzdálenosti"
                 inputNameLayout.visibility = View.GONE
+
+                val impactHeader = when (roiImpactLevel.coerceIn(0, 2)) {
+                    2 -> "Po změně ROI je doporučená plná rekalibrace."
+                    1 -> "Po změně ROI doporučujeme rychlou kontrolu přesnosti."
+                    else -> "Kalibrace je volitelná (můžeš ji spustit znovu)."
+                }
+
                 txtBody.text = """
-                    Teď provedeme kalibraci vzdálenosti.
+                    $impactHeader
+
+                    Teď můžeš provést kalibraci vzdálenosti.
 
                     Důležité: telefon musí být během kroků co nejstabilnější.
                 """.trimIndent()
-                // Calibration can be re-run; allow it even after completion.
-                btnPrimary.text = "Spustit kalibraci"
-                btnSecondary.text = if (calibDone) "Pokračovat" else "Zpět"
+
+                btnPrimary.text = if (roiImpactLevel == 1) "Rychlá kontrola" else "Spustit kalibraci"
+                btnSecondary.text = if (calibDone) "Pokračovat" else if (cameraSetupDone) "Uložit a ukončit" else "Zpět"
                 if (!calibDone) {
                     txtStepHint.visibility = View.VISIBLE
-                    txtStepHint.text = "Po kroku Kontrola musíš potvrdit ULOŽIT, jinak se krok neoznačí jako hotový."
+                    txtStepHint.text = when (roiImpactLevel.coerceIn(0, 2)) {
+                        2 -> "Doporučení: proveď plnou kalibraci pro zachování přesnosti vzdálenosti."
+                        1 -> "Můžeš zvolit rychlou kontrolu, nebo rovnou spustit plnou kalibraci v dialogu."
+                        else -> "Po kroku Kontrola musíš potvrdit ULOŽIT, jinak se krok neoznačí jako hotový."
+                    }
                 }
             }
 
@@ -263,10 +304,14 @@ class CalibrationWizardActivity : ComponentActivity() {
             }
 
             Step.CALIBRATION -> {
-                val i = Intent(this, CalibrationActivity::class.java).apply {
-                    putExtra(CalibrationActivity.EXTRA_MODE, CalibrationActivity.MODE_FULL)
+                if (roiImpactLevel == 1) {
+                    showQuickVerifyDialog()
+                } else {
+                    val i = Intent(this, CalibrationActivity::class.java).apply {
+                        putExtra(CalibrationActivity.EXTRA_MODE, CalibrationActivity.MODE_FULL)
+                    }
+                    launchCalib.launch(i)
                 }
-                launchCalib.launch(i)
             }
 
             Step.SUMMARY -> {
@@ -279,10 +324,20 @@ class CalibrationWizardActivity : ComponentActivity() {
         when (step) {
             Step.NAME -> finish()
             Step.CAMERA_SETUP -> {
-                if (cameraSetupDone) goTo(Step.CALIBRATION) else goTo(Step.NAME)
+                if (cameraSetupDone) {
+                    saveProfile(setActive = false)
+                } else {
+                    goTo(Step.NAME)
+                }
             }
             Step.CALIBRATION -> {
-                if (calibDone) goTo(Step.SUMMARY) else goTo(Step.CAMERA_SETUP)
+                if (calibDone) {
+                    goTo(Step.SUMMARY)
+                } else if (cameraSetupDone) {
+                    saveProfile(setActive = false)
+                } else {
+                    goTo(Step.CAMERA_SETUP)
+                }
             }
             Step.SUMMARY -> {
                 showEditStepsDialog()
@@ -321,6 +376,30 @@ class CalibrationWizardActivity : ComponentActivity() {
                 }
             }
             .setCancelable(true)
+            .show()
+    }
+
+
+    private fun showQuickVerifyDialog() {
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Rychlá kontrola přesnosti")
+            .setMessage(
+                "Jel jsi krátkou testovací jízdu a vzdálenost v aplikaci odpovídá realitě?\n\n" +
+                    (roiImpactMessage.ifBlank { "Po změně ROI doporučujeme ověření přesnosti." })
+            )
+            .setPositiveButton("Ano, sedí") { _, _ ->
+                AppPreferences.calibrationRoiImpactLevel = 0
+                AppPreferences.saveCalibrationGeometryReferenceFromCurrentSetup()
+                calibDone = true
+                goTo(Step.SUMMARY)
+            }
+            .setNeutralButton("Plná kalibrace") { _, _ ->
+                val i = Intent(this, CalibrationActivity::class.java).apply {
+                    putExtra(CalibrationActivity.EXTRA_MODE, CalibrationActivity.MODE_FULL)
+                }
+                launchCalib.launch(i)
+            }
+            .setNegativeButton("Zpět", null)
             .show()
     }
 

@@ -31,6 +31,7 @@ object CalibrationHealth {
         val geomQ = AppPreferences.calibrationGeomQuality
         val imuQ = AppPreferences.calibrationImuQuality
         val q = AppPreferences.calibrationQuality
+        val roiImpact = AppPreferences.calibrationRoiImpactLevel
 
         // Unknown calibration is treated as INVALID for metric outputs (distance/speeds),
         // but we keep TTC/risk running (image-based) with conservative gating elsewhere.
@@ -38,6 +39,8 @@ object CalibrationHealth {
             !roiValid -> State.INVALID
             geomQ == 3 || imuQ == 3 -> State.INVALID
             geomQ == 2 || imuQ == 2 -> State.WARNING
+            roiImpact == 2 -> State.INVALID
+            roiImpact == 1 -> State.WARNING
             // If we have only overall quality without geom/imu split, keep it as a hint.
             q == 3 -> State.INVALID
             q == 2 -> State.WARNING
@@ -69,6 +72,16 @@ object CalibrationHealth {
                 "CALIB_MOUNT_UNSTABLE",
                 "Kalibrace: držák je nestabilní",
                 "Telefon se během kalibrace moc hýbal (vibrace / nestabilní držák). Vzdálenost a rychlosti objektu jsou vypnuté, dokud držák nezpevníš a kalibraci nezopakuješ."
+            )
+            roiImpact == 2 -> Triple(
+                "CALIB_ROI_CHANGED_RECALIB",
+                "Kalibrace: po změně ROI je nutná rekalibrace",
+                "ROI/zoom se změnily tak výrazně, že přesnost vzdálenosti už nemusí odpovídat kalibraci. Proveď znovu kalibraci vzdálenosti."
+            )
+            roiImpact == 1 -> Triple(
+                "CALIB_ROI_CHANGED_VERIFY",
+                "Kalibrace: po změně ROI doporučena kontrola",
+                "ROI/zoom se změnily. Přesnost může být omezená, dokud neprovedeš rychlou kontrolu nebo rekalibraci."
             )
             geomQ == 2 || q == 2 -> Triple(
                 "CALIB_GEOM_WARN",

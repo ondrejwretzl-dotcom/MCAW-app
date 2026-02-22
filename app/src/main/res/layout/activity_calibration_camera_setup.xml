@@ -126,20 +126,28 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnCancel"
-                style="@style/Widget.Material3.Button.TonalButton"
-                app:backgroundTint="#E91E63"
-                android:textColor="#FFFFFF"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                app:backgroundTint="#1F2937"
+                app:strokeColor="#94A3B8"
+                app:strokeWidth="1dp"
+                android:textColor="#F9FAFB"
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
+                android:layout_height="52dp"
                 android:layout_weight="1"
                 android:text="Krok zpět" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnDone"
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
+                android:layout_height="52dp"
                 android:layout_weight="1"
                 android:text="Hotovo"
+                android:textAllCaps="false"
+                android:textStyle="bold"
+                android:textSize="16sp"
+                android:textColor="#0B1115"
+                app:backgroundTint="#3BA6FF"
+                app:cornerRadius="14dp"
                 android:layout_marginStart="12dp" />
         </LinearLayout>
 
