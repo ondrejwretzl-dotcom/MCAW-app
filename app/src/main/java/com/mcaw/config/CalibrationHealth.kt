@@ -84,6 +84,16 @@ object CalibrationHealth {
                 "Kalibrace: po změně ROI doporučena kontrola",
                 "ROI/zoom se změnily. Přesnost může být omezená, dokud neprovedeš rychlou kontrolu nebo rekalibraci."
             )
+            roiImpact == 2 -> Triple(
+                "CALIB_ROI_CHANGED_RECALIB",
+                "Kalibrace: po změně ROI je nutná rekalibrace",
+                "ROI/zoom se změnily tak výrazně, že přesnost vzdálenosti už nemusí odpovídat kalibraci. Proveď znovu kalibraci vzdálenosti."
+            )
+            roiImpact == 1 -> Triple(
+                "CALIB_ROI_CHANGED_VERIFY",
+                "Kalibrace: po změně ROI doporučena kontrola",
+                "ROI/zoom se změnily. Přesnost může být omezená, dokud neprovedeš rychlou kontrolu nebo rekalibraci."
+            )
             geomQ == 2 || q == 2 -> Triple(
                 "CALIB_GEOM_WARN",
                 "Kalibrace: omezená přesnost",
