@@ -217,7 +217,7 @@ class CalibrationWizardActivity : ComponentActivity() {
                 // ROI is often adjusted more frequently than distance/pitch calibration.
                 // Keep this step always editable.
                 btnPrimary.text = "Otevřít setup"
-                btnSecondary.text = if (cameraSetupDone) "Pokračovat" else "Zpět"
+                btnSecondary.text = if (cameraSetupDone) "Uložit a ukončit" else "Zpět"
                 if (!cameraSetupDone) {
                     txtStepHint.visibility = View.VISIBLE
                     txtStepHint.text = "Nejdřív otevři setup a potvrď hodnoty tlačítkem Hotovo."
@@ -243,7 +243,7 @@ class CalibrationWizardActivity : ComponentActivity() {
                 """.trimIndent()
 
                 btnPrimary.text = if (roiImpactLevel == 1) "Rychlá kontrola" else "Spustit kalibraci"
-                btnSecondary.text = if (calibDone) "Pokračovat" else "Zpět"
+                btnSecondary.text = if (calibDone) "Pokračovat" else if (cameraSetupDone) "Uložit a ukončit" else "Zpět"
                 if (!calibDone) {
                     txtStepHint.visibility = View.VISIBLE
                     txtStepHint.text = when (roiImpactLevel.coerceIn(0, 2)) {
@@ -324,10 +324,20 @@ class CalibrationWizardActivity : ComponentActivity() {
         when (step) {
             Step.NAME -> finish()
             Step.CAMERA_SETUP -> {
-                if (cameraSetupDone) goTo(Step.CALIBRATION) else goTo(Step.NAME)
+                if (cameraSetupDone) {
+                    saveProfile(setActive = false)
+                } else {
+                    goTo(Step.NAME)
+                }
             }
             Step.CALIBRATION -> {
-                if (calibDone) goTo(Step.SUMMARY) else goTo(Step.CAMERA_SETUP)
+                if (calibDone) {
+                    goTo(Step.SUMMARY)
+                } else if (cameraSetupDone) {
+                    saveProfile(setActive = false)
+                } else {
+                    goTo(Step.CAMERA_SETUP)
+                }
             }
             Step.SUMMARY -> {
                 showEditStepsDialog()
