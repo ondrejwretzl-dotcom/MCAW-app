@@ -773,6 +773,7 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
         AppPreferences.calibrationImuExtraErrAt10m = lastImuExtraErrAt10m
         AppPreferences.calibrationCombinedErrAt10m = lastCombinedErrAt10m
         AppPreferences.calibrationSavedUptimeMs = SystemClock.uptimeMillis()
+        AppPreferences.saveCalibrationGeometryReferenceFromCurrentSetup()
         // Keep distanceScale unchanged unless user explicitly tunes it elsewhere.
 
         // If there is an active profile, persist to it as well (single source of truth).
@@ -797,12 +798,19 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
                     calibrationImuQuality = AppPreferences.calibrationImuQuality,
                     calibrationImuExtraErrAt10m = AppPreferences.calibrationImuExtraErrAt10m,
                     calibrationCombinedErrAt10m = AppPreferences.calibrationCombinedErrAt10m,
+                    calibrationRoiImpactLevel = AppPreferences.calibrationRoiImpactLevel,
                     laneEgoMaxOffset = p.laneEgoMaxOffset,
                     roiTopY = roi.topY,
                     roiBottomY = roi.bottomY,
                     roiTopHalfW = roi.topHalfW,
                     roiBottomHalfW = roi.bottomHalfW,
-                    roiCenterX = roi.centerX
+                    roiCenterX = roi.centerX,
+                    calibrationRefRoiTopY = AppPreferences.calibrationRefRoiTopY,
+                    calibrationRefRoiBottomY = AppPreferences.calibrationRefRoiBottomY,
+                    calibrationRefRoiTopHalfW = AppPreferences.calibrationRefRoiTopHalfW,
+                    calibrationRefRoiBottomHalfW = AppPreferences.calibrationRefRoiBottomHalfW,
+                    calibrationRefRoiCenterX = AppPreferences.calibrationRefRoiCenterX,
+                    calibrationRefZoomRatio = AppPreferences.calibrationRefZoomRatio
                 )
                 ProfileManager.upsert(updated)
             }
