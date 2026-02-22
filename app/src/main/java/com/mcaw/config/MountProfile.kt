@@ -25,6 +25,7 @@ data class MountProfile(
     val calibrationImuQuality: Int = 0,
     val calibrationImuExtraErrAt10m: Float = 0f,
     val calibrationCombinedErrAt10m: Float = 0f,
+    val calibrationRoiImpactLevel: Int = 0,
     val roiMinDistM: Float = Float.NaN,
     val roiMinDistConfirmed: Boolean = false,
     val laneEgoMaxOffset: Float,
@@ -34,4 +35,10 @@ data class MountProfile(
     val roiTopHalfW: Float,
     val roiBottomHalfW: Float,
     val roiCenterX: Float,
+    val calibrationRefRoiTopY: Float = Float.NaN,
+    val calibrationRefRoiBottomY: Float = Float.NaN,
+    val calibrationRefRoiTopHalfW: Float = Float.NaN,
+    val calibrationRefRoiBottomHalfW: Float = Float.NaN,
+    val calibrationRefRoiCenterX: Float = Float.NaN,
+    val calibrationRefZoomRatio: Float = Float.NaN,
 )

@@ -102,19 +102,29 @@
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnPrimary"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Pokračovat" />
+                android:layout_height="52dp"
+                android:text="Pokračovat"
+                android:textAllCaps="false"
+                android:textStyle="bold"
+                android:textSize="16sp"
+                android:textColor="#0B1115"
+                app:backgroundTint="#3BA6FF"
+                app:cornerRadius="14dp" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnSecondary"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
+                android:layout_height="52dp"
                 android:layout_marginTop="8dp"
                 android:text="Zpět"
+                android:textAllCaps="false"
+                android:textStyle="bold"
+                android:textSize="15sp"
                 android:textColor="#F9FAFB"
                 app:backgroundTint="#1F2937"
                 app:strokeColor="#94A3B8"
                 app:strokeWidth="1dp"
+                app:cornerRadius="14dp"
                 style="@style/Widget.Material3.Button.OutlinedButton"/>
 
         </LinearLayout>

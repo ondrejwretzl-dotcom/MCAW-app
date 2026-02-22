@@ -10,6 +10,7 @@ import android.hardware.SensorManager
 import android.os.Bundle
 import android.os.SystemClock
 import android.text.InputType
+import android.view.View
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -78,6 +79,9 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
     private lateinit var txtStep: TextView
     private lateinit var txtInstruction: TextView
     private lateinit var txtHint: TextView
+    private lateinit var btnToggleTopPanel: TextView
+    private lateinit var rowZoom: android.widget.LinearLayout
+    private var topPanelExpanded: Boolean = true
 
     private lateinit var btnBack: com.google.android.material.button.MaterialButton
     private lateinit var btnConfirm: com.google.android.material.button.MaterialButton
@@ -141,6 +145,8 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
         txtStep = findViewById(R.id.txtStep)
         txtInstruction = findViewById(R.id.txtInstruction)
         txtHint = findViewById(R.id.txtHint)
+        btnToggleTopPanel = findViewById(R.id.btnToggleTopPanel)
+        rowZoom = findViewById(R.id.rowZoom)
 
         // Zoom / framing control (stored in prefs; profile persistence handled elsewhere)
         txtZoomValue = findViewById(R.id.txtZoomValue)
@@ -151,6 +157,12 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
         val initialZoom = AppPreferences.cameraZoomRatio.coerceIn(1.0f, 2.0f)
         sliderZoom.value = initialZoom
         updateZoomLabel(initialZoom)
+
+        btnToggleTopPanel.setOnClickListener {
+            topPanelExpanded = !topPanelExpanded
+            applyTopPanelExpandedState()
+        }
+        applyTopPanelExpandedState()
         sliderZoom.addOnChangeListener { _, v, fromUser ->
             val z = v.coerceIn(1.0f, 2.0f)
             updateZoomLabel(z)
@@ -333,6 +345,13 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
         }
     }
 
+    private fun applyTopPanelExpandedState() {
+        txtInstruction.visibility = if (topPanelExpanded) View.VISIBLE else View.GONE
+        txtHint.visibility = if (topPanelExpanded) View.VISIBLE else View.GONE
+        rowZoom.visibility = if (topPanelExpanded) View.VISIBLE else View.GONE
+        btnToggleTopPanel.text = if (topPanelExpanded) "Skrýt" else "Rozbalit"
+    }
+
     private fun updateUiForStage() {
         when (stage) {
             Stage.INTRO -> {
@@ -365,9 +384,9 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
             }
             Stage.RESULT -> {
                 val header = when {
-                    lastGeomQuality == QualityLevel.BAD -> "Kalibrace špatná"
-                    lastGeomQuality == QualityLevel.UNCERTAIN -> "Kalibrace nejistá"
-                    lastImuQuality != QualityLevel.OK -> "Geometrie OK, stabilita nízká"
+                    lastGeomQuality == QualityLevel.BAD -> "Kalibrace nepřesná"
+                    lastGeomQuality == QualityLevel.UNCERTAIN -> "Kalibrace použitelná, ale nejistá"
+                    lastImuQuality != QualityLevel.OK -> "Geometrie dobrá, telefon vibroval"
                     else -> "Kalibrace OK"
                 }
                 txtStep.text = header
@@ -382,7 +401,7 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
                     lastGeomQuality == QualityLevel.UNCERTAIN ->
                         "Geometrie je nejistá. Doporučeno zopakovat krok %d (největší odchylka).".format(worstStepIndex + 1)
                     lastImuQuality != QualityLevel.OK ->
-                        "Geometrie je přesná, ale telefon se pravděpodobně hýbal. Může to přidat chybu (viz odhad). Můžeš pokračovat a uložit, nebo zopakovat."
+                        "Geometrie je dobrá. Telefon ale během měření vibroval, takže odhad může víc kolísat. Pro běžné použití můžeš pokračovat, pro vyšší přesnost měření zopakuj."
                     else ->
                         "Pokračuj na kontrolu (posuň bod a ověř odhad)."
                 }
@@ -698,19 +717,21 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
         lastImuStdDeg = imuStd
 
         // Quality thresholds tuned for A1 distances (3–14m). Conservative and explainable.
+        // User-requested tolerance target: around ±1.5 m at 10 m is still operationally usable.
+        // Keep BAD only for clearly unstable geometry, and use UNCERTAIN for mid-quality fits.
         val byRms = when {
-            rms <= 0.35f -> QualityLevel.OK
-            rms <= 0.80f -> QualityLevel.UNCERTAIN
+            rms <= 0.90f -> QualityLevel.OK
+            rms <= 1.60f -> QualityLevel.UNCERTAIN
             else -> QualityLevel.BAD
         }
         val byMax = when {
-            maxAbs <= 0.70f -> QualityLevel.OK
-            maxAbs <= 1.50f -> QualityLevel.UNCERTAIN
+            maxAbs <= 1.80f -> QualityLevel.OK
+            maxAbs <= 3.00f -> QualityLevel.UNCERTAIN
             else -> QualityLevel.BAD
         }
         val byImu = when {
-            imuStd <= 0.50f -> QualityLevel.OK
-            imuStd <= 1.50f -> QualityLevel.UNCERTAIN
+            imuStd <= 0.80f -> QualityLevel.OK
+            imuStd <= 2.00f -> QualityLevel.UNCERTAIN
             else -> QualityLevel.BAD
         }
 
@@ -720,7 +741,7 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
             byRms == QualityLevel.UNCERTAIN || byMax == QualityLevel.UNCERTAIN -> QualityLevel.UNCERTAIN
             else -> QualityLevel.OK
         }
-        // IMU quality is a separate signal. Never hard-fails a geometrically good calibration.
+        // IMU quality is a separate signal. It should not hard-fail good geometry.
         lastImuQuality = byImu
 
         // Translate IMU jitter (deg) to a rough additional distance error at 10m.
@@ -729,14 +750,21 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
         lastImuExtraErrAt10m = (10.0 * kotlin.math.tan(Math.toRadians(imuStd.toDouble()))).toFloat().coerceAtLeast(0f)
         lastCombinedErrAt10m = kotlin.math.sqrt((rms * rms + lastImuExtraErrAt10m * lastImuExtraErrAt10m).toDouble()).toFloat()
 
+        val byCombined = when {
+            lastCombinedErrAt10m <= 1.50f -> QualityLevel.OK
+            lastCombinedErrAt10m <= 2.80f -> QualityLevel.UNCERTAIN
+            else -> QualityLevel.BAD
+        }
+
         // Overall quality shown in UI:
-        // - BAD only if geometry is BAD
-        // - UNCERTAIN if geometry is UNCERTAIN OR IMU is UNCERTAIN/BAD
-        // - OK only if both signals are OK
+        // - BAD only for clearly bad geometry
+        // - UNCERTAIN for medium geometry OR medium combined operational error
+        // - OK for solid geometry + combined <= 1.5m@10m
         lastQuality = when {
             lastGeomQuality == QualityLevel.BAD -> QualityLevel.BAD
             lastGeomQuality == QualityLevel.UNCERTAIN -> QualityLevel.UNCERTAIN
-            lastImuQuality != QualityLevel.OK -> QualityLevel.UNCERTAIN
+            byCombined == QualityLevel.BAD -> QualityLevel.UNCERTAIN
+            byCombined == QualityLevel.UNCERTAIN -> QualityLevel.UNCERTAIN
             else -> QualityLevel.OK
         }
     }
@@ -773,6 +801,7 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
         AppPreferences.calibrationImuExtraErrAt10m = lastImuExtraErrAt10m
         AppPreferences.calibrationCombinedErrAt10m = lastCombinedErrAt10m
         AppPreferences.calibrationSavedUptimeMs = SystemClock.uptimeMillis()
+        AppPreferences.saveCalibrationGeometryReferenceFromCurrentSetup()
         // Keep distanceScale unchanged unless user explicitly tunes it elsewhere.
 
         // If there is an active profile, persist to it as well (single source of truth).
@@ -797,12 +826,19 @@ class CalibrationActivity : ComponentActivity(), CalibrationOverlayView.Listener
                     calibrationImuQuality = AppPreferences.calibrationImuQuality,
                     calibrationImuExtraErrAt10m = AppPreferences.calibrationImuExtraErrAt10m,
                     calibrationCombinedErrAt10m = AppPreferences.calibrationCombinedErrAt10m,
+                    calibrationRoiImpactLevel = AppPreferences.calibrationRoiImpactLevel,
                     laneEgoMaxOffset = p.laneEgoMaxOffset,
                     roiTopY = roi.topY,
                     roiBottomY = roi.bottomY,
                     roiTopHalfW = roi.topHalfW,
                     roiBottomHalfW = roi.bottomHalfW,
-                    roiCenterX = roi.centerX
+                    roiCenterX = roi.centerX,
+                    calibrationRefRoiTopY = AppPreferences.calibrationRefRoiTopY,
+                    calibrationRefRoiBottomY = AppPreferences.calibrationRefRoiBottomY,
+                    calibrationRefRoiTopHalfW = AppPreferences.calibrationRefRoiTopHalfW,
+                    calibrationRefRoiBottomHalfW = AppPreferences.calibrationRefRoiBottomHalfW,
+                    calibrationRefRoiCenterX = AppPreferences.calibrationRefRoiCenterX,
+                    calibrationRefZoomRatio = AppPreferences.calibrationRefZoomRatio
                 )
                 ProfileManager.upsert(updated)
             }

@@ -31,13 +31,17 @@ object CalibrationHealth {
         val geomQ = AppPreferences.calibrationGeomQuality
         val imuQ = AppPreferences.calibrationImuQuality
         val q = AppPreferences.calibrationQuality
+        val roiImpact = AppPreferences.calibrationRoiImpactLevel
 
         // Unknown calibration is treated as INVALID for metric outputs (distance/speeds),
         // but we keep TTC/risk running (image-based) with conservative gating elsewhere.
         val baseState: State = when {
             !roiValid -> State.INVALID
-            geomQ == 3 || imuQ == 3 -> State.INVALID
-            geomQ == 2 || imuQ == 2 -> State.WARNING
+            geomQ == 3 -> State.INVALID
+            roiImpact == 2 -> State.INVALID
+            geomQ == 2 -> State.WARNING
+            imuQ == 3 || imuQ == 2 -> State.WARNING
+            roiImpact == 1 -> State.WARNING
             // If we have only overall quality without geom/imu split, keep it as a hint.
             q == 3 -> State.INVALID
             q == 2 -> State.WARNING
@@ -46,8 +50,8 @@ object CalibrationHealth {
             else -> State.OK
         }
 
-        val distanceReliable = baseState == State.OK
-        val speedReliable = baseState == State.OK
+        val distanceReliable = baseState != State.INVALID
+        val speedReliable = baseState != State.INVALID
 
         val (reason, banner, detail) = when {
             !roiValid -> Triple(
@@ -67,8 +71,18 @@ object CalibrationHealth {
             )
             imuQ == 3 -> Triple(
                 "CALIB_MOUNT_UNSTABLE",
-                "Kalibrace: držák je nestabilní",
-                "Telefon se během kalibrace moc hýbal (vibrace / nestabilní držák). Vzdálenost a rychlosti objektu jsou vypnuté, dokud držák nezpevníš a kalibraci nezopakuješ."
+                "Kalibrace: silné vibrace telefonu",
+                "Geometrie může být použitelná, ale silné vibrace zhoršují stabilitu odhadu vzdálenosti. Doporučujeme držák zpevnit a kalibraci zopakovat kvůli vyšší jistotě."
+            )
+            roiImpact == 2 -> Triple(
+                "CALIB_ROI_CHANGED_RECALIB",
+                "Kalibrace: po změně ROI je nutná rekalibrace",
+                "ROI/zoom se změnily tak výrazně, že přesnost vzdálenosti už nemusí odpovídat kalibraci. Proveď znovu kalibraci vzdálenosti."
+            )
+            roiImpact == 1 -> Triple(
+                "CALIB_ROI_CHANGED_VERIFY",
+                "Kalibrace: po změně ROI doporučena kontrola",
+                "ROI/zoom se změnily. Přesnost může být omezená, dokud neprovedeš rychlou kontrolu nebo rekalibraci."
             )
             geomQ == 2 || q == 2 -> Triple(
                 "CALIB_GEOM_WARN",
@@ -77,8 +91,8 @@ object CalibrationHealth {
             )
             imuQ == 2 -> Triple(
                 "CALIB_MOUNT_WARN",
-                "Kalibrace: možné vibrace",
-                "Držák/telefon nebyl úplně stabilní. Varování může fungovat, ale přesnost vzdálenosti se může zhoršit."
+                "Kalibrace: mírné vibrace",
+                "Kalibrace je použitelná, jen telefon nebyl úplně stabilní. Pro běžné použití můžeš pokračovat, pro vyšší přesnost doporučujeme klidnější opakování."
             )
             else -> Triple(
                 "CALIB_OK",
