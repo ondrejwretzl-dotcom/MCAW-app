@@ -122,6 +122,53 @@ Repo obsahuje 2 workflow:
 - `baseline_id` = doporučeně commit SHA nebo datum
 - `catalog` = namespace baseline (např. `default`)
 
+
+### Kde přesně najdu hodnoty na obrazovce GitHub Actions (klikací návod)
+
+#### `run_id` (povinné)
+1. GitHub → **Actions** → otevři workflow **Scenario Regression**.
+2. Klikni na konkrétní run, který chceš promotovat.
+3. Pod názvem runu uvidíš URL ve tvaru:
+   `.../actions/runs/1234567890`
+4. Číslo za `/runs/` je přesně `run_id` (zde `1234567890`).
+
+Alternativně: vpravo nahoře v detailu runu bývá vidět i text **Run ID: 1234567890**.
+
+#### `artifact_name` (většinou `mcaw-scenario-report`)
+1. Ve stejném detailu runu sjeď dolů na sekci **Artifacts** (pravý panel nebo spodní část stránky).
+2. Název artefaktu v seznamu je hodnota pro `artifact_name`.
+3. V našem repo je standardně `mcaw-scenario-report`.
+
+#### `baseline_id`
+Doporučení:
+- použij krátký commit SHA runu (např. `b144964`), nebo
+- datum+čas (např. `2026-02-21_1`).
+
+`baseline_id` je tvůj label; workflow ho použije jako složku baseline.
+
+#### `catalog`
+- Pro první promo nech `default`, pokud tým nemá víc katalogů.
+
+### Jak spustit první promo krok za krokem
+
+1. Otevři **Actions** → workflow **Scenario Baseline Promote**.
+2. Klikni **Run workflow**.
+3. Vyplň:
+   - `run_id` = ID z předchozího `Scenario Regression` runu
+   - `artifact_name` = `mcaw-scenario-report`
+   - `baseline_id` = např. krátký SHA
+   - `catalog` = `default`
+4. Potvrď **Run workflow**.
+5. Po doběhu zkontroluj v diffu/commitu, že vzniklo:
+   - `.ci/baselines/<catalog>/<baseline_id>/summary.json`
+   - `.ci/baselines/approved_latest.txt` (ukazuje na nový baseline)
+
+### Nejčastější chyba při prvním promu
+
+- Zadáš `run_id` z workflow **Scenario Baseline Promote** místo z **Scenario Regression**.
+  - Správně: `run_id` musí vždy odkazovat na run, kde vznikl artifact reportu (`mcaw-scenario-report`).
+
+
 ---
 
 ## 8) Kam koukat bez stahování artifactu

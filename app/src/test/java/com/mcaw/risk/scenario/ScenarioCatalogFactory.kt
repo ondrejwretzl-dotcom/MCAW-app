@@ -90,7 +90,8 @@ object ScenarioCatalogFactory {
             notes = """
                 Dojezd do tvořící se kolony. Přibližování zůstává vysoké a TTC klesá pod ttcRed.
 
-                Očekávání: nejdřív ORANGE, poté stabilní RED (dle prahů aktuálního módu + RED combo guard).
+                Očekávání: nejdřív ORANGE, poté RED.
+                Pozn.: pokud by RED nenastal, je potřeba v reportu ověřit, zda ho neblokoval combo guard (allowRed=false).
             """.trimIndent(),
             config = ScenarioConfig(
                 effectiveMode = 1,
@@ -139,7 +140,9 @@ object ScenarioCatalogFactory {
             notes = """
                 Vjezd do tunelu: qualityWeight rychle klesne, poté se částečně obnoví. Přibližování pokračuje.
 
-                Očekávání: varování je stabilní (bez cvakání). RED se může zpozdit kvůli konzervativním prahům, ale musí nastat, pokud kritické přibližování trvá.
+                Očekávání: varování je stabilní (bez cvakání). RED se může zpozdit kvůli konzervativním prahům,
+                ale musí nastat, pokud kritické přibližování trvá dostatečně dlouho.
+                Pokud nenastane, report musí ukázat, jestli problém byl v kinematice scénáře, nebo v guard/hysterezi engine.
             """.trimIndent(),
             config = ScenarioConfig(
                 effectiveMode = 1,

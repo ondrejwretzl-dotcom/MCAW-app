@@ -129,12 +129,48 @@ data class SimEvent(
     val extra: Map<String, Any?> = emptyMap()
 )
 
+
+data class FrameTraceInput(
+    val effectiveMode: Int,
+    val distanceM: Float,
+    val approachSpeedMps: Float,
+    val ttcSec: Float,
+    val ttcSlopeSecPerSec: Float,
+    val roiContainment: Float,
+    val egoOffsetN: Float,
+    val cutInActive: Boolean,
+    val brakeCueActive: Boolean,
+    val brakeCueStrength: Float,
+    val occlusionCloseFactor: Float,
+    val occlusionCloseEligible: Boolean,
+    val qualityWeight: Float,
+    val riderSpeedMps: Float,
+    val riderSpeedConfidence: Float,
+    val egoBrakingConfidence: Float,
+    val leanDeg: Float
+)
+
+data class FrameTraceOutput(
+    val level: Int,
+    val riskScore: Float,
+    val reasonBits: Int
+)
+
+data class FrameTraceEvent(
+    val type: String = "FRAME",
+    val tSec: Float,
+    val input: FrameTraceInput,
+    val output: FrameTraceOutput,
+    val derived: RiskEngine.DerivedThresholds? = null
+)
+
 data class ScenarioRun(
     val scenario: Scenario,
     val derived: RiskEngine.DerivedThresholds,
     val frames: List<SimFrame>,
     val levels: List<Int>,
     val events: List<SimEvent>,
+    val frameTraceEvents: List<FrameTraceEvent>,
     val verdicts: List<Verdict>
 )
 

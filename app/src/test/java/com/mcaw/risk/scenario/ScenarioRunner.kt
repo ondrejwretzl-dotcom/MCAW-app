@@ -16,6 +16,7 @@ object ScenarioRunner {
 
         val levels = ArrayList<Int>(frames.size)
         val events = ArrayList<SimEvent>(32)
+        val frameTraceEvents = ArrayList<FrameTraceEvent>(frames.size)
 
         var lastLevel = 0
         var transitions = 0
@@ -43,6 +44,37 @@ object ScenarioRunner {
 
             val level = r.level
             levels.add(level)
+
+            frameTraceEvents.add(
+                FrameTraceEvent(
+                    tSec = f.tSec,
+                    input = FrameTraceInput(
+                        effectiveMode = s.config.effectiveMode,
+                        distanceM = f.distM,
+                        approachSpeedMps = rel,
+                        ttcSec = f.ttcSec,
+                        ttcSlopeSecPerSec = f.ttcSlope,
+                        roiContainment = f.roiContainment,
+                        egoOffsetN = f.egoOffsetN,
+                        cutInActive = f.cutInActive,
+                        brakeCueActive = f.brakeCueActive,
+                        brakeCueStrength = f.brakeCueStrength,
+                        occlusionCloseFactor = 0f,
+                        occlusionCloseEligible = false,
+                        qualityWeight = f.qualityWeight,
+                        riderSpeedMps = f.riderSpeedMps,
+                        riderSpeedConfidence = 1f,
+                        egoBrakingConfidence = f.egoBrakingConfidence,
+                        leanDeg = f.leanDeg
+                    ),
+                    output = FrameTraceOutput(
+                        level = r.level,
+                        riskScore = r.riskScore,
+                        reasonBits = r.reasonBits
+                    )
+                )
+            )
+
             if (level != lastLevel) {
                 transitions++
                 val type = if (level > lastLevel) "ALERT_ENTER" else "ALERT_EXIT"
@@ -94,7 +126,7 @@ object ScenarioRunner {
             )
         )
 
-        return ScenarioRun(s, derived, frames, levels, events, verdicts)
+        return ScenarioRun(s, derived, frames, levels, events, frameTraceEvents, verdicts)
     }
 
     private fun evaluateExpectations(s: Scenario, frames: List<SimFrame>, levels: List<Int>): List<Verdict> {
@@ -131,11 +163,14 @@ object ScenarioRunner {
                 is Expectation.MustEnterLevelBy -> {
                     val first = firstTimeAtOrAbove(e.level)
                     val deadline = e.hazardTimeSec + e.latestSecAfterHazard
+                    val maxLevel = levels.maxOrNull() ?: 0
+                    val firstOrange = firstTimeAtOrAbove(1)
+                    val firstRed = firstTimeAtOrAbove(2)
                     val ok = first != null && first <= deadline + 1e-3f
                     val details = if (first == null) {
-                        "Nikdy nedošlo k level>=${e.level} (deadline t<=${fmt(deadline)}s)."
+                        "Nikdy nedošlo k level>=${e.level} (deadline t<=${fmt(deadline)}s, maxLevel=$maxLevel, firstOrange=${firstOrange?.let { fmt(it) + "s" } ?: "n/a"}, firstRed=${firstRed?.let { fmt(it) + "s" } ?: "n/a"})."
                     } else {
-                        "Dosaženo v t=${fmt(first)}s; deadline t<=${fmt(deadline)}s (hazard t=${fmt(e.hazardTimeSec)}s)."
+                        "Dosaženo v t=${fmt(first)}s; deadline t<=${fmt(deadline)}s (hazard t=${fmt(e.hazardTimeSec)}s, maxLevel=$maxLevel, firstOrange=${firstOrange?.let { fmt(it) + "s" } ?: "n/a"}, firstRed=${firstRed?.let { fmt(it) + "s" } ?: "n/a"})."
                     }
                     out.add(Verdict(ok, "MustEnterLevelBy(level=${e.level})", "${e.message} :: $details"))
                 }
@@ -188,6 +223,7 @@ object ScenarioRunner {
         outDir.mkdirs()
         ScenarioReportWriter.writeMarkdown(run, File(outDir, "${run.scenario.id}.md"))
         ScenarioReportWriter.writeJsonl(run, File(outDir, "${run.scenario.id}.jsonl"))
+        ScenarioReportWriter.writeFrameTraceJsonl(run, File(outDir, "${run.scenario.id}.frames.jsonl"))
     }
 
     private fun fmt(v: Float): String = String.format("%.2f", v)
