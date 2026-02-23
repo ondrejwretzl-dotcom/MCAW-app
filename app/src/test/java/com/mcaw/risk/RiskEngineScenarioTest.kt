@@ -283,4 +283,64 @@ class RiskEngineScenarioTest {
         assertEquals(2, hold.level)
     }
 
+    @Test
+    fun reasonBits_dynamicDistance_shouldBeMarkedWhenSpeedIsReliable() {
+        val engine = RiskEngine()
+        val r = engine.evaluate(
+            tsMs = 0L,
+            effectiveMode = 1,
+            distanceM = 9.0f,
+            approachSpeedMps = 2.0f,
+            ttcSec = 4.0f,
+            ttcSlopeSecPerSec = 0f,
+            roiContainment = 1f,
+            egoOffsetN = 0f,
+            cutInActive = false,
+            brakeCueActive = false,
+            brakeCueStrength = 0f,
+            qualityWeight = 1.0f,
+            riderSpeedMps = 15f,
+            riderSpeedConfidence = 0.9f,
+            egoBrakingConfidence = 0f,
+            leanDeg = Float.NaN,
+            dynamicDistanceEnabled = true,
+            dynamicDistanceRedSec = 1.2f,
+            dynamicDistanceOrangeSec = 1.8f
+        )
+
+        val payload = RiskEngine.stripReasonVersion(r.reasonBits)
+        assertTrue((payload and RiskEngine.BIT_DIST_DYNAMIC) != 0)
+        assertTrue((payload and RiskEngine.BIT_DIST_FIXED_FALLBACK) == 0)
+    }
+
+    @Test
+    fun reasonBits_dynamicDistanceFallback_shouldBeMarkedWhenSpeedIsLowConfidence() {
+        val engine = RiskEngine()
+        val r = engine.evaluate(
+            tsMs = 0L,
+            effectiveMode = 1,
+            distanceM = 9.0f,
+            approachSpeedMps = 2.0f,
+            ttcSec = 4.0f,
+            ttcSlopeSecPerSec = 0f,
+            roiContainment = 1f,
+            egoOffsetN = 0f,
+            cutInActive = false,
+            brakeCueActive = false,
+            brakeCueStrength = 0f,
+            qualityWeight = 1.0f,
+            riderSpeedMps = Float.NaN,
+            riderSpeedConfidence = 0.1f,
+            egoBrakingConfidence = 0f,
+            leanDeg = Float.NaN,
+            dynamicDistanceEnabled = true,
+            dynamicDistanceRedSec = 1.2f,
+            dynamicDistanceOrangeSec = 1.8f
+        )
+
+        val payload = RiskEngine.stripReasonVersion(r.reasonBits)
+        assertTrue((payload and RiskEngine.BIT_DIST_DYNAMIC) == 0)
+        assertTrue((payload and RiskEngine.BIT_DIST_FIXED_FALLBACK) != 0)
+    }
+
 }

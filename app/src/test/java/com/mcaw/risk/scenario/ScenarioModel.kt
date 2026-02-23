@@ -39,6 +39,14 @@ data class ScenarioConfig(
     val hz: Int = 10,
     /** rider speed in m/s (used by engine + brake cue gating in real pipeline) */
     val riderSpeedMps: Float = 12f,
+    /** rider speed confidence 0..1 */
+    val riderSpeedConfidence: Float = 1.0f,
+    /** optional dynamic-distance mode override (null = engine default) */
+    val dynamicDistanceEnabled: Boolean? = null,
+    /** optional dynamic-distance RED headway sec override */
+    val dynamicDistanceRedSec: Float? = null,
+    /** optional dynamic-distance ORANGE headway sec override */
+    val dynamicDistanceOrangeSec: Float? = null,
     /** qualityWeight 0.6..1.0 */
     val qualityWeight: Float = 1.0f,
     /** default ROI containment 0..1 */
@@ -65,6 +73,12 @@ data class Segment(
     val brakeCueActive: (t: Float) -> Boolean = { false },
     val brakeCueStrength: (t: Float) -> Float = { 0f },
     val egoBrakingConfidence: (t: Float) -> Float = { 0f },
+    /** optional rider acceleration profile (m/s^2). If speed override is missing, integrated over dt. */
+    val riderAccelMps2: (t: Float) -> Float? = { null },
+    /** optional explicit rider speed profile (m/s), takes precedence over acceleration integration. */
+    val riderSpeedMps: (t: Float) -> Float? = { null },
+    /** optional rider speed confidence profile 0..1 */
+    val riderSpeedConfidence: (t: Float) -> Float? = { null },
     val roiContainment: (t: Float) -> Float? = { null },
     val egoOffsetN: (t: Float) -> Float? = { null },
     val qualityWeight: (t: Float) -> Float? = { null },
@@ -111,6 +125,7 @@ data class SimFrame(
     val brakeCueStrength: Float,
     val qualityWeight: Float,
     val riderSpeedMps: Float,
+    val riderSpeedConfidence: Float,
     val egoBrakingConfidence: Float,
     val leanDeg: Float,
     val segLabel: String
@@ -186,6 +201,7 @@ fun buildFrames(s: Scenario): List<SimFrame> {
     val frames = ArrayList<SimFrame>(hz * 20)
     var tsMs = 0L
     val segments = s.segments.sortedBy { it.tFromSec }
+    var simRiderSpeedMps = s.config.riderSpeedMps.coerceAtLeast(0f)
 
     for (seg in segments) {
         var t = seg.tFromSec
@@ -198,6 +214,14 @@ fun buildFrames(s: Scenario): List<SimFrame> {
             val egoOff = seg.egoOffsetN(t) ?: s.config.egoOffsetN
             val qW = seg.qualityWeight(t) ?: s.config.qualityWeight
             val lean = seg.leanDeg(t) ?: s.config.leanDeg
+            val explicitSpeed = seg.riderSpeedMps(t)
+            simRiderSpeedMps = if (explicitSpeed != null) {
+                explicitSpeed.coerceAtLeast(0f)
+            } else {
+                val a = seg.riderAccelMps2(t) ?: 0f
+                (simRiderSpeedMps + a * dt).coerceAtLeast(0f)
+            }
+            val riderSpeedConf = (seg.riderSpeedConfidence(t) ?: s.config.riderSpeedConfidence).coerceIn(0f, 1f)
 
             frames.add(
                 SimFrame(
@@ -213,7 +237,8 @@ fun buildFrames(s: Scenario): List<SimFrame> {
                     brakeCueActive = seg.brakeCueActive(t),
                     brakeCueStrength = seg.brakeCueStrength(t),
                     qualityWeight = qW,
-                    riderSpeedMps = s.config.riderSpeedMps,
+                    riderSpeedMps = simRiderSpeedMps,
+                    riderSpeedConfidence = riderSpeedConf,
                     egoBrakingConfidence = seg.egoBrakingConfidence(t),
                     leanDeg = lean,
                     segLabel = seg.label
