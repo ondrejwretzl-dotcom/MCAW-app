@@ -481,6 +481,28 @@ fun roiContainmentThreshold(): Float = if (roiStrictContainment) 0.80f else 0.65
         get() = prefs.getFloat("user_speed_red", 5f)
         set(v) = prefs.edit().putFloat("user_speed_red", v).apply()
 
+    /**
+     * Dynamic distance thresholds (distance = rider speed * time headway).
+     *
+     * Default ON for better scaling with speed; when speed is unknown the pipeline falls back to
+     * fixed mode thresholds.
+     */
+    var dynamicDistanceThresholdEnabled: Boolean
+        // JVM/unit-scenario tests run without SharedPreferences init -> keep legacy fixed-distance behavior
+        // unless tests explicitly initialize preferences.
+        get() = if (::prefs.isInitialized) prefs.getBoolean("dyn_dist_enabled", true) else false
+        set(v) { if (::prefs.isInitialized) prefs.edit().putBoolean("dyn_dist_enabled", v).apply() }
+
+    /** RED headway seconds for dynamic distance threshold. Default 1.2 s. */
+    var dynamicDistanceRedSec: Float
+        get() = if (::prefs.isInitialized) prefs.getFloat("dyn_dist_red_sec", 1.2f).coerceIn(0.8f, 2.5f) else 1.2f
+        set(v) { if (::prefs.isInitialized) prefs.edit().putFloat("dyn_dist_red_sec", v.coerceIn(0.8f, 2.5f)).apply() }
+
+    /** ORANGE headway seconds for dynamic distance threshold. Default 1.8 s. */
+    var dynamicDistanceOrangeSec: Float
+        get() = if (::prefs.isInitialized) prefs.getFloat("dyn_dist_orange_sec", 1.8f).coerceIn(1.0f, 4.0f) else 1.8f
+        set(v) { if (::prefs.isInitialized) prefs.edit().putFloat("dyn_dist_orange_sec", v.coerceIn(1.0f, 4.0f)).apply() }
+
         // ---- ROI (Region of Interest) for detection (normalized 0..1) ----
     // Nově používáme PEVNÝ SYMETRICKÝ TRAPEZOID (perspektiva jízdního pruhu).
     //
@@ -682,6 +704,11 @@ fun resetRoiToDefault() {
         // Brake cue
         brakeCueEnabled = true
         brakeCueSensitivity = 1
+
+        // Dynamic distance thresholds (recommended default)
+        dynamicDistanceThresholdEnabled = true
+        dynamicDistanceRedSec = 1.2f
+        dynamicDistanceOrangeSec = 1.8f
     }
 
     /**

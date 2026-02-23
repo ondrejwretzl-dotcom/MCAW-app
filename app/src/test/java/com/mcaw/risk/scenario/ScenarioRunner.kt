@@ -12,7 +12,17 @@ object ScenarioRunner {
         val frames = buildFrames(s)
 
         // derived thresholds are computed once per scenario (qualityWeight is per-frame; use scenario default)
-        val derived = engine.debugDerivedThresholds(s.config.effectiveMode, s.config.qualityWeight)
+        val dynEnabled = s.config.dynamicDistanceEnabled ?: com.mcaw.config.AppPreferences.dynamicDistanceThresholdEnabled
+        val dynRedSec = s.config.dynamicDistanceRedSec ?: com.mcaw.config.AppPreferences.dynamicDistanceRedSec
+        val dynOrangeSec = s.config.dynamicDistanceOrangeSec ?: com.mcaw.config.AppPreferences.dynamicDistanceOrangeSec
+
+        val derived = engine.debugDerivedThresholds(
+            s.config.effectiveMode,
+            s.config.qualityWeight,
+            dynamicDistanceEnabled = dynEnabled,
+            dynamicDistanceOrangeSec = dynOrangeSec,
+            dynamicDistanceRedSec = dynRedSec
+        )
 
         val levels = ArrayList<Int>(frames.size)
         val events = ArrayList<SimEvent>(32)
@@ -37,9 +47,12 @@ object ScenarioRunner {
                 brakeCueStrength = f.brakeCueStrength,
                 qualityWeight = f.qualityWeight,
                 riderSpeedMps = f.riderSpeedMps,
-                riderSpeedConfidence = 1f,
+                riderSpeedConfidence = f.riderSpeedConfidence,
                 egoBrakingConfidence = f.egoBrakingConfidence,
-                leanDeg = f.leanDeg
+                leanDeg = f.leanDeg,
+                dynamicDistanceEnabled = dynEnabled,
+                dynamicDistanceRedSec = dynRedSec,
+                dynamicDistanceOrangeSec = dynOrangeSec
             )
 
             val level = r.level
@@ -63,7 +76,7 @@ object ScenarioRunner {
                         occlusionCloseEligible = false,
                         qualityWeight = f.qualityWeight,
                         riderSpeedMps = f.riderSpeedMps,
-                        riderSpeedConfidence = 1f,
+                        riderSpeedConfidence = f.riderSpeedConfidence,
                         egoBrakingConfidence = f.egoBrakingConfidence,
                         leanDeg = f.leanDeg
                     ),
@@ -88,7 +101,13 @@ object ScenarioRunner {
                         reasonId = RiskEngine.reasonId(r.reasonBits),
                         allowRed = null,
                         preGuardLevel = null,
-                        derived = engine.debugDerivedThresholds(s.config.effectiveMode, f.qualityWeight),
+                        derived = engine.debugDerivedThresholds(
+                            s.config.effectiveMode,
+                            f.qualityWeight,
+                            dynamicDistanceEnabled = dynEnabled,
+                            dynamicDistanceOrangeSec = dynOrangeSec,
+                            dynamicDistanceRedSec = dynRedSec
+                        ),
                         extra = mapOf(
                             "segment" to f.segLabel,
                             "distM" to f.distM,

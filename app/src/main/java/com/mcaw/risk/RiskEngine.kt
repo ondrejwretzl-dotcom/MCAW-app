@@ -51,6 +51,10 @@ class RiskEngine {
         val ttcRed: Float,
         val distOrange: Float,
         val distRed: Float,
+        val distDynamic: Boolean,
+        val distFromSpeed: Boolean,
+        val distHeadwayOrangeSec: Float,
+        val distHeadwayRedSec: Float,
         val relOrange: Float,
         val relRed: Float,
         val orangeOn: Float,
@@ -85,6 +89,8 @@ class RiskEngine {
         const val BIT_RED_GUARDED = 1 shl 11
         const val BIT_SPEED_LOWCONF = 1 shl 12
         const val BIT_BOTTOM_OCCLUDED_CLOSE = 1 shl 13
+        const val BIT_DIST_DYNAMIC = 1 shl 14
+        const val BIT_DIST_FIXED_FALLBACK = 1 shl 15
 
         fun reasonVersion(reasonBits: Int): Int = (reasonBits ushr REASON_BITS_VERSION_SHIFT) and 0xF
 
@@ -126,6 +132,8 @@ class RiskEngine {
             if ((payload and BIT_RED_COMBO_OK) != 0) aux = aux or (1 shl 7)
             if ((payload and BIT_RED_GUARDED) != 0) aux = aux or (1 shl 8)
             if ((payload and BIT_BOTTOM_OCCLUDED_CLOSE) != 0) aux = aux or (1 shl 9)
+            if ((payload and BIT_DIST_DYNAMIC) != 0) aux = aux or (1 shl 10)
+            if ((payload and BIT_DIST_FIXED_FALLBACK) != 0) aux = aux or (1 shl 11)
 
             return core or (aux shl 3)
         }
@@ -146,6 +154,8 @@ class RiskEngine {
             if ((payload and BIT_QUALITY_CONSERV) != 0) sb.append("QCONSERV ")
             if ((payload and BIT_SPEED_LOWCONF) != 0) sb.append("SPD_LOW ")
             if ((payload and BIT_BOTTOM_OCCLUDED_CLOSE) != 0) sb.append("BOCCL ")
+            if ((payload and BIT_DIST_DYNAMIC) != 0) sb.append("DIST_DYN ")
+            if ((payload and BIT_DIST_FIXED_FALLBACK) != 0) sb.append("DIST_FIX ")
             if ((payload and BIT_RED_COMBO_OK) != 0) sb.append("RED_OK ")
             if ((payload and BIT_RED_GUARDED) != 0) sb.append("RED_GUARD ")
             // trim trailing space
@@ -172,8 +182,17 @@ class RiskEngine {
      * Returns the exact thresholds that are effectively used by the engine for the given mode + quality.
      * Intended for scenario simulations and regression reports.
      */
-    fun debugDerivedThresholds(effectiveMode: Int, qualityWeight: Float): DerivedThresholds {
+    fun debugDerivedThresholds(
+        effectiveMode: Int,
+        qualityWeight: Float,
+        dynamicDistanceEnabled: Boolean = com.mcaw.config.AppPreferences.dynamicDistanceThresholdEnabled,
+        dynamicDistanceOrangeSec: Float = com.mcaw.config.AppPreferences.dynamicDistanceOrangeSec,
+        dynamicDistanceRedSec: Float = com.mcaw.config.AppPreferences.dynamicDistanceRedSec
+    ): DerivedThresholds {
         val thr = thresholdsForMode(effectiveMode)
+        val dynEnabled = dynamicDistanceEnabled
+        val dynOrangeSec = dynamicDistanceOrangeSec
+        val dynRedSec = dynamicDistanceRedSec
         val qW = qualityWeight.coerceIn(0.60f, 1.0f)
         val conserv = (1f - qW).coerceIn(0f, 1f)
 
@@ -194,6 +213,10 @@ class RiskEngine {
             ttcRed = thr.ttcRed,
             distOrange = thr.distOrange,
             distRed = thr.distRed,
+            distDynamic = dynEnabled,
+            distFromSpeed = false,
+            distHeadwayOrangeSec = dynOrangeSec,
+            distHeadwayRedSec = dynRedSec,
             relOrange = thr.relOrange,
             relRed = thr.relRed,
             orangeOn = orangeOn,
@@ -227,7 +250,10 @@ class RiskEngine {
         riderSpeedMps: Float,
         riderSpeedConfidence: Float,
         egoBrakingConfidence: Float, // 0..1
-        leanDeg: Float              // deg, NaN if unknown
+        leanDeg: Float,              // deg, NaN if unknown
+        dynamicDistanceEnabled: Boolean = com.mcaw.config.AppPreferences.dynamicDistanceThresholdEnabled,
+        dynamicDistanceRedSec: Float = com.mcaw.config.AppPreferences.dynamicDistanceRedSec,
+        dynamicDistanceOrangeSec: Float = com.mcaw.config.AppPreferences.dynamicDistanceOrangeSec
     ): Result {
 
         val thr = thresholdsForMode(effectiveMode)
@@ -246,7 +272,23 @@ class RiskEngine {
             }
         }
 
-        val distScore = scoreLowIsBad(distanceM, thr.distRed, thr.distOrange)
+        val dynDistEnabled = dynamicDistanceEnabled
+        val dynRedSec = dynamicDistanceRedSec
+        val dynOrangeSec = max(dynRedSec + 0.2f, dynamicDistanceOrangeSec)
+        val speedForDynDistOk = riderSpeedMps.isFinite() && riderSpeedMps >= 0f && riderSpeedConfidence >= 0.20f
+
+        val distRedThr = if (dynDistEnabled && speedForDynDistOk) {
+            (riderSpeedMps * dynRedSec).coerceIn(3.0f, 220.0f)
+        } else {
+            thr.distRed
+        }
+        val distOrangeThr = if (dynDistEnabled && speedForDynDistOk) {
+            (riderSpeedMps * dynOrangeSec).coerceIn(distRedThr + 1.5f, 260.0f)
+        } else {
+            thr.distOrange
+        }
+
+        val distScore = scoreLowIsBad(distanceM, distRedThr, distOrangeThr)
         val relScore = scoreHighIsBad(approachSpeedMps, thr.relOrange, thr.relRed)
 
         // ROI weight: containment favors objects in ROI; egoOffset penalizes off-center targets.
@@ -354,6 +396,7 @@ class RiskEngine {
             if (egoBrake >= 0.65f) bits = bits or BIT_EGO_BRAKE
             if (conserv >= 0.15f) bits = bits or BIT_QUALITY_CONSERV
             if (riderSpeedConfidence < 0.60f) bits = bits or BIT_SPEED_LOWCONF
+            if (dynDistEnabled && speedForDynDistOk) bits = bits or BIT_DIST_DYNAMIC else bits = bits or BIT_DIST_FIXED_FALLBACK
             if (occlusionRed || (occlusionCloseEligible && occF > 0.5f)) bits = bits or BIT_BOTTOM_OCCLUDED_CLOSE
             if (slopeStrong) bits = bits or BIT_TTC_SLOPE_STRONG
             if (level == 2 && allowRed) bits = bits or BIT_RED_COMBO_OK
@@ -361,6 +404,7 @@ class RiskEngine {
         } else {
             if (conserv >= 0.15f) bits = bits or BIT_QUALITY_CONSERV
             if (riderSpeedConfidence < 0.60f) bits = bits or BIT_SPEED_LOWCONF
+            if (dynDistEnabled && speedForDynDistOk) bits = bits or BIT_DIST_DYNAMIC else bits = bits or BIT_DIST_FIXED_FALLBACK
         }
 
         // --- D2-3: Audit invariants (O(1), no allocations) ---

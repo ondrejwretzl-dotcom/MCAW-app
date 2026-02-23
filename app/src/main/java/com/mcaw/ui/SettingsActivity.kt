@@ -214,6 +214,11 @@ class SettingsActivity : ComponentActivity() {
         // New advanced controls
         val swQualityGating = findViewById<SwitchMaterial>(R.id.swQualityGating)
         val swCutInProtection = findViewById<SwitchMaterial>(R.id.swCutInProtection)
+        val swDynamicDistanceThreshold = findViewById<SwitchMaterial>(R.id.swDynamicDistanceThreshold)
+        val sliderDynamicDistRed = findViewById<Slider>(R.id.sliderDynamicDistRed)
+        val sliderDynamicDistOrange = findViewById<Slider>(R.id.sliderDynamicDistOrange)
+        val txtDynamicDistRedValue = findViewById<TextView>(R.id.txtDynamicDistRedValue)
+        val txtDynamicDistOrangeValue = findViewById<TextView>(R.id.txtDynamicDistOrangeValue)
         val sliderLaneWidth = findViewById<Slider>(R.id.sliderLaneWidth)
         val sliderDistanceScale = findViewById<Slider>(R.id.sliderDistanceScale)
         val txtLaneWidthValue = findViewById<TextView>(R.id.txtLaneWidthValue)
@@ -307,6 +312,14 @@ Typicky 3–10°. Příliš velký sklon může zkrátit dohled; příliš malý
                 msg = "Pomáhá zachytit auta rychle najíždějící do tvé dráhy i když jsou ještě bokem."
             )
         }
+        findViewById<View>(R.id.btnInfoDynamicDistance)?.setOnClickListener {
+            showInfo(
+                title = "Dynamická distance podle rychlosti",
+                msg = "Prahy vzdálenosti se počítají jako rychlost × časová mezera.\n\n" +
+                    "RED = v × RED headway, ORANGE = v × ORANGE headway.\n" +
+                    "Když rychlost není spolehlivá, systém se vrátí na fixní metrové prahy."
+            )
+        }
 
         // Mode spinner
         ArrayAdapter.createFromResource(
@@ -360,9 +373,12 @@ Typicky 3–10°. Příliš velký sklon může zkrátit dohled; příliš malý
             swRoiStrictContainment?.isChecked = AppPreferences.roiStrictContainment
             swQualityGating?.isChecked = AppPreferences.qualityGatingEnabled
             swCutInProtection?.isChecked = AppPreferences.cutInProtectionEnabled
+            swDynamicDistanceThreshold?.isChecked = AppPreferences.dynamicDistanceThresholdEnabled
 
             // Debug-only sliders (position + label)
             bindLaneWidthSlider(sliderLaneWidth, txtLaneWidthValue)
+            bindDynamicDistanceHeadwaySlider(sliderDynamicDistRed, txtDynamicDistRedValue, isRed = true)
+            bindDynamicDistanceHeadwaySlider(sliderDynamicDistOrange, txtDynamicDistOrangeValue, isRed = false)
             // Calibration slider should always reflect prefs too
             bindDistanceScaleSlider(sliderDistanceScale, txtDistanceScaleValue)
 
@@ -431,6 +447,9 @@ bindSwitch(swLaneFilter, { AppPreferences.laneFilter }, { AppPreferences.laneFil
         // New advanced toggles
         if (swQualityGating != null) bindSwitch(swQualityGating, { AppPreferences.qualityGatingEnabled }, { AppPreferences.qualityGatingEnabled = it })
         if (swCutInProtection != null) bindSwitch(swCutInProtection, { AppPreferences.cutInProtectionEnabled }, { AppPreferences.cutInProtectionEnabled = it })
+        if (swDynamicDistanceThreshold != null) bindSwitch(swDynamicDistanceThreshold, { AppPreferences.dynamicDistanceThresholdEnabled }, { AppPreferences.dynamicDistanceThresholdEnabled = it })
+        bindDynamicDistanceHeadwaySlider(sliderDynamicDistRed, txtDynamicDistRedValue, isRed = true)
+        bindDynamicDistanceHeadwaySlider(sliderDynamicDistOrange, txtDynamicDistOrangeValue, isRed = false)
 
         // Brake cue sensitivity spinner (existing logic)
         val brakeItems = arrayOf("Nízká", "Střední", "Vysoká")
@@ -531,6 +550,37 @@ bindSwitch(swLaneFilter, { AppPreferences.laneFilter }, { AppPreferences.laneFil
                 1 -> "OK"
                 else -> "Více"
             }
+        }
+    }
+
+
+    private fun bindDynamicDistanceHeadwaySlider(slider: Slider?, valueView: TextView?, isRed: Boolean) {
+        if (slider == null) return
+
+        slider.valueFrom = if (isRed) 0.8f else 1.0f
+        slider.valueTo = if (isRed) 2.5f else 4.0f
+        slider.stepSize = 0.1f
+        slider.clearOnChangeListeners()
+
+        val current = if (isRed) AppPreferences.dynamicDistanceRedSec else AppPreferences.dynamicDistanceOrangeSec
+        slider.value = current
+        valueView?.text = String.format(java.util.Locale.US, "%.1f s", current)
+
+        slider.addOnChangeListener { _, v, fromUser ->
+            if (!fromUser) return@addOnChangeListener
+            if (isRed) {
+                AppPreferences.dynamicDistanceRedSec = v
+                if (AppPreferences.dynamicDistanceOrangeSec <= AppPreferences.dynamicDistanceRedSec) {
+                    AppPreferences.dynamicDistanceOrangeSec = (AppPreferences.dynamicDistanceRedSec + 0.2f).coerceAtMost(4.0f)
+                }
+            } else {
+                AppPreferences.dynamicDistanceOrangeSec = v
+                if (AppPreferences.dynamicDistanceOrangeSec <= AppPreferences.dynamicDistanceRedSec) {
+                    AppPreferences.dynamicDistanceOrangeSec = (AppPreferences.dynamicDistanceRedSec + 0.2f).coerceAtMost(4.0f)
+                }
+            }
+            val updated = if (isRed) AppPreferences.dynamicDistanceRedSec else AppPreferences.dynamicDistanceOrangeSec
+            valueView?.text = String.format(java.util.Locale.US, "%.1f s", updated)
         }
     }
 
