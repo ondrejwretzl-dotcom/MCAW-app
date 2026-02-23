@@ -29,6 +29,16 @@ export interface DerivedThresholds extends Thresholds {
   slopeThr: number;
   strongK: number;
   midK: number;
+  distDynamic: boolean;
+  distFromSpeed: boolean;
+  distHeadwayOrangeSec: number;
+  distHeadwayRedSec: number;
+}
+
+export interface EvaluateOptions {
+  dynamicDistanceEnabled?: boolean;
+  dynamicDistanceRedSec?: number;
+  dynamicDistanceOrangeSec?: number;
 }
 
 export interface EvaluateInput {
@@ -84,6 +94,8 @@ export const BIT_RED_COMBO_OK = 1 << 10;
 export const BIT_RED_GUARDED = 1 << 11;
 export const BIT_SPEED_LOWCONF = 1 << 12;
 export const BIT_BOTTOM_OCCLUDED_CLOSE = 1 << 13;
+export const BIT_DIST_DYNAMIC = 1 << 14;
+export const BIT_DIST_FIXED_FALLBACK = 1 << 15;
 
 export function stripReasonVersion(reasonBits: number): number {
   return (reasonBits >>> 0) & REASON_BITS_PAYLOAD_MASK;
@@ -123,8 +135,16 @@ export class RiskEngineRef {
     this.bottomOccludedRedHoldUntilMs = 0;
   }
 
-  debugDerivedThresholds(effectiveMode: number, qualityWeight: number, thresholdsOverride?: Thresholds): DerivedThresholds {
+  debugDerivedThresholds(
+    effectiveMode: number,
+    qualityWeight: number,
+    thresholdsOverride?: Thresholds,
+    options?: EvaluateOptions
+  ): DerivedThresholds {
     const thr = thresholdsOverride ?? this.thresholdsForMode(effectiveMode);
+    const dynEnabled = options?.dynamicDistanceEnabled ?? true;
+    const dynRedSec = options?.dynamicDistanceRedSec ?? 1.2;
+    const dynOrangeSec = Math.max(dynRedSec + 0.2, options?.dynamicDistanceOrangeSec ?? 1.8);
     const qW = clamp(qualityWeight, 0.60, 1.0);
     const conserv = clamp(1.0 - qW, 0.0, 1.0);
 
@@ -149,15 +169,36 @@ export class RiskEngineRef {
       slopeThr,
       strongK,
       midK,
+      distDynamic: dynEnabled,
+      distFromSpeed: false,
+      distHeadwayOrangeSec: dynOrangeSec,
+      distHeadwayRedSec: dynRedSec,
     };
   }
 
-  evaluate(input: EvaluateInput, thresholdsOverride?: Thresholds): EvaluateOutput {
+  evaluate(input: EvaluateInput, thresholdsOverride?: Thresholds, options?: EvaluateOptions): EvaluateOutput {
     const thr = thresholdsOverride ?? this.thresholdsForMode(input.effectiveMode);
 
     const ttcSlope = isFiniteNumber(input.ttcSlopeSecPerSec ?? 0) ? (input.ttcSlopeSecPerSec ?? 0) : 0;
     const occF = clamp(input.occlusionCloseFactor ?? 0, 0, 1);
     const occlusionEligible = input.occlusionCloseEligible ?? false;
+    const riderSpeedMps = input.riderSpeedMps ?? 0;
+    const riderSpeedConfidence = input.riderSpeedConfidence ?? 1;
+    const roiContainment = input.roiContainment ?? 1;
+    const egoOffsetN = input.egoOffsetN ?? 0;
+    const brakeCueStrength = input.brakeCueStrength ?? 0;
+
+    const dynDistEnabled = options?.dynamicDistanceEnabled ?? true;
+    const dynRedSec = options?.dynamicDistanceRedSec ?? 1.2;
+    const dynOrangeSec = Math.max(dynRedSec + 0.2, options?.dynamicDistanceOrangeSec ?? 1.8);
+    const speedForDynDistOk = isFiniteNumber(riderSpeedMps) && riderSpeedMps >= 0 && riderSpeedConfidence >= 0.20;
+
+    const distRedThr = (dynDistEnabled && speedForDynDistOk)
+      ? clamp(riderSpeedMps * dynRedSec, 3.0, 220.0)
+      : thr.distRed;
+    const distOrangeThr = (dynDistEnabled && speedForDynDistOk)
+      ? clamp(riderSpeedMps * dynOrangeSec, distRedThr + 1.5, 260.0)
+      : thr.distOrange;
 
     // --- Core scores ---
     const ttcLevel = this.ttcLevelWithHysteresis(input.ttcSec, thr.ttcOrange, thr.ttcRed);
@@ -172,15 +213,15 @@ export class RiskEngineRef {
       }
     }
 
-    const distScore = this.scoreLowIsBad(input.distanceM, thr.distRed, thr.distOrange);
+    const distScore = this.scoreLowIsBad(input.distanceM, distRedThr, distOrangeThr);
     const relScore = this.scoreHighIsBad(input.approachSpeedMps, thr.relOrange, thr.relRed);
 
-    const roiC = clamp(input.roiContainment, 0, 1);
-    const off = clamp(input.egoOffsetN, 0, 2);
+    const roiC = clamp(roiContainment, 0, 1);
+    const off = clamp(egoOffsetN, 0, 2);
     const egoScore = clamp(1.0 - (off / 1.15), 0, 1);
     const roiScore = clamp(roiC * 0.70 + egoScore * 0.30, 0, 1);
 
-    const brakeStrength = clamp(input.brakeCueStrength, 0, 1);
+    const brakeStrength = clamp(brakeCueStrength, 0, 1);
     const brakeScore = input.brakeCueActive ? (0.70 + 0.30 * brakeStrength) : 0;
     const cutInScore = input.cutInActive ? 1.0 : 0;
     const occlusionBoost = occlusionEligible ? (0.42 * occF) : 0;
@@ -267,14 +308,18 @@ export class RiskEngineRef {
       if (input.cutInActive) bits |= BIT_CUT_IN;
       if (egoBrake >= 0.65) bits |= BIT_EGO_BRAKE;
       if (conserv >= 0.15) bits |= BIT_QUALITY_CONSERV;
-      if (input.riderSpeedConfidence < 0.60) bits |= BIT_SPEED_LOWCONF;
+      if (riderSpeedConfidence < 0.60) bits |= BIT_SPEED_LOWCONF;
+      if (dynDistEnabled && speedForDynDistOk) bits |= BIT_DIST_DYNAMIC;
+      else bits |= BIT_DIST_FIXED_FALLBACK;
       if (occlusionRed || (occlusionEligible && occF > 0.5)) bits |= BIT_BOTTOM_OCCLUDED_CLOSE;
       if (slopeStrong) bits |= BIT_TTC_SLOPE_STRONG;
       if (level === 2 && allowRed) bits |= BIT_RED_COMBO_OK;
       if (level === 1 && preGuardLevel === 2 && !allowRed) bits |= BIT_RED_GUARDED;
     } else {
       if (conserv >= 0.15) bits |= BIT_QUALITY_CONSERV;
-      if (input.riderSpeedConfidence < 0.60) bits |= BIT_SPEED_LOWCONF;
+      if (riderSpeedConfidence < 0.60) bits |= BIT_SPEED_LOWCONF;
+      if (dynDistEnabled && speedForDynDistOk) bits |= BIT_DIST_DYNAMIC;
+      else bits |= BIT_DIST_FIXED_FALLBACK;
     }
 
     // audit invariants

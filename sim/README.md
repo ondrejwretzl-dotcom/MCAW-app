@@ -16,6 +16,22 @@ npm run dev
 
 Open the local URL shown by Vite. Load a `*.jsonl` file.
 
+## Runtime folder vs repo folder (important on Windows)
+
+If you run from a separate runtime folder (e.g. `sim-runtime`), make sure you are not previewing an old `dist`.
+
+Typical pitfalls:
+- building in repo folder (`...\\GitHub\\MCAW-app\\sim`) but running preview from runtime folder (`...\\MCAW\\sim-runtime`),
+- browser cache still serving old assets,
+- incorrect repo path in BAT (`...\\GitHub\\MCAW\\sim` vs `...\\GitHub\\MCAW-app\\sim`).
+
+Recommended checks:
+- verify BAT paths point to the same repo you build,
+- if runtime uses `npm run preview`, refresh runtime `dist` from repo build output,
+- hard refresh browser (`Ctrl+F5`) after deploy to runtime.
+
+For convenience, see `run_runtime_only.bat` (syncs code to runtime, installs/builds/runs only in runtime, and keeps repo code-only).
+
 ## Golden compare (CLI)
 
 ```bash
