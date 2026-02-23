@@ -700,7 +700,10 @@ val risk = if (riderStanding) {
         riderSpeedMps = riderSpeedMps,
         riderSpeedConfidence = riderSpeedConfidence,
         egoBrakingConfidence = imu.brakeConfidence,
-        leanDeg = imu.leanDeg
+        leanDeg = imu.leanDeg,
+        dynamicDistanceEnabled = AppPreferences.dynamicDistanceThresholdEnabled,
+        dynamicDistanceRedSec = AppPreferences.dynamicDistanceRedSec,
+        dynamicDistanceOrangeSec = AppPreferences.dynamicDistanceOrangeSec
     )
 }
 

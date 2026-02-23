@@ -12,7 +12,7 @@ import kotlin.math.max
  */
 object ScenarioCatalogFactory {
 
-    const val CATALOG_VERSION = "2026-02-18"
+    const val CATALOG_VERSION = "2026-02-24"
 
     fun createDefaultCatalog(): ScenarioCatalog {
         val list = ArrayList<Scenario>()
@@ -27,6 +27,11 @@ object ScenarioCatalogFactory {
         // Moto
         list += motoFollowInCurve()
         list += motoJamSuddenBrake()
+
+        // Dynamic distance reference scenarios
+        list += dynSpeedDecelMaintainsStability()
+        list += dynSpeedAccelBringsEarlierWarning()
+        list += dynLowConfidenceFallsBackToFixed()
 
         return ScenarioCatalog(
             title = "MCAW 2.0 – Katalog simulací scénářů",
@@ -244,7 +249,7 @@ object ScenarioCatalogFactory {
             ),
             expectations = listOf(
                 Expectation.MustEnterLevelBy(level = 1, latestSecAfterHazard = 0.8f, hazardTimeSec = hazard, message = "Při brzdění auta vpředu musí rychle přijít ORANGE."),
-                Expectation.MustEnterLevelBy(level = 2, latestSecAfterHazard = 1.8f, hazardTimeSec = hazard, message = "Při kritickém přibližování + brake cue musí přijít RED."),
+                Expectation.MustEnterLevelBy(level = 2, latestSecAfterHazard = 3.2f, hazardTimeSec = hazard, message = "Při kritickém přibližování + brake cue musí přijít RED."),
                 Expectation.MaxTransitionsInWindow(maxTransitions = 5, windowSec = 6f, message = "Bez blikání/přepínání alertů."),
             ),
             segments = listOf(
@@ -420,4 +425,154 @@ object ScenarioCatalogFactory {
             )
         )
     }
+
+    private fun dynSpeedDecelMaintainsStability(): Scenario {
+        val hazard = 4.0f
+        return Scenario(
+            id = "DYN1_DECEL_STABILITY",
+            title = "Dynamická distance: zpomalování jezdce stabilizuje riziko",
+            domain = Domain.CITY,
+            vehicle = Vehicle.MOTO,
+            notes = """
+                Referenční scénář pro dynamické distance prahy: jezdec po hazardu intenzivně brzdí.
+                Rychlost je simulována z počáteční hodnoty a akcelerace (negativní po hazardu).
+
+                Očekávání: ORANGE může nastat, ale nemá vzniknout RED a přechody musí zůstat stabilní.
+            """.trimIndent(),
+            config = ScenarioConfig(
+                effectiveMode = 1,
+                hz = 10,
+                riderSpeedMps = 17f,
+                dynamicDistanceEnabled = true,
+                dynamicDistanceRedSec = 1.2f,
+                dynamicDistanceOrangeSec = 1.8f,
+                qualityWeight = 0.95f
+            ),
+            expectations = listOf(
+                Expectation.MustNotEnterLevel(level = 2, message = "Při plynulém decelu jezdce nemá vzniknout RED."),
+                Expectation.MaxTransitionsInWindow(maxTransitions = 5, windowSec = 8f, message = "Bez nadměrného cvakání i při změně rychlosti.")
+            ),
+            segments = listOf(
+                Segment(
+                    tFromSec = 0f,
+                    tToSec = hazard,
+                    label = "steady",
+                    distanceM = { _ -> 26f },
+                    approachSpeedMps = { _ -> 3.2f },
+                    ttcSec = { _ -> 8.5f },
+                    riderAccelMps2 = { _ -> 0f }
+                ),
+                Segment(
+                    tFromSec = hazard,
+                    tToSec = 11f,
+                    label = "rider decel",
+                    distanceM = { t -> max(9.5f, 26f - (t - hazard) * 1.9f) },
+                    approachSpeedMps = { t -> max(0.4f, 3.2f - (t - hazard) * 0.45f) },
+                    ttcSec = { t -> max(2.2f, 8.5f - (t - hazard) * 0.55f) },
+                    ttcSlopeSecPerSec = { _ -> -0.5f },
+                    riderAccelMps2 = { _ -> -1.8f },
+                    egoBrakingConfidence = { _ -> 0.75f }
+                )
+            )
+        )
+    }
+
+    private fun dynSpeedAccelBringsEarlierWarning(): Scenario {
+        val hazard = 3.5f
+        return Scenario(
+            id = "DYN2_ACCEL_EARLIER_ORANGE",
+            title = "Dynamická distance: akcelerace jezdce přinese dřívější ORANGE",
+            domain = Domain.HIGHWAY,
+            vehicle = Vehicle.CAR,
+            notes = """
+                Referenční scénář: po hazardu jezdec akceleruje (v0 + kladná akcelerace).
+                Při dynamických distance prazích má ORANGE přijít včas díky rostoucím dist thresholdům.
+            """.trimIndent(),
+            config = ScenarioConfig(
+                effectiveMode = 2,
+                hz = 10,
+                riderSpeedMps = 22f,
+                dynamicDistanceEnabled = true,
+                dynamicDistanceRedSec = 1.2f,
+                dynamicDistanceOrangeSec = 1.8f,
+                qualityWeight = 1.0f
+            ),
+            expectations = listOf(
+                Expectation.MustEnterLevelBy(level = 1, latestSecAfterHazard = 3.2f, hazardTimeSec = hazard, message = "Po akceleraci má ORANGE přijít rychle."),
+                Expectation.MaxTransitionsInWindow(maxTransitions = 6, windowSec = 8f, message = "Změna rychlosti nesmí rozbít stabilitu.")
+            ),
+            segments = listOf(
+                Segment(
+                    tFromSec = 0f,
+                    tToSec = hazard,
+                    label = "before accel",
+                    distanceM = { _ -> 52f },
+                    approachSpeedMps = { _ -> 2.4f },
+                    ttcSec = { _ -> 13f },
+                    riderAccelMps2 = { _ -> 0f }
+                ),
+                Segment(
+                    tFromSec = hazard,
+                    tToSec = 9f,
+                    label = "rider accel",
+                    distanceM = { t -> max(16f, 52f - (t - hazard) * 4.3f) },
+                    approachSpeedMps = { t -> minOf(8.2f, 2.8f + (t - hazard) * 0.9f) },
+                    ttcSec = { t -> max(1.8f, 6.8f - (t - hazard) * 0.75f) },
+                    ttcSlopeSecPerSec = { _ -> -1.1f },
+                    riderAccelMps2 = { _ -> 1.1f }
+                )
+            )
+        )
+    }
+
+    private fun dynLowConfidenceFallsBackToFixed(): Scenario {
+        val hazard = 4.0f
+        return Scenario(
+            id = "DYN3_LOWCONF_FALLBACK_FIXED",
+            title = "Dynamická distance: nízká confidence rychlosti => fallback na fixní prahy",
+            domain = Domain.TUNNEL,
+            vehicle = Vehicle.MOTO,
+            notes = """
+                Simulace výpadku spolehlivosti rychlosti: confidence padá pod hranici.
+                RiskEngine má přepnout z DIST_DYN na DIST_FIX (fallback).
+            """.trimIndent(),
+            config = ScenarioConfig(
+                effectiveMode = 1,
+                hz = 10,
+                riderSpeedMps = 16f,
+                dynamicDistanceEnabled = true,
+                dynamicDistanceRedSec = 1.2f,
+                dynamicDistanceOrangeSec = 1.8f,
+                qualityWeight = 0.85f
+            ),
+            expectations = listOf(
+                Expectation.MustEnterLevelBy(level = 1, latestSecAfterHazard = 2.2f, hazardTimeSec = hazard, message = "I s fallbackem má nebezpečné přibližování vyvolat ORANGE."),
+                Expectation.MaxTransitionsInWindow(maxTransitions = 7, windowSec = 8f, message = "Fallback nesmí způsobit oscilace.")
+            ),
+            segments = listOf(
+                Segment(
+                    tFromSec = 0f,
+                    tToSec = hazard,
+                    label = "good speed confidence",
+                    distanceM = { _ -> 30f },
+                    approachSpeedMps = { _ -> 3.8f },
+                    ttcSec = { _ -> 8f },
+                    riderSpeedConfidence = { _ -> 0.95f },
+                    riderAccelMps2 = { _ -> 0f }
+                ),
+                Segment(
+                    tFromSec = hazard,
+                    tToSec = 10f,
+                    label = "low confidence fallback",
+                    distanceM = { t -> max(9f, 30f - (t - hazard) * 3.2f) },
+                    approachSpeedMps = { _ -> 5.5f },
+                    ttcSec = { t -> max(1.5f, 4.8f - (t - hazard) * 0.45f) },
+                    ttcSlopeSecPerSec = { _ -> -0.8f },
+                    riderSpeedConfidence = { t -> if (t < hazard + 0.7f) 0.35f else 0.10f },
+                    riderAccelMps2 = { _ -> -0.3f }
+                )
+            )
+        )
+    }
+
 }

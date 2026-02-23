@@ -182,11 +182,17 @@ class RiskEngine {
      * Returns the exact thresholds that are effectively used by the engine for the given mode + quality.
      * Intended for scenario simulations and regression reports.
      */
-    fun debugDerivedThresholds(effectiveMode: Int, qualityWeight: Float): DerivedThresholds {
+    fun debugDerivedThresholds(
+        effectiveMode: Int,
+        qualityWeight: Float,
+        dynamicDistanceEnabled: Boolean = com.mcaw.config.AppPreferences.dynamicDistanceThresholdEnabled,
+        dynamicDistanceOrangeSec: Float = com.mcaw.config.AppPreferences.dynamicDistanceOrangeSec,
+        dynamicDistanceRedSec: Float = com.mcaw.config.AppPreferences.dynamicDistanceRedSec
+    ): DerivedThresholds {
         val thr = thresholdsForMode(effectiveMode)
-        val dynEnabled = com.mcaw.config.AppPreferences.dynamicDistanceThresholdEnabled
-        val dynOrangeSec = com.mcaw.config.AppPreferences.dynamicDistanceOrangeSec
-        val dynRedSec = com.mcaw.config.AppPreferences.dynamicDistanceRedSec
+        val dynEnabled = dynamicDistanceEnabled
+        val dynOrangeSec = dynamicDistanceOrangeSec
+        val dynRedSec = dynamicDistanceRedSec
         val qW = qualityWeight.coerceIn(0.60f, 1.0f)
         val conserv = (1f - qW).coerceIn(0f, 1f)
 
@@ -244,7 +250,10 @@ class RiskEngine {
         riderSpeedMps: Float,
         riderSpeedConfidence: Float,
         egoBrakingConfidence: Float, // 0..1
-        leanDeg: Float              // deg, NaN if unknown
+        leanDeg: Float,              // deg, NaN if unknown
+        dynamicDistanceEnabled: Boolean = com.mcaw.config.AppPreferences.dynamicDistanceThresholdEnabled,
+        dynamicDistanceRedSec: Float = com.mcaw.config.AppPreferences.dynamicDistanceRedSec,
+        dynamicDistanceOrangeSec: Float = com.mcaw.config.AppPreferences.dynamicDistanceOrangeSec
     ): Result {
 
         val thr = thresholdsForMode(effectiveMode)
@@ -263,9 +272,9 @@ class RiskEngine {
             }
         }
 
-        val dynDistEnabled = com.mcaw.config.AppPreferences.dynamicDistanceThresholdEnabled
-        val dynRedSec = com.mcaw.config.AppPreferences.dynamicDistanceRedSec
-        val dynOrangeSec = max(dynRedSec + 0.2f, com.mcaw.config.AppPreferences.dynamicDistanceOrangeSec)
+        val dynDistEnabled = dynamicDistanceEnabled
+        val dynRedSec = dynamicDistanceRedSec
+        val dynOrangeSec = max(dynRedSec + 0.2f, dynamicDistanceOrangeSec)
         val speedForDynDistOk = riderSpeedMps.isFinite() && riderSpeedMps >= 0f && riderSpeedConfidence >= 0.20f
 
         val distRedThr = if (dynDistEnabled && speedForDynDistOk) {
