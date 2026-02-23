@@ -39,7 +39,7 @@ export function UploadPanel(props: {
       </div>
 
       <div style={{ color: '#666' }}>
-        Tip: upload <code>*.frames.jsonl</code> (per-frame trace) and optionally matching <code>*.md</code> for notes.
+        Tip: upload <code>*.frames.jsonl</code> (per-frame trace) and optionally matching <code>*.md</code> for notes. If JSONL contains <code>scenario</code> per line, simulator will group by that value.
       </div>
     </div>
   );

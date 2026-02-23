@@ -44,30 +44,37 @@ async function readFiles(files: FileList): Promise<ScenarioDoc[]> {
   const byId: Record<string, ScenarioDoc> = {};
   for (const f of Array.from(files)) {
     const base = safeBaseName(f.name);
-    const id = base;
-    if (!byId[id]) byId[id] = { scenarioId: id, frames: [] };
+    if (!byId[base]) byId[base] = { scenarioId: base, frames: [], sourceFileBase: base };
 
     if (f.name.toLowerCase().endsWith('.md')) {
-      byId[id].notesMd = await f.text();
+      byId[base].notesMd = await f.text();
       continue;
     }
 
     if (f.name.toLowerCase().endsWith('.jsonl')) {
       const text = await f.text();
       const items = parseJsonl(text).filter(isFrameEvent);
-      const frames: FrameRow[] = [];
+      const framesByScenario: Record<string, FrameRow[]> = {};
       for (const it of items) {
         const tSec = Number(it.tSec ?? it.t ?? 0);
         const input: FrameIn = it.in ?? it.input ?? {};
         const out: FrameOut | undefined = it.out ?? it.output ?? it.outKotlin;
+        const scenarioFromLine = String(it.scenario ?? it.scenarioId ?? '').trim();
+        const id = scenarioFromLine.length > 0 ? scenarioFromLine : base;
         // Guard required fields
         if (input.distanceM === undefined || input.approachSpeedMps === undefined || input.ttcSec === undefined) continue;
-        frames.push({ scenarioId: id, tSec, in: input, outKotlin: out });
+        if (!framesByScenario[id]) framesByScenario[id] = [];
+        framesByScenario[id].push({ scenarioId: id, tSec, in: input, outKotlin: out });
       }
-      byId[id].frames = frames;
+      for (const [id, frames] of Object.entries(framesByScenario)) {
+        if (!byId[id]) byId[id] = { scenarioId: id, frames: [], sourceFileBase: base };
+        byId[id].frames = byId[id].frames.concat(frames);
+      }
     }
   }
-  return Object.values(byId).filter((s) => s.frames.length > 0);
+  return Object.values(byId)
+    .map((s) => ({ ...s, frames: [...s.frames].sort((a, b) => a.tSec - b.tSec) }))
+    .filter((s) => s.frames.length > 0);
 }
 
 function computeFirstTimes(levels: number[], t: number[]): { firstOrange: number | null; firstRed: number | null } {
@@ -149,10 +156,23 @@ export function App() {
 
     for (const fr of frames) {
       const input = fr.in;
+      const evalInput: FrameIn = {
+        ...input,
+        effectiveMode: Number(input.effectiveMode ?? 1),
+        roiContainment: Number(input.roiContainment ?? 1),
+        egoOffsetN: Number(input.egoOffsetN ?? 0),
+        brakeCueStrength: Number(input.brakeCueStrength ?? 0),
+        riderSpeedMps: Number(input.riderSpeedMps ?? 0),
+        riderSpeedConfidence: Number(input.riderSpeedConfidence ?? 1),
+        egoBrakingConfidence: Number(input.egoBrakingConfidence ?? 0),
+        qualityWeight: Number(input.qualityWeight ?? 1),
+        cutInActive: !!input.cutInActive,
+        brakeCueActive: !!input.brakeCueActive,
+      };
 
-      const base = (engBase as any).evaluate(input);
-      const effectiveMode = Number(input.effectiveMode ?? 1);
-      const qualityWeight = Number(input.qualityWeight ?? 1);
+      const base = (engBase as any).evaluate(evalInput);
+      const effectiveMode = Number(evalInput.effectiveMode ?? 1);
+      const qualityWeight = Number(evalInput.qualityWeight ?? 1);
       baseThrFull = baseThrFull ?? (engBase as any).debugDerivedThresholds(effectiveMode, qualityWeight);
 
       t.push(fr.tSec);
@@ -174,9 +194,13 @@ export function App() {
         let distR = NaN;
 
         if (whatIf.dynamicDistanceEnabled) {
-          const v = Number(input.riderSpeedMps ?? 0);
+          const v = Number(evalInput.riderSpeedMps ?? 0);
           if (Number.isFinite(v) && v > 0.1) {
-            const thr = (engTuned as any).debugDerivedThresholds(effectiveMode, qualityWeight);
+            const thr = (engTuned as any).debugDerivedThresholds(effectiveMode, qualityWeight, undefined, {
+              dynamicDistanceEnabled: true,
+              dynamicDistanceOrangeSec: whatIf.orangeGapSec,
+              dynamicDistanceRedSec: whatIf.redGapSec,
+            });
             distO = clamp(v * whatIf.orangeGapSec, whatIf.distOrangeClampMinM, whatIf.distOrangeClampMaxM);
             distR = clamp(v * whatIf.redGapSec, whatIf.distRedClampMinM, whatIf.distRedClampMaxM);
             const override = {
@@ -187,12 +211,24 @@ export function App() {
               relOrange: thr.relOrange,
               relRed: thr.relRed,
             };
-            tuned = (engTuned as any).evaluate(input, override);
+            tuned = (engTuned as any).evaluate(evalInput, override, {
+              dynamicDistanceEnabled: true,
+              dynamicDistanceOrangeSec: whatIf.orangeGapSec,
+              dynamicDistanceRedSec: whatIf.redGapSec,
+            });
           } else {
-            tuned = (engTuned as any).evaluate(input);
+            tuned = (engTuned as any).evaluate(evalInput, undefined, {
+              dynamicDistanceEnabled: true,
+              dynamicDistanceOrangeSec: whatIf.orangeGapSec,
+              dynamicDistanceRedSec: whatIf.redGapSec,
+            });
           }
         } else {
-          tuned = (engTuned as any).evaluate(input);
+          tuned = (engTuned as any).evaluate(evalInput, undefined, {
+            dynamicDistanceEnabled: false,
+            dynamicDistanceOrangeSec: whatIf.orangeGapSec,
+            dynamicDistanceRedSec: whatIf.redGapSec,
+          });
         }
 
         tunedRisk.push(Number(tuned.riskScore ?? 0));

@@ -78,4 +78,5 @@ export type ScenarioDoc = {
   scenarioId: string;
   frames: FrameRow[];
   notesMd?: string;
+  sourceFileBase?: string;
 };
