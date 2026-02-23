@@ -750,7 +750,10 @@ if (level != prevLevel || frameIndex % eventEveryNFrames == 0L) {
 
 // Log why alert level was decided (debugOverlay only; sampled)
 if (AppPreferences.debugOverlay && (level != prevLevel || frameIndex % logEveryNFrames == 0L)) {
-    flog("risk level=$level score=%.2f state=${'$'}{risk.state} bits=$reasonBits reason=$alertReason".format(risk.riskScore), force = (level != prevLevel))
+    flog(
+        "risk level=$level score=%.2f state=${'$'}{risk.state} bits=$reasonBits reason=$alertReason dynDist=${AppPreferences.dynamicDistanceThresholdEnabled} headwayO=${AppPreferences.dynamicDistanceOrangeSec} headwayR=${AppPreferences.dynamicDistanceRedSec}".format(risk.riskScore),
+        force = (level != prevLevel)
+    )
 }
 sendOverlayUpdate(
                 box = bestBox,
