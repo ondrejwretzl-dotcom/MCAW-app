@@ -1,0 +1,10 @@
+# Gradle local cache
+.gradle/
+
+# Simulator local artifacts
+sim/node_modules/
+sim/dist/
+
+# macOS/Windows noise
+.DS_Store
+Thumbs.db

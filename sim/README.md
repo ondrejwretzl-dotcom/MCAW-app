@@ -30,7 +30,7 @@ Recommended checks:
 - if runtime uses `npm run preview`, refresh runtime `dist` from repo build output,
 - hard refresh browser (`Ctrl+F5`) after deploy to runtime.
 
-For convenience, see `run_runtime_sync_preview.bat` (builds in repo, syncs `dist` to runtime, then runs preview there).
+For convenience, see `run_runtime_only.bat` (syncs code to runtime, installs/builds/runs only in runtime, and keeps repo code-only).
 
 ## Golden compare (CLI)
 
