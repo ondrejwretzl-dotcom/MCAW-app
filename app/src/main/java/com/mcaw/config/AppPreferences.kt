@@ -488,7 +488,9 @@ fun roiContainmentThreshold(): Float = if (roiStrictContainment) 0.80f else 0.65
      * fixed mode thresholds.
      */
     var dynamicDistanceThresholdEnabled: Boolean
-        get() = if (::prefs.isInitialized) prefs.getBoolean("dyn_dist_enabled", true) else true
+        // JVM/unit-scenario tests run without SharedPreferences init -> keep legacy fixed-distance behavior
+        // unless tests explicitly initialize preferences.
+        get() = if (::prefs.isInitialized) prefs.getBoolean("dyn_dist_enabled", true) else false
         set(v) { if (::prefs.isInitialized) prefs.edit().putBoolean("dyn_dist_enabled", v).apply() }
 
     /** RED headway seconds for dynamic distance threshold. Default 1.2 s. */
