@@ -163,12 +163,6 @@ export function validateMcawSpec(spec: McawScenarioSpec, relDrivenDistance: bool
   return issues;
 }
 
-function pToKotlin(p: McawProfile): string {
-  if (p.kind === 'hold') return `{ _: Double -> ${typeof p.value === 'boolean' ? (p.value ? 'true' : 'false') : p.value} }`;
-  if (p.kind === 'linear') return `{ t: Double -> ${p.from} + (${p.to} - ${p.from}) * t }`;
-  return '/* derived */ { _: Double -> Double.NaN }';
-}
-
 function expectationToKotlin(e: McawExpectation): string {
   switch (e.type) {
     case 'MustEnterLevelBy':
@@ -215,10 +209,52 @@ export function buildMcawMarkdown(spec: McawScenarioSpec, issues: ValidationIssu
 
 export function buildMcawKotlinSnippet(spec: McawScenarioSpec): string {
   const segments = spec.segments
-    .map((s) => `Segment(tFromSec=${s.tFromSec}, tToSec=${s.tToSec}, label=${JSON.stringify(s.label)}, distanceM=${pToKotlin(s.distanceM)}, approachSpeedMps=${pToKotlin(s.approachSpeedMps)}, ttcSec=${pToKotlin(s.ttcSec)})`)
+    .map((s) => {
+      const p = (prof: McawProfile): string => {
+        if (prof.kind === 'hold') {
+          const v = typeof prof.value === 'boolean' ? (prof.value ? 'true' : 'false') : `${Number(prof.value)}f`;
+          return `{ _: Float -> ${v} }`;
+        }
+        if (prof.kind === 'linear') {
+          return `{ t: Float -> ${prof.from}f + (${prof.to}f - ${prof.from}f) * ((t - ${s.tFromSec}f) / kotlin.math.max(1e-3f, (${s.tToSec}f - ${s.tFromSec}f))).coerceIn(0f, 1f) }`;
+        }
+        return `{ _: Float -> Float.NaN }`;
+      };
+
+      const optional = (name: string, prof?: McawProfile) => prof ? `, ${name}=${p(prof)}` : '';
+      return `Segment(
+      tFromSec=${s.tFromSec}f,
+      tToSec=${s.tToSec}f,
+      label=${JSON.stringify(s.label)},
+      distanceM=${p(s.distanceM)},
+      approachSpeedMps=${p(s.approachSpeedMps)},
+      ttcSec=${p(s.ttcSec)}${optional('ttcSlopeSecPerSec', s.ttcSlopeSecPerSec)}${optional('cutInActive', s.cutInActive)}${optional('brakeCueActive', s.brakeCueActive)}${optional('brakeCueStrength', s.brakeCueStrength)}${optional('roiContainment', s.roiContainment)}${optional('egoOffsetN', s.egoOffsetN)}${optional('qualityWeight', s.qualityWeight)}${optional('leanDeg', s.leanDeg)}
+    )`;
+    })
     .join(',\n    ');
 
-  return `Scenario(\n  id=${JSON.stringify(spec.id)},\n  title=${JSON.stringify(spec.title)},\n  domain=Domain.${spec.domain},\n  vehicle=Vehicle.${spec.vehicle},\n  notes=${JSON.stringify(spec.notes)},\n  config=ScenarioConfig(effectiveMode=${spec.config.effectiveMode}, hz=${spec.config.hz}, riderSpeedMps=${spec.config.riderSpeedMps}, qualityWeight=${spec.config.qualityWeight}, roiContainment=${spec.config.roiContainment}, egoOffsetN=${spec.config.egoOffsetN}, leanDeg=${spec.config.leanDeg === null ? "null" : spec.config.leanDeg}),\n  expectations=listOf(${spec.expectations.map(expectationToKotlin).join(', ')}),\n  segments=listOf(\n    ${segments}\n  )\n)`;
+  const leanDegExpr = spec.config.leanDeg == null ? 'Float.NaN' : `${spec.config.leanDeg}f`;
+
+  return `Scenario(
+  id=${JSON.stringify(spec.id)},
+  title=${JSON.stringify(spec.title)},
+  domain=Domain.${spec.domain},
+  vehicle=Vehicle.${spec.vehicle},
+  notes=${JSON.stringify(spec.notes)},
+  config=ScenarioConfig(
+    effectiveMode=${spec.config.effectiveMode},
+    hz=${spec.config.hz},
+    riderSpeedMps=${spec.config.riderSpeedMps}f,
+    qualityWeight=${spec.config.qualityWeight}f,
+    roiContainment=${spec.config.roiContainment}f,
+    egoOffsetN=${spec.config.egoOffsetN}f,
+    leanDeg=${leanDegExpr}
+  ),
+  expectations=listOf(${spec.expectations.map(expectationToKotlin).join(', ')}),
+  segments=listOf(
+    ${segments}
+  )
+)`;
 }
 
 
