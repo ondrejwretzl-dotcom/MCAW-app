@@ -302,7 +302,10 @@ class RiskEngineScenarioTest {
             riderSpeedMps = 15f,
             riderSpeedConfidence = 0.9f,
             egoBrakingConfidence = 0f,
-            leanDeg = Float.NaN
+            leanDeg = Float.NaN,
+            dynamicDistanceEnabled = true,
+            dynamicDistanceRedSec = 1.2f,
+            dynamicDistanceOrangeSec = 1.8f
         )
 
         val payload = RiskEngine.stripReasonVersion(r.reasonBits)
@@ -329,7 +332,10 @@ class RiskEngineScenarioTest {
             riderSpeedMps = Float.NaN,
             riderSpeedConfidence = 0.1f,
             egoBrakingConfidence = 0f,
-            leanDeg = Float.NaN
+            leanDeg = Float.NaN,
+            dynamicDistanceEnabled = true,
+            dynamicDistanceRedSec = 1.2f,
+            dynamicDistanceOrangeSec = 1.8f
         )
 
         val payload = RiskEngine.stripReasonVersion(r.reasonBits)
