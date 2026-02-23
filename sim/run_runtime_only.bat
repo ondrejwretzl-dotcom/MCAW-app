@@ -50,7 +50,7 @@ if exist "%REPO_SIM%\node_modules" (
   rmdir /S /Q "%REPO_SIM%\node_modules"
 )
 if exist "%REPO_SIM%\dist" (
-  echo [INFO] Removing repo dist (runtime will own built output)...
+  echo [INFO] Removing repo dist ^(runtime will own built output^)...
   rmdir /S /Q "%REPO_SIM%\dist"
 )
 
