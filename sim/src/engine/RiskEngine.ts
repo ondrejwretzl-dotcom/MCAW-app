@@ -243,7 +243,7 @@ export class RiskEngineRef {
     const relScore = input.disableTtcApproachWeight ? 0 : this.scoreHighIsBad(input.approachSpeedMps, thr.relOrange, thr.relRed);
 
     const roiC = clamp(roiContainment, 0, 1);
-    const off = clamp(egoOffsetN, 0, 2);
+    const off = clamp(egoOffsetN, 0, 1);
     const egoScore = clamp(1.0 - (off / 1.15), 0, 1);
     const roiScore = clamp(roiC * 0.70 + egoScore * 0.30, 0, 1);
 

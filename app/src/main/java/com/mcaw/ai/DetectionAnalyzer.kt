@@ -234,6 +234,11 @@ class DetectionAnalyzer(
     private var standingEnterCount: Int = 0
     private var standingReleaseCount: Int = 0
     private var standingState: Boolean = false
+    private var standingStableCount: Int = 0
+    private var speedEmaMps: Float = 0f
+    private var speedEmaValid: Boolean = false
+    private var speedDeltaEmaMps: Float = 0f
+    private var speedDeltaEmaValid: Boolean = false
 
     // Brake cue (heuristika rozsvícených brzdových světel) – držíme krátkou historii pro stabilitu
     private var brakeRedRatioEma: Float = 0f
@@ -692,12 +697,27 @@ if (AppPreferences.debugOverlay) {
 
             // ROI weight (0..1) pro RiskEngine
             val roiContainment = containmentRatioInTrapezoid(bestBox, roiTrap.pts).coerceIn(0f, 1f)
-            val egoOffset = egoOffsetInRoiN(bestBox, frameW, frameH).coerceIn(0f, 2f)
+            val egoOffset = egoOffsetInRoiN(bestBox, frameW, frameH).coerceIn(0f, 1f)
 
             val riderSpeedKnown = riderSpeedMps.isFinite()
-            // RiderImuMonitor snapshot doesn't expose explicit motion confidence.
-            // Approximate low-motion from low braking impulse + low lean.
-            val imuLowMotion = imu.brakeConfidence <= 0.20f && (!imu.leanDeg.isFinite() || kotlin.math.abs(imu.leanDeg) <= 8f)
+            val leanOk = imu.leanDeg.isFinite() && kotlin.math.abs(imu.leanDeg) <= 8f
+            val imuCalmProxy = imu.brakeConfidence <= 0.20f && leanOk
+
+            if (riderSpeedKnown) {
+                val speedSample = riderSpeedMps.coerceAtLeast(0f)
+                val prevSpeedEma = speedEmaMps
+                val speedAlpha = RiskEngine.EMA_ALPHA_REL
+                speedEmaMps = if (!speedEmaValid) speedSample else (speedEmaMps + speedAlpha * (speedSample - speedEmaMps))
+                speedEmaValid = true
+
+                val speedDeltaSample = if (!speedDeltaEmaValid) 0f else kotlin.math.abs(speedEmaMps - prevSpeedEma)
+                speedDeltaEmaMps = if (!speedDeltaEmaValid) speedDeltaSample else (speedDeltaEmaMps + speedAlpha * (speedDeltaSample - speedDeltaEmaMps))
+                speedDeltaEmaValid = true
+            } else {
+                speedEmaValid = false
+                speedDeltaEmaValid = false
+                standingStableCount = 0
+            }
 
             val adjacentNow = roiContainment < RiskEngine.ROI_CONTAIN_LOW && egoOffset > RiskEngine.EGO_OFFSET_HIGH
             adjacentStableCount = if (adjacentNow) (adjacentStableCount + 1) else 0
@@ -714,12 +734,23 @@ if (AppPreferences.debugOverlay) {
             recedingDistanceTrendCount = if (distGrowing) (recedingDistanceTrendCount + 1) else 0
             val recedingStable = recedingStableCount >= RiskEngine.K_STABLE && recedingDistanceTrendCount >= RiskEngine.K_STABLE
 
-            val standingEnter = riderSpeedKnown && riderSpeedMps < RiskEngine.STAND_SPEED_MPS && imuLowMotion && approachEmaMps <= RiskEngine.APPROACH_EPS_MPS
-            standingEnterCount = if (standingEnter) (standingEnterCount + 1) else 0
+            val speedStableNow = speedEmaValid && speedDeltaEmaValid && speedEmaMps < RiskEngine.STAND_SPEED_MPS && speedDeltaEmaMps < 0.12f
+            standingStableCount = if (speedStableNow) (standingStableCount + 1) else 0
+
+            val standingEnter = riderSpeedKnown && approachEmaMps <= RiskEngine.APPROACH_EPS_MPS
+            val standingStableNeed = if (imuCalmProxy) (RiskEngine.K_STABLE - 1).coerceAtLeast(1) else RiskEngine.K_STABLE
+            standingEnterCount = if (standingEnter && standingStableCount >= standingStableNeed) (standingEnterCount + 1) else 0
             val standingRelease = riderSpeedKnown && riderSpeedMps > RiskEngine.CREEP_SPEED_MPS
             standingReleaseCount = if (standingRelease) (standingReleaseCount + 1) else 0
-            if (!standingState && standingEnterCount >= RiskEngine.K_STABLE) standingState = true
-            if (standingState && standingReleaseCount >= RiskEngine.K_RELEASE) standingState = false
+            if (!standingState && standingEnterCount >= 1) {
+                standingState = true
+                standingEnterCount = 0
+            }
+            if (standingState && standingReleaseCount >= RiskEngine.K_RELEASE) {
+                standingState = false
+                standingReleaseCount = 0
+                standingStableCount = 0
+            }
 
             val occlusionCandidate = bottomOccluded && roiContainment < 0.5f
             val occlusionConfirmed = bottomOcclusionCounter >= RiskEngine.K_CONFIRM_OCCL && distanceM.isFinite() && distanceM < RiskEngine.DIST_CLOSE_M && approachEmaMps > RiskEngine.APPROACH_EPS_MPS
@@ -1435,7 +1466,7 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
 
         val off = kotlin.math.abs(cxN - roi.centerX) / halfW
         // Normalize by maxOffset so priority can use it too if needed.
-        return off.coerceIn(0f, 2f)
+        return off.coerceIn(0f, 1f)
     }
 
     private fun selectLockedTarget(
