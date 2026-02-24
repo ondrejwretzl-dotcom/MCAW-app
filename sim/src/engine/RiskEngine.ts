@@ -55,6 +55,12 @@ export interface EvaluateInput {
   brakeCueStrength: number;
   occlusionCloseFactor?: number;
   occlusionCloseEligible?: boolean;
+  occlusionCandidate?: boolean;
+  occlusionConfirmed?: boolean;
+  suppressAdjacentOvertake?: boolean;
+  suppressRecedingObject?: boolean;
+  suppressStanding?: boolean;
+  disableTtcApproachWeight?: boolean;
   qualityWeight?: number;
   riderSpeedMps: number;
   riderSpeedConfidence: number;
@@ -96,6 +102,28 @@ export const BIT_SPEED_LOWCONF = 1 << 12;
 export const BIT_BOTTOM_OCCLUDED_CLOSE = 1 << 13;
 export const BIT_DIST_DYNAMIC = 1 << 14;
 export const BIT_DIST_FIXED_FALLBACK = 1 << 15;
+export const BIT_SUPPRESS_ADJACENT_OVERTAKE = 1 << 16;
+export const BIT_SUPPRESS_RECEDING_OBJECT = 1 << 17;
+export const BIT_SUPPRESS_STANDING = 1 << 18;
+export const BIT_SUPPRESS_BOTTOM_OCCLUSION_NO_CONFIRM = 1 << 19;
+export const BIT_OCCLUSION_CANDIDATE = 1 << 20;
+export const BIT_OCCLUSION_CONFIRMED = 1 << 21;
+
+export const EMA_ALPHA_REL = 0.25;
+export const EMA_ALPHA_APP = 0.20;
+export const K_STABLE = 4;
+export const K_CONFIRM_OCCL = 3;
+export const K_RELEASE = 2;
+export const RECEDE_EPS_MPS = 0.6;
+export const APPROACH_EPS_MPS = 0.4;
+export const STAND_SPEED_MPS = 0.35;
+export const CREEP_SPEED_MPS = 1.1;
+export const ROI_CONTAIN_LOW = 0.35;
+export const EGO_OFFSET_HIGH = 0.55;
+export const DIST_CLOSE_M = 10.0;
+export const S_ADJACENT_OVERTAKE = 0.25;
+export const S_BOTTOM_TOUCH_CANDIDATE = 0.70;
+export const S_RECEDING = 0.20;
 
 export function stripReasonVersion(reasonBits: number): number {
   return (reasonBits >>> 0) & REASON_BITS_PAYLOAD_MASK;
@@ -118,7 +146,6 @@ function isFiniteNumber(x: number): boolean {
 export class RiskEngineRef {
   // hysteresis state
   private lastLevel = 0;
-  private bottomOccludedRedHoldUntilMs = 0;
 
   // EMA state
   private emaRisk = 0;
@@ -132,7 +159,6 @@ export class RiskEngineRef {
     this.emaRisk = 0;
     this.emaInit = false;
     this.lastTtcLevel = 0;
-    this.bottomOccludedRedHoldUntilMs = 0;
   }
 
   debugDerivedThresholds(
@@ -180,8 +206,8 @@ export class RiskEngineRef {
     const thr = thresholdsOverride ?? this.thresholdsForMode(input.effectiveMode);
 
     const ttcSlope = isFiniteNumber(input.ttcSlopeSecPerSec ?? 0) ? (input.ttcSlopeSecPerSec ?? 0) : 0;
-    const occF = clamp(input.occlusionCloseFactor ?? 0, 0, 1);
-    const occlusionEligible = input.occlusionCloseEligible ?? false;
+    const occlusionCandidate = input.occlusionCandidate ?? false;
+    const occlusionConfirmed = input.occlusionConfirmed ?? false;
     const riderSpeedMps = input.riderSpeedMps ?? 0;
     const riderSpeedConfidence = input.riderSpeedConfidence ?? 1;
     const roiContainment = input.roiContainment ?? 1;
@@ -214,17 +240,17 @@ export class RiskEngineRef {
     }
 
     const distScore = this.scoreLowIsBad(input.distanceM, distRedThr, distOrangeThr);
-    const relScore = this.scoreHighIsBad(input.approachSpeedMps, thr.relOrange, thr.relRed);
+    const relScore = input.disableTtcApproachWeight ? 0 : this.scoreHighIsBad(input.approachSpeedMps, thr.relOrange, thr.relRed);
 
     const roiC = clamp(roiContainment, 0, 1);
-    const off = clamp(egoOffsetN, 0, 2);
+    const off = clamp(egoOffsetN, 0, 1);
     const egoScore = clamp(1.0 - (off / 1.15), 0, 1);
     const roiScore = clamp(roiC * 0.70 + egoScore * 0.30, 0, 1);
 
     const brakeStrength = clamp(brakeCueStrength, 0, 1);
     const brakeScore = input.brakeCueActive ? (0.70 + 0.30 * brakeStrength) : 0;
     const cutInScore = input.cutInActive ? 1.0 : 0;
-    const occlusionBoost = occlusionEligible ? (0.42 * occF) : 0;
+    const occlusionBoost = 0;
 
     const egoBrake = clamp(input.egoBrakingConfidence, 0, 1);
 
@@ -265,7 +291,15 @@ export class RiskEngineRef {
       const a = rawRisk >= this.emaRisk ? riseAlpha : fallAlpha;
       this.emaRisk += a * (rawRisk - this.emaRisk);
     }
-    const risk = clamp(this.emaRisk, 0, 1);
+    let risk = clamp(this.emaRisk, 0, 1);
+    if (input.suppressAdjacentOvertake) risk *= S_ADJACENT_OVERTAKE;
+    if (occlusionCandidate && !occlusionConfirmed) risk *= S_BOTTOM_TOUCH_CANDIDATE;
+    if (input.suppressRecedingObject) risk *= S_RECEDING;
+    if (occlusionConfirmed) {
+      const before = risk;
+      risk = Math.min(before * 1.10, before + 0.08);
+    }
+    if (input.suppressStanding) risk = 0;
 
     // --- CRITICAL combo guard ---
     const slopeThr = -1.0 - 0.40 * conserv;
@@ -282,15 +316,7 @@ export class RiskEngineRef {
     const preGuardLevel = this.riskToLevelWithHysteresis(risk, conserv);
     let level = preGuardLevel;
 
-    const occlusionRed = occlusionEligible && occF >= 0.90;
-    if (occlusionRed) {
-      level = 2;
-      this.bottomOccludedRedHoldUntilMs = input.tsMs + 500;
-    } else if (level < 2 && this.bottomOccludedRedHoldUntilMs > input.tsMs) {
-      level = 2;
-    }
-
-    if (preGuardLevel === 2 && !allowRed && !occlusionRed) {
+    if (preGuardLevel === 2 && !allowRed) {
       this.lastLevel = 1;
       level = 1;
     }
@@ -311,7 +337,12 @@ export class RiskEngineRef {
       if (riderSpeedConfidence < 0.60) bits |= BIT_SPEED_LOWCONF;
       if (dynDistEnabled && speedForDynDistOk) bits |= BIT_DIST_DYNAMIC;
       else bits |= BIT_DIST_FIXED_FALLBACK;
-      if (occlusionRed || (occlusionEligible && occF > 0.5)) bits |= BIT_BOTTOM_OCCLUDED_CLOSE;
+      if (occlusionCandidate) bits |= BIT_OCCLUSION_CANDIDATE;
+      if (occlusionConfirmed) bits |= BIT_OCCLUSION_CONFIRMED;
+      if (occlusionCandidate && !occlusionConfirmed) bits |= BIT_SUPPRESS_BOTTOM_OCCLUSION_NO_CONFIRM;
+      if (input.suppressAdjacentOvertake) bits |= BIT_SUPPRESS_ADJACENT_OVERTAKE;
+      if (input.suppressRecedingObject) bits |= BIT_SUPPRESS_RECEDING_OBJECT;
+      if (input.suppressStanding) bits |= BIT_SUPPRESS_STANDING;
       if (slopeStrong) bits |= BIT_TTC_SLOPE_STRONG;
       if (level === 2 && allowRed) bits |= BIT_RED_COMBO_OK;
       if (level === 1 && preGuardLevel === 2 && !allowRed) bits |= BIT_RED_GUARDED;
@@ -320,12 +351,17 @@ export class RiskEngineRef {
       if (riderSpeedConfidence < 0.60) bits |= BIT_SPEED_LOWCONF;
       if (dynDistEnabled && speedForDynDistOk) bits |= BIT_DIST_DYNAMIC;
       else bits |= BIT_DIST_FIXED_FALLBACK;
+      if (occlusionCandidate) bits |= BIT_OCCLUSION_CANDIDATE;
+      if (occlusionConfirmed) bits |= BIT_OCCLUSION_CONFIRMED;
+      if (occlusionCandidate && !occlusionConfirmed) bits |= BIT_SUPPRESS_BOTTOM_OCCLUSION_NO_CONFIRM;
+      if (input.suppressAdjacentOvertake) bits |= BIT_SUPPRESS_ADJACENT_OVERTAKE;
+      if (input.suppressRecedingObject) bits |= BIT_SUPPRESS_RECEDING_OBJECT;
+      if (input.suppressStanding) bits |= BIT_SUPPRESS_STANDING;
     }
 
     // audit invariants
     if (level === 2) {
       bits |= BIT_RED_COMBO_OK;
-      if (occlusionRed) bits |= BIT_BOTTOM_OCCLUDED_CLOSE;
       if ((bits & (BIT_TTC | BIT_DIST | BIT_REL)) === 0) bits |= BIT_TTC;
     } else if (preGuardLevel === 2 && level === 1) {
       bits |= BIT_RED_GUARDED;
