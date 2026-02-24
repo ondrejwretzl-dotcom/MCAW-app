@@ -352,6 +352,11 @@ export function App() {
   return (
     <div style={{ padding: 18, fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, sans-serif', maxWidth: 1400, margin: '0 auto' }}>
       <h2 style={{ marginTop: 0 }}>MCAW Risk Simulator</h2>
+      <div style={{ marginTop: -8, marginBottom: 10 }}>
+        <span style={{ display: 'inline-block', background: '#111827', color: '#fff', padding: '4px 8px', borderRadius: 8, fontSize: 12, fontWeight: 700 }}>
+          UI MARKER 2026-02-24
+        </span>
+      </div>
 
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
         <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
