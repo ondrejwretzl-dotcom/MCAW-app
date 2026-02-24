@@ -220,6 +220,20 @@ class DetectionAnalyzer(
     // Rider speed smoothing (GPS speed is noisy, especially at low speeds)
     private var riderSpeedEma: Float = 0f
     private var riderSpeedEmaValid: Boolean = false
+    private var approachEmaMps: Float = 0f
+    private var approachEmaValid: Boolean = false
+    private var relSignedEmaMps: Float = 0f
+    private var relSignedEmaValid: Boolean = false
+    private var prevRoiContainment: Float = Float.NaN
+    private var prevEgoOffsetN: Float = Float.NaN
+    private var prevDistanceM: Float = Float.NaN
+    private var adjacentStableCount: Int = 0
+    private var cutInProxyStableCount: Int = 0
+    private var recedingStableCount: Int = 0
+    private var recedingDistanceTrendCount: Int = 0
+    private var standingEnterCount: Int = 0
+    private var standingReleaseCount: Int = 0
+    private var standingState: Boolean = false
 
     // Brake cue (heuristika rozsvícených brzdových světel) – držíme krátkou historii pro stabilitu
     private var brakeRedRatioEma: Float = 0f
@@ -594,6 +608,10 @@ if (AppPreferences.debugOverlay) {
             }
 
             val approachSpeedFromDist = relSpeedSigned.coerceAtLeast(0f)
+            relSignedEmaMps = if (!relSignedEmaValid) relSpeedSigned else (relSignedEmaMps + RiskEngine.EMA_ALPHA_REL * (relSpeedSigned - relSignedEmaMps))
+            relSignedEmaValid = true
+            approachEmaMps = if (!approachEmaValid) approachSpeedFromDist else (approachEmaMps + RiskEngine.EMA_ALPHA_APP * (approachSpeedFromDist - approachEmaMps))
+            approachEmaValid = true
 
             // TTC from bbox growth tends to be more stable than distance derivative
             val boxHPx = (bestBox.y2 - bestBox.y1).coerceAtLeast(0f)
@@ -671,18 +689,40 @@ if (AppPreferences.debugOverlay) {
             if (modeRes.changed) {
                 flog("auto_mode effective=${'$'}{modeName(modeRes.effectiveMode)} reason=${'$'}{modeRes.reason}", force = true)
             }
+
+            // ROI weight (0..1) pro RiskEngine
+            val roiContainment = containmentRatioInTrapezoid(bestBox, roiTrap.pts).coerceIn(0f, 1f)
+            val egoOffset = egoOffsetInRoiN(bestBox, frameW, frameH).coerceIn(0f, 2f)
+
             val riderSpeedKnown = riderSpeedMps.isFinite()
-            // Standing gating must NOT trigger on low-confidence tunnel fallback.
-            val riderStanding = riderSpeedKnown && riderSpeedConfidence >= 0.70f && riderSpeedMps <= (6.0f / 3.6f) // < 6 km/h
+            val imuLowMotion = imu.speedStabilityConfidence >= 0.6f
 
-// ROI weight (0..1) pro RiskEngine
-val roiContainment = containmentRatioInTrapezoid(bestBox, roiTrap.pts).coerceIn(0f, 1f)
-val egoOffset = egoOffsetInRoiN(bestBox, frameW, frameH).coerceIn(0f, 2f)
+            val adjacentNow = roiContainment < RiskEngine.ROI_CONTAIN_LOW && egoOffset > RiskEngine.EGO_OFFSET_HIGH
+            adjacentStableCount = if (adjacentNow) (adjacentStableCount + 1) else 0
+            val adjacentStable = adjacentStableCount >= RiskEngine.K_STABLE
 
-val risk = if (riderStanding) {
-    riskEngine.standingResult(riderSpeedMps)
-} else {
-    riskEngine.evaluate(
+            val cutInProxyNow = prevEgoOffsetN.isFinite() && prevRoiContainment.isFinite() &&
+                (egoOffset < prevEgoOffsetN - 0.02f) && (roiContainment > prevRoiContainment + 0.02f)
+            cutInProxyStableCount = if (cutInProxyNow) (cutInProxyStableCount + 1) else 0
+            val cutInEvidence = (cutInBoostUntilMs > 0L && tsMs <= cutInBoostUntilMs) || cutInProxyStableCount >= RiskEngine.K_STABLE
+
+            val recedingNow = relSignedEmaMps < -RiskEngine.RECEDE_EPS_MPS
+            recedingStableCount = if (recedingNow) (recedingStableCount + 1) else 0
+            val distGrowing = prevDistanceM.isFinite() && distanceM.isFinite() && (distanceM > prevDistanceM + 0.05f)
+            recedingDistanceTrendCount = if (distGrowing) (recedingDistanceTrendCount + 1) else 0
+            val recedingStable = recedingStableCount >= RiskEngine.K_STABLE && recedingDistanceTrendCount >= RiskEngine.K_STABLE
+
+            val standingEnter = riderSpeedKnown && riderSpeedMps < RiskEngine.STAND_SPEED_MPS && imuLowMotion && approachEmaMps <= RiskEngine.APPROACH_EPS_MPS
+            standingEnterCount = if (standingEnter) (standingEnterCount + 1) else 0
+            val standingRelease = riderSpeedKnown && riderSpeedMps > RiskEngine.CREEP_SPEED_MPS
+            standingReleaseCount = if (standingRelease) (standingReleaseCount + 1) else 0
+            if (!standingState && standingEnterCount >= RiskEngine.K_STABLE) standingState = true
+            if (standingState && standingReleaseCount >= RiskEngine.K_RELEASE) standingState = false
+
+            val occlusionCandidate = bottomOccluded && roiContainment < 0.5f
+            val occlusionConfirmed = bottomOcclusionCounter >= RiskEngine.K_CONFIRM_OCCL && distanceM.isFinite() && distanceM < RiskEngine.DIST_CLOSE_M && approachEmaMps > RiskEngine.APPROACH_EPS_MPS
+
+            val risk = riskEngine.evaluate(
         tsMs = tsMs,
         effectiveMode = modeRes.effectiveMode,
         distanceM = distanceM,
@@ -694,8 +734,12 @@ val risk = if (riderStanding) {
         cutInActive = (cutInBoostUntilMs > 0L && tsMs <= cutInBoostUntilMs),
         brakeCueActive = brakeCue.active,
         brakeCueStrength = brakeCue.strength,
-        occlusionCloseFactor = if (bottomOccluded) 1f else 0f,
-        occlusionCloseEligible = isBottomOcclusionRedEligible(bestTrack, bestBox, frameW, frameH, label),
+        occlusionCandidate = occlusionCandidate,
+        occlusionConfirmed = occlusionConfirmed,
+        suppressAdjacentOvertake = adjacentStable && !cutInEvidence,
+        suppressRecedingObject = recedingStable,
+        suppressStanding = standingState,
+        disableTtcApproachWeight = recedingStable,
         qualityWeight = qualityWeight,
         riderSpeedMps = riderSpeedMps,
         riderSpeedConfidence = riderSpeedConfidence,
@@ -705,7 +749,10 @@ val risk = if (riderStanding) {
         dynamicDistanceRedSec = AppPreferences.dynamicDistanceRedSec,
         dynamicDistanceOrangeSec = AppPreferences.dynamicDistanceOrangeSec
     )
-}
+
+            prevRoiContainment = roiContainment
+            prevEgoOffsetN = egoOffset
+            prevDistanceM = distanceM
 
 
             if (AppPreferences.debugOverlay && (frameIndex % logEveryNFrames == 0L)) {
@@ -721,7 +768,7 @@ val reasonBits = risk.reasonBits
 val alertReason = RiskEngine.formatReasonShort(reasonBits)
 lastAlertLevel = level
 
-if (riderStanding) {
+if (standingState) {
     AlertNotifier.stopInApp(ctx)
 } else {
     AlertNotifier.handleInApp(ctx, level, risk)
@@ -867,8 +914,8 @@ if (AppPreferences.debugOverlay) {
     }
 
     private fun updateBottomOcclusionState(raw: Boolean): Boolean {
-        val enterFrames = 2
-        val exitFrames = 2
+        val enterFrames = RiskEngine.K_CONFIRM_OCCL
+        val exitFrames = RiskEngine.K_RELEASE
         bottomOcclusionCounter = if (raw) {
             (bottomOcclusionCounter + 1).coerceAtMost(enterFrames)
         } else {

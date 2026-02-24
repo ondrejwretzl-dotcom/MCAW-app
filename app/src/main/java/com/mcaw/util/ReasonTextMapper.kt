@@ -18,9 +18,12 @@ object ReasonTextMapper {
     fun short(reasonBits: Int): String {
         if (reasonBits == 0) return ""
         val payload = RiskEngine.stripReasonVersion(reasonBits)
-        if ((payload and RiskEngine.BIT_BOTTOM_OCCLUDED_CLOSE) != 0) {
-            return "Objekt velmi blízko (na hraně ROI)"
-        }
+        if ((payload and RiskEngine.BIT_SUPPRESS_ADJACENT_OVERTAKE) != 0) return "Potlačeno: předjíždění vedle dráhy"
+        if ((payload and RiskEngine.BIT_SUPPRESS_RECEDING_OBJECT) != 0) return "Potlačeno: objekt se vzdaluje"
+        if ((payload and RiskEngine.BIT_SUPPRESS_STANDING) != 0) return "Potlačeno: stojíme"
+        if ((payload and RiskEngine.BIT_SUPPRESS_BOTTOM_OCCLUSION_NO_CONFIRM) != 0) return "Potlačeno: dolní okluze bez potvrzení"
+        if ((payload and RiskEngine.BIT_OCCLUSION_CONFIRMED) != 0) return "Potvrzená dolní okluze"
+        if ((payload and RiskEngine.BIT_OCCLUSION_CANDIDATE) != 0) return "Kandidát dolní okluze"
         return RiskEngine.formatReasonShort(reasonBits)
     }
 
