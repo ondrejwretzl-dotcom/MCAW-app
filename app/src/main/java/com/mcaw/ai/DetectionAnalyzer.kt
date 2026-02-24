@@ -695,7 +695,9 @@ if (AppPreferences.debugOverlay) {
             val egoOffset = egoOffsetInRoiN(bestBox, frameW, frameH).coerceIn(0f, 2f)
 
             val riderSpeedKnown = riderSpeedMps.isFinite()
-            val imuLowMotion = imu.speedStabilityConfidence >= 0.6f
+            // RiderImuMonitor snapshot doesn't expose explicit motion confidence.
+            // Approximate low-motion from low braking impulse + low lean.
+            val imuLowMotion = imu.brakeConfidence <= 0.20f && (!imu.leanDeg.isFinite() || kotlin.math.abs(imu.leanDeg) <= 8f)
 
             val adjacentNow = roiContainment < RiskEngine.ROI_CONTAIN_LOW && egoOffset > RiskEngine.EGO_OFFSET_HIGH
             adjacentStableCount = if (adjacentNow) (adjacentStableCount + 1) else 0
