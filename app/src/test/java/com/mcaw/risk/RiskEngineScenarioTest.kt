@@ -226,61 +226,119 @@ class RiskEngineScenarioTest {
     }
 
     @Test
-    fun occlusionClose_withGuards_triggersRedAndReasonAndHold() {
+    fun adjacentOvertake_suppressionNeverRed() {
         val engine = RiskEngine()
-        var redSeen = false
-        var reasonSeen = false
-
-        for (i in 0 until 6) {
+        repeat(10) { i ->
             val r = engine.evaluate(
                 tsMs = i * 100L,
                 effectiveMode = 1,
                 distanceM = 6.0f,
-                approachSpeedMps = 0.2f,
-                ttcSec = Float.POSITIVE_INFINITY,
-                ttcSlopeSecPerSec = 0f,
-                roiContainment = 0.9f,
-                egoOffsetN = 0.1f,
+                approachSpeedMps = 6.0f,
+                ttcSec = 1.2f,
+                ttcSlopeSecPerSec = -1.0f,
+                roiContainment = 0.2f,
+                egoOffsetN = 0.9f,
                 cutInActive = false,
                 brakeCueActive = false,
                 brakeCueStrength = 0f,
-                occlusionCloseFactor = 1f,
-                occlusionCloseEligible = true,
+                suppressAdjacentOvertake = true,
                 qualityWeight = 1.0f,
                 riderSpeedMps = 10f,
                 riderSpeedConfidence = 1f,
                 egoBrakingConfidence = 0f,
                 leanDeg = Float.NaN
             )
-            if (r.level == 2) redSeen = true
+            assertTrue(r.level <= 1)
             val payload = RiskEngine.stripReasonVersion(r.reasonBits)
-            if ((payload and RiskEngine.BIT_BOTTOM_OCCLUDED_CLOSE) != 0) reasonSeen = true
+            assertTrue((payload and RiskEngine.BIT_SUPPRESS_ADJACENT_OVERTAKE) != 0)
         }
+    }
 
-        assertTrue(redSeen)
-        assertTrue(reasonSeen)
+    @Test
+    fun bottomTouchCandidate_withoutConfirmedDoesNotStickRed() {
+        val engine = RiskEngine()
+        var sawSuppression = false
+        repeat(6) { i ->
+            val r = engine.evaluate(
+                tsMs = i * 100L,
+                effectiveMode = 1,
+                distanceM = 8.0f,
+                approachSpeedMps = 5.0f,
+                ttcSec = 1.5f,
+                ttcSlopeSecPerSec = -0.5f,
+                roiContainment = 0.3f,
+                egoOffsetN = 0.3f,
+                cutInActive = false,
+                brakeCueActive = false,
+                brakeCueStrength = 0f,
+                occlusionCandidate = true,
+                occlusionConfirmed = false,
+                qualityWeight = 1.0f,
+                riderSpeedMps = 10f,
+                riderSpeedConfidence = 1f,
+                egoBrakingConfidence = 0f,
+                leanDeg = Float.NaN
+            )
+            assertTrue(r.level <= 1)
+            val payload = RiskEngine.stripReasonVersion(r.reasonBits)
+            sawSuppression = sawSuppression || ((payload and RiskEngine.BIT_SUPPRESS_BOTTOM_OCCLUSION_NO_CONFIRM) != 0)
+        }
+        assertTrue(sawSuppression)
+    }
 
-        val hold = engine.evaluate(
+    @Test
+    fun standingSuppression_forcesSafe() {
+        val engine = RiskEngine()
+        val r = engine.evaluate(
             tsMs = 650L,
             effectiveMode = 1,
-            distanceM = 30f,
-            approachSpeedMps = 0f,
-            ttcSec = Float.POSITIVE_INFINITY,
-            ttcSlopeSecPerSec = 0f,
-            roiContainment = 0.9f,
-            egoOffsetN = 0.1f,
+            distanceM = 6f,
+            approachSpeedMps = 8f,
+            ttcSec = 0.9f,
+            ttcSlopeSecPerSec = -1.2f,
+            roiContainment = 1f,
+            egoOffsetN = 0f,
             cutInActive = false,
             brakeCueActive = false,
             brakeCueStrength = 0f,
-            occlusionCloseFactor = 0f,
-            occlusionCloseEligible = false,
+            suppressStanding = true,
             qualityWeight = 1.0f,
             riderSpeedMps = 10f,
             riderSpeedConfidence = 1f,
             egoBrakingConfidence = 0f,
             leanDeg = Float.NaN
         )
-        assertEquals(2, hold.level)
+        assertEquals(0, r.level)
+        val payload = RiskEngine.stripReasonVersion(r.reasonBits)
+        assertTrue((payload and RiskEngine.BIT_SUPPRESS_STANDING) != 0)
+    }
+
+    @Test
+    fun recedingSuppression_forcesSafe() {
+        val engine = RiskEngine()
+        val r = engine.evaluate(
+            tsMs = 0L,
+            effectiveMode = 1,
+            distanceM = 20f,
+            approachSpeedMps = 5f,
+            ttcSec = 2f,
+            ttcSlopeSecPerSec = -0.2f,
+            roiContainment = 1f,
+            egoOffsetN = 0.1f,
+            cutInActive = false,
+            brakeCueActive = false,
+            brakeCueStrength = 0f,
+            suppressRecedingObject = true,
+            disableTtcApproachWeight = true,
+            qualityWeight = 1.0f,
+            riderSpeedMps = 15f,
+            riderSpeedConfidence = 1f,
+            egoBrakingConfidence = 0f,
+            leanDeg = Float.NaN
+        )
+        assertEquals(0, r.level)
+        val payload = RiskEngine.stripReasonVersion(r.reasonBits)
+        assertTrue((payload and RiskEngine.BIT_SUPPRESS_RECEDING_OBJECT) != 0)
     }
 
     @Test

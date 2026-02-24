@@ -91,6 +91,29 @@ class RiskEngine {
         const val BIT_BOTTOM_OCCLUDED_CLOSE = 1 shl 13
         const val BIT_DIST_DYNAMIC = 1 shl 14
         const val BIT_DIST_FIXED_FALLBACK = 1 shl 15
+        const val BIT_SUPPRESS_ADJACENT_OVERTAKE = 1 shl 16
+        const val BIT_SUPPRESS_RECEDING_OBJECT = 1 shl 17
+        const val BIT_SUPPRESS_STANDING = 1 shl 18
+        const val BIT_SUPPRESS_BOTTOM_OCCLUSION_NO_CONFIRM = 1 shl 19
+        const val BIT_OCCLUSION_CANDIDATE = 1 shl 20
+        const val BIT_OCCLUSION_CONFIRMED = 1 shl 21
+
+        const val EMA_ALPHA_REL = 0.25f
+        const val EMA_ALPHA_APP = 0.20f
+        const val K_STABLE = 4
+        const val K_CONFIRM_OCCL = 3
+        const val K_RELEASE = 2
+        const val RECEDE_EPS_MPS = 0.6f
+        const val APPROACH_EPS_MPS = 0.4f
+        const val STAND_SPEED_MPS = 0.35f
+        const val CREEP_SPEED_MPS = 1.1f
+        const val ROI_CONTAIN_LOW = 0.35f
+        const val EGO_OFFSET_HIGH = 0.55f
+        const val DIST_CLOSE_M = 10.0f
+
+        const val S_ADJACENT_OVERTAKE = 0.25f
+        const val S_BOTTOM_TOUCH_CANDIDATE = 0.70f
+        const val S_RECEDING = 0.20f
 
         fun reasonVersion(reasonBits: Int): Int = (reasonBits ushr REASON_BITS_VERSION_SHIFT) and 0xF
 
@@ -134,6 +157,12 @@ class RiskEngine {
             if ((payload and BIT_BOTTOM_OCCLUDED_CLOSE) != 0) aux = aux or (1 shl 9)
             if ((payload and BIT_DIST_DYNAMIC) != 0) aux = aux or (1 shl 10)
             if ((payload and BIT_DIST_FIXED_FALLBACK) != 0) aux = aux or (1 shl 11)
+            if ((payload and BIT_SUPPRESS_ADJACENT_OVERTAKE) != 0) aux = aux or (1 shl 12)
+            if ((payload and BIT_SUPPRESS_RECEDING_OBJECT) != 0) aux = aux or (1 shl 13)
+            if ((payload and BIT_SUPPRESS_STANDING) != 0) aux = aux or (1 shl 14)
+            if ((payload and BIT_SUPPRESS_BOTTOM_OCCLUSION_NO_CONFIRM) != 0) aux = aux or (1 shl 15)
+            if ((payload and BIT_OCCLUSION_CANDIDATE) != 0) aux = aux or (1 shl 16)
+            if ((payload and BIT_OCCLUSION_CONFIRMED) != 0) aux = aux or (1 shl 17)
 
             return core or (aux shl 3)
         }
@@ -156,6 +185,12 @@ class RiskEngine {
             if ((payload and BIT_BOTTOM_OCCLUDED_CLOSE) != 0) sb.append("BOCCL ")
             if ((payload and BIT_DIST_DYNAMIC) != 0) sb.append("DIST_DYN ")
             if ((payload and BIT_DIST_FIXED_FALLBACK) != 0) sb.append("DIST_FIX ")
+            if ((payload and BIT_SUPPRESS_ADJACENT_OVERTAKE) != 0) sb.append("SUP_ADJ_OVTK ")
+            if ((payload and BIT_SUPPRESS_RECEDING_OBJECT) != 0) sb.append("SUP_RECEDING ")
+            if ((payload and BIT_SUPPRESS_STANDING) != 0) sb.append("SUP_STANDING ")
+            if ((payload and BIT_SUPPRESS_BOTTOM_OCCLUSION_NO_CONFIRM) != 0) sb.append("SUP_OCCL_NO_CONF ")
+            if ((payload and BIT_OCCLUSION_CANDIDATE) != 0) sb.append("OCCL_CAND ")
+            if ((payload and BIT_OCCLUSION_CONFIRMED) != 0) sb.append("OCCL_CONF ")
             if ((payload and BIT_RED_COMBO_OK) != 0) sb.append("RED_OK ")
             if ((payload and BIT_RED_GUARDED) != 0) sb.append("RED_GUARD ")
             // trim trailing space
@@ -166,8 +201,6 @@ class RiskEngine {
 
     // Hysteresis on riskScore (prevents blinking)
     private var lastLevel: Int = 0
-    private var bottomOccludedRedHoldUntilMs: Long = 0L
-
     // EMA-integrated riskScore (anti-blink / continuity)
     private var emaRisk: Float = 0f
     private var emaInit: Boolean = false
@@ -244,6 +277,12 @@ class RiskEngine {
         brakeCueStrength: Float, // 0..1
         occlusionCloseFactor: Float = 0f,
         occlusionCloseEligible: Boolean = false,
+        occlusionCandidate: Boolean = false,
+        occlusionConfirmed: Boolean = false,
+        suppressAdjacentOvertake: Boolean = false,
+        suppressRecedingObject: Boolean = false,
+        suppressStanding: Boolean = false,
+        disableTtcApproachWeight: Boolean = false,
         // C2: quality acts as a weight (0..1), not a hard gate.
         // 1.0 = full confidence, lower values = more conservative thresholds and lower gain.
         qualityWeight: Float = 1f,
@@ -289,7 +328,7 @@ class RiskEngine {
         }
 
         val distScore = scoreLowIsBad(distanceM, distRedThr, distOrangeThr)
-        val relScore = scoreHighIsBad(approachSpeedMps, thr.relOrange, thr.relRed)
+        val relScore = if (disableTtcApproachWeight) 0f else scoreHighIsBad(approachSpeedMps, thr.relOrange, thr.relRed)
 
         // ROI weight: containment favors objects in ROI; egoOffset penalizes off-center targets.
         val roiC = roiContainment.coerceIn(0f, 1f)
@@ -299,8 +338,7 @@ class RiskEngine {
 
         val brakeScore = if (brakeCueActive) (0.70f + 0.30f * brakeCueStrength.coerceIn(0f, 1f)) else 0f
         val cutInScore = if (cutInActive) 1.0f else 0f
-        val occF = occlusionCloseFactor.coerceIn(0f, 1f)
-        val occlusionBoost = if (occlusionCloseEligible) 0.42f * occF else 0f
+        val occlusionBoost = 0f
 
         // IMU braking: if rider is braking hard, slightly raise risk (predictive) near target.
         val egoBrake = egoBrakingConfidence.coerceIn(0f, 1f)
@@ -346,7 +384,17 @@ class RiskEngine {
             val a = if (rawRisk >= emaRisk) riseAlpha else fallAlpha
             emaRisk += a * (rawRisk - emaRisk)
         }
-        val risk = emaRisk.coerceIn(0f, 1f)
+        var risk = emaRisk.coerceIn(0f, 1f)
+
+        if (suppressAdjacentOvertake) risk *= S_ADJACENT_OVERTAKE
+        if (occlusionCandidate && !occlusionConfirmed) risk *= S_BOTTOM_TOUCH_CANDIDATE
+        if (suppressRecedingObject) risk *= S_RECEDING
+        if (occlusionConfirmed) {
+            val before = risk
+            val boosted = before * 1.10f
+            risk = min(boosted, before + 0.08f)
+        }
+        if (suppressStanding) risk = 0f
 
         // --- CRITICAL combo guard (avoid single-factor RED spikes) ---
         val slope = if (ttcSlopeSecPerSec.isFinite()) ttcSlopeSecPerSec else 0f
@@ -364,14 +412,7 @@ class RiskEngine {
         // --- Convert risk -> level (with hysteresis) ---
         val preGuardLevel = riskToLevelWithHysteresis(risk, conserv)
         var level = preGuardLevel
-        val occlusionRed = occlusionCloseEligible && occF >= 0.90f
-        if (occlusionRed) {
-            level = 2
-            bottomOccludedRedHoldUntilMs = tsMs + 500L
-        } else if (level < 2 && bottomOccludedRedHoldUntilMs > tsMs) {
-            level = 2
-        }
-        if (preGuardLevel == 2 && !allowRed && !occlusionRed) {
+        if (preGuardLevel == 2 && !allowRed) {
             // Cap to ORANGE when combo confirmation is missing.
             // Also break RED latch immediately to prevent "stuck RED" on spikes.
             lastLevel = 1
@@ -397,7 +438,12 @@ class RiskEngine {
             if (conserv >= 0.15f) bits = bits or BIT_QUALITY_CONSERV
             if (riderSpeedConfidence < 0.60f) bits = bits or BIT_SPEED_LOWCONF
             if (dynDistEnabled && speedForDynDistOk) bits = bits or BIT_DIST_DYNAMIC else bits = bits or BIT_DIST_FIXED_FALLBACK
-            if (occlusionRed || (occlusionCloseEligible && occF > 0.5f)) bits = bits or BIT_BOTTOM_OCCLUDED_CLOSE
+            if (occlusionCandidate) bits = bits or BIT_OCCLUSION_CANDIDATE
+            if (occlusionConfirmed) bits = bits or BIT_OCCLUSION_CONFIRMED
+            if (occlusionCandidate && !occlusionConfirmed) bits = bits or BIT_SUPPRESS_BOTTOM_OCCLUSION_NO_CONFIRM
+            if (suppressAdjacentOvertake) bits = bits or BIT_SUPPRESS_ADJACENT_OVERTAKE
+            if (suppressRecedingObject) bits = bits or BIT_SUPPRESS_RECEDING_OBJECT
+            if (suppressStanding) bits = bits or BIT_SUPPRESS_STANDING
             if (slopeStrong) bits = bits or BIT_TTC_SLOPE_STRONG
             if (level == 2 && allowRed) bits = bits or BIT_RED_COMBO_OK
             if (level == 1 && preGuardLevel == 2 && !allowRed) bits = bits or BIT_RED_GUARDED
@@ -405,6 +451,12 @@ class RiskEngine {
             if (conserv >= 0.15f) bits = bits or BIT_QUALITY_CONSERV
             if (riderSpeedConfidence < 0.60f) bits = bits or BIT_SPEED_LOWCONF
             if (dynDistEnabled && speedForDynDistOk) bits = bits or BIT_DIST_DYNAMIC else bits = bits or BIT_DIST_FIXED_FALLBACK
+            if (occlusionCandidate) bits = bits or BIT_OCCLUSION_CANDIDATE
+            if (occlusionConfirmed) bits = bits or BIT_OCCLUSION_CONFIRMED
+            if (occlusionCandidate && !occlusionConfirmed) bits = bits or BIT_SUPPRESS_BOTTOM_OCCLUSION_NO_CONFIRM
+            if (suppressAdjacentOvertake) bits = bits or BIT_SUPPRESS_ADJACENT_OVERTAKE
+            if (suppressRecedingObject) bits = bits or BIT_SUPPRESS_RECEDING_OBJECT
+            if (suppressStanding) bits = bits or BIT_SUPPRESS_STANDING
         }
 
         // --- D2-3: Audit invariants (O(1), no allocations) ---
@@ -413,7 +465,6 @@ class RiskEngine {
         // - RED musí obsahovat alespoň jeden z core faktorů (TTC/DIST/REL)
         if (level == 2) {
             bits = bits or BIT_RED_COMBO_OK
-            if (occlusionRed) bits = bits or BIT_BOTTOM_OCCLUDED_CLOSE
             if ((bits and (BIT_TTC or BIT_DIST or BIT_REL)) == 0) {
                 bits = bits or BIT_TTC
             }
@@ -438,14 +489,12 @@ class RiskEngine {
         emaRisk = 0f
         emaInit = false
         lastTtcLevel = 0
-        bottomOccludedRedHoldUntilMs = 0L
     }
 
     fun standingResult(_riderSpeedMps: Float): Result {
-        bottomOccludedRedHoldUntilMs = 0L
         out.level = 0
         out.riskScore = 0f
-        out.reasonBits = packReasonBits(BIT_RIDER_STAND)
+        out.reasonBits = packReasonBits(BIT_RIDER_STAND or BIT_SUPPRESS_STANDING)
         out.state = State.SAFE
         return out
     }
