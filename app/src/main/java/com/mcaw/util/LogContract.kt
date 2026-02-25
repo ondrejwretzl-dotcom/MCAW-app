@@ -35,7 +35,9 @@ object LogContract {
     const val COL_EGO_BRAKE = "ego_brake"    // 0..1 (IMU confidence)
 
     const val COL_MODE = "mode"              // effective mode (Auto resolved before log)
-    const val COL_LOCKED_ID = "locked_id"    // stable trackId / lock id
+    const val COL_LOCKED_ID = "locked_id"    // actual target trackId used for risk computation
+
+    const val COL_TRACKER_LOCKED_ID = "tracker_locked_id" // tracker internal lock for switch diagnostics
 
     // Optional but very useful for audit & sync with video: what object was actually used for risk.
     // Kept at the end to keep backward CSV compatibility for existing parsers.
@@ -66,7 +68,8 @@ object LogContract {
         append(COL_LOCKED_ID).append(',')
         append(COL_LABEL).append(',')
         append(COL_DET_SCORE).append(',')
-        append(COL_REASON_ID)
+        append(COL_REASON_ID).append(',')
+        append(COL_TRACKER_LOCKED_ID)
         append('\n')
     }
 
@@ -97,7 +100,8 @@ object LogContract {
         lockedId: Long,
         label: String,
         detScore: Float,
-        reasonId: Int
+        reasonId: Int,
+        trackerLockedId: Long
     ) {
         sb.append(tsMs).append(',')
         appendFloat(sb, risk, 3); sb.append(',')
@@ -119,7 +123,8 @@ object LogContract {
         sb.append(lockedId).append(',')
         appendCsvString(sb, label); sb.append(',')
         appendFloat(sb, detScore, 3); sb.append(',')
-        sb.append(reasonId)
+        sb.append(reasonId).append(',')
+        sb.append(trackerLockedId)
 
         sb.append('\n')
     }

@@ -37,6 +37,7 @@ class SessionEventLogger(
         var egoBrake: Float = 0f
         var mode: Int = 0
         var lockedId: Long = -1L
+        var trackerLockedId: Long = -1L
         var label: String = ""
         var detScore: Float = Float.NaN
     }
@@ -102,6 +103,7 @@ class SessionEventLogger(
         egoBrake: Float,
         mode: Int,
         lockedId: Long,
+        trackerLockedId: Long,
         label: String,
         detScore: Float
     ) {
@@ -127,6 +129,7 @@ class SessionEventLogger(
         ev.egoBrake = egoBrake
         ev.mode = mode
         ev.lockedId = lockedId
+        ev.trackerLockedId = trackerLockedId
         ev.label = label
         ev.detScore = detScore
 
@@ -168,7 +171,8 @@ class SessionEventLogger(
                 lockedId = ev.lockedId,
                 label = ev.label,
                 detScore = ev.detScore,
-                reasonId = RiskEngine.reasonId(ev.reasonBits)
+                reasonId = RiskEngine.reasonId(ev.reasonBits),
+                trackerLockedId = ev.trackerLockedId
             )
             PublicLogWriter.appendLogLine(context, fileName, sb.toString().trimEnd())
 

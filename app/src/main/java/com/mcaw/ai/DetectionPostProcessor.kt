@@ -176,11 +176,21 @@ class DetectionPostProcessor(
         val rejected: List<RejectedDetection>
     )
 
+    // Group semantically identical vehicle classes together during NMS to avoid
+    // parallel candidates/tracks for one physical object (car/truck/bus/van flips).
+    private fun nmsKey(label: String?): String {
+        val l = label?.lowercase() ?: return "unknown"
+        return when (l) {
+            "car", "truck", "bus", "van" -> "Vehicle"
+            else -> l
+        }
+    }
+
     private fun classAwareNms(input: List<Detection>): NmsResult {
         val accepted = mutableListOf<Detection>()
         val rejected = mutableListOf<RejectedDetection>()
 
-        input.groupBy { it.label ?: "unknown" }
+        input.groupBy { nmsKey(it.label) }
             .values
             .forEach { list ->
                 val mutable = list.sortedByDescending { it.score }.toMutableList()

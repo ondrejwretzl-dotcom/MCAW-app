@@ -102,6 +102,11 @@ class PreviewActivity : ComponentActivity() {
                 overlay.riderSpeedAgeMs = 0L
                 overlay.ttc = -1f
                 overlay.label = ""
+                overlay.targetPresent = false
+                overlay.targetTrackId = -1L
+                overlay.targetGroupLabel = "Unknown"
+                overlay.targetRawLabel = null
+                overlay.targetDetScore = Float.NaN
                 overlay.alertLevel = 0
                 overlay.brakeCueActive = false
                 overlay.alertReason = ""
@@ -144,10 +149,21 @@ class PreviewActivity : ComponentActivity() {
             overlay.riskScore = i.getFloatExtra("risk_score", Float.NaN)
             overlay.brakeCueActive = i.getBooleanExtra("brake_cue", false)
 
-            val mapped = LabelMapper.mapLabel(i.getStringExtra("label"))
-            overlay.label = mapped
+            val targetGroupLabel = i.getStringExtra("target_group_label") ?: "Unknown"
+            val targetRawLabel = i.getStringExtra("target_raw_label")
+            val targetTrackId = i.getLongExtra("target_track_id", -1L)
+            val targetDetScore = i.getFloatExtra("target_det_score", Float.NaN)
+
+            overlay.targetPresent = i.getBooleanExtra("target_present", true)
+            overlay.targetTrackId = targetTrackId
+            overlay.targetGroupLabel = targetGroupLabel
+            overlay.targetRawLabel = targetRawLabel
+            overlay.targetDetScore = targetDetScore
+            overlay.label = targetGroupLabel
+
+            val mapped = LabelMapper.mapLabel(targetGroupLabel)
             txtDetectionLabel.text = "Detekce: $mapped"
-            logActivity("detection_found label=$mapped")
+            logActivity("detection_found group=$targetGroupLabel raw=${targetRawLabel ?: ""} id=$targetTrackId")
         }
     }
 

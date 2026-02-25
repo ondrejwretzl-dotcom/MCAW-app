@@ -291,6 +291,36 @@ class OverlayView @JvmOverloads constructor(
             invalidate()
         }
 
+    var targetPresent: Boolean = false
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    var targetTrackId: Long = -1L
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    var targetGroupLabel: String = "Unknown"
+        set(value) {
+            field = mapGroup(value)
+            invalidate()
+        }
+
+    var targetRawLabel: String? = null
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    var targetDetScore: Float = Float.NaN
+        set(value) {
+            field = value
+            invalidate()
+        }
+
     // ---- ROI trapezoid (normalized 0..1) ----
     // Symetrický kolem centerX=0.5
     var roiCenterX: Float = 0.5f
@@ -375,6 +405,16 @@ class OverlayView @JvmOverloads constructor(
         }
     }
 
+    private fun mapGroup(rawLabel: String?): String {
+        val l = rawLabel?.lowercase()?.trim()
+        return when (l) {
+            "person" -> "Person"
+            "bicycle", "motorcycle" -> "Motorcycle"
+            "car", "truck", "bus", "van", "vehicle" -> "Vehicle"
+            else -> "Unknown"
+        }
+    }
+
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
 
@@ -410,13 +450,10 @@ class OverlayView @JvmOverloads constructor(
             val mappedBox = mapToView(b) ?: return
             canvas.drawRect(mappedBox, boxPaint)
             drawCornerDots(canvas, mappedBox)
-            if (label.isNotBlank()) drawLabelTag(canvas, mappedBox, label)
-
-            if (showTelemetry) drawTelemetry(canvas, mappedBox, b)
             if (brakeCueActive) drawBrakeCue(canvas, mappedBox)
-        } else {
-            if (showTelemetry) drawStatus(canvas, "DEBUG OVERLAY: čekám na detekci")
         }
+
+        drawTargetHud(canvas)
 
         if (roiEditMode) {
             drawEditHint(canvas)
@@ -424,62 +461,42 @@ class OverlayView @JvmOverloads constructor(
         }
     }
 
-    private fun drawTelemetry(canvas: Canvas, mapped: RectF, b: Box) {
-        val lines = buildList {
-            if (label.isNotBlank()) add("OBJ  $label")
-            add("BOX  [%.0f×%.0f]".format((b.x2 - b.x1), (b.y2 - b.y1)))
-            if (distance.isFinite() && distance >= 0f) add("DIST %.2f m".format(distance))
-            if (roiMinDistM.isFinite()) add("ROImin ~%.2f m".format(roiMinDistM))
-            if (roiBottomTouch) add("ROI  bottom touch")
-            if (relDerivValid && speed.isFinite() && speed >= 0f) add("REL  %.1f km/h".format(speed * 3.6f)) else add("REL  —")
-            if (!relDerivValid && relInvalidReasonMask != 0) {
-                val resetTag = when {
-                    (relInvalidReasonMask and com.mcaw.ai.DetectionAnalyzer.INVALID_ID_SWITCH) != 0 -> "ID"
-                    (relInvalidReasonMask and com.mcaw.ai.DetectionAnalyzer.INVALID_OCCL_CHANGE) != 0 -> "OCCL"
-                    else -> "RESET"
-                }
-                add("RELR $resetTag")
-            }
-            if (objectSpeed.isFinite() && objectSpeed >= 0f) add("OBJ  %.1f km/h".format(objectSpeed * 3.6f))
-            if (riderSpeed.isFinite() && riderSpeed >= 0f) add("RID  %.1f km/h".format(riderSpeed * 3.6f))
-            if (riderSpeedConfidence > 0f || riderSpeedSourceOrdinal != 0 || riderSpeedAgeMs > 0L) {
-                val src = when (riderSpeedSourceOrdinal) {
-                    0 -> "BLE"
-                    1 -> "GPS"
-                    2 -> "IMU"
-                    else -> "UNK"
-                }
-                val ageS = (riderSpeedAgeMs.toFloat() / 1000f).coerceAtLeast(0f)
-                add("SPD  $src  c=%.2f  age=%.1fs".format(riderSpeedConfidence.coerceIn(0f, 1f), ageS))
-            }
-            if (ttc.isFinite() && ttc >= 0f) add("TTC  %.2f s".format(ttc))
-            if (riskScore.isFinite()) add("RISK %.2f".format(riskScore))
-            if (alertLevel > 0 && alertReason.isNotBlank()) add("WHY  " + alertReason)
-            if (brakeCueActive) add("BRAKE ON")
+    private fun drawTargetHud(canvas: Canvas) {
+        val group = if (targetPresent) mapGroup(targetGroupLabel) else "Unknown"
+        val rows = ArrayList<String>(10)
+        rows.add("TARGET $group")
+        if (targetPresent) {
+            if (showTelemetry && targetRawLabel?.isNotBlank() == true) rows.add("RAW  ${targetRawLabel}")
+            rows.add("ID   $targetTrackId")
+            if (ttc.isFinite() && ttc >= 0f) rows.add("TTC  %.2f s".format(ttc)) else rows.add("TTC  —")
+            if (relDerivValid && speed.isFinite() && speed >= 0f) rows.add("REL  %.1f km/h".format(speed * 3.6f)) else rows.add("REL  —")
+            if (distance.isFinite() && distance >= 0f) rows.add("DIST %.2f m".format(distance)) else rows.add("DIST —")
+            if (riskScore.isFinite()) rows.add("RISK %.2f".format(riskScore)) else rows.add("RISK —")
+            rows.add("LVL  $alertLevel")
+            if (targetDetScore.isFinite()) rows.add("DET  %.2f".format(targetDetScore))
+        } else {
+            rows.add("NO TARGET")
         }
-        if (lines.isEmpty()) return
 
-        var textW = 0f
         val fm = textPaint.fontMetrics
-        val lineH = (fm.bottom - fm.top)
-        for (ln in lines) textW = max(textW, textPaint.measureText(ln))
-
+        val lineH = fm.bottom - fm.top
         val padding = 10f
-        val bgLeft = mapped.left
-        val bgBottom = mapped.top
-        val bgTop = bgBottom - (lineH * lines.size) - (2 * padding)
-        val bgRight = bgLeft + textW + (2 * padding)
-
-        val topClamped = max(0f, bgTop)
-        val rect = RectF(bgLeft, topClamped, bgRight, bgBottom)
+        var textW = 0f
+        for (ln in rows) textW = max(textW, textPaint.measureText(ln))
+        val panelW = min(textW + padding * 2f, width * 0.25f)
+        val panelH = lineH * rows.size + padding * 2f
+        val top = if (alertLevel > 0) 130f else 16f
+        val left = 12f
+        val rect = RectF(left, top, left + panelW, top + panelH)
         canvas.drawRoundRect(rect, 10f, 10f, textBgPaint)
 
-        var y = (bgBottom - padding) - (lines.size - 1) * lineH
-        for (ln in lines) {
-            canvas.drawText(ln, bgLeft + padding, y, textPaint)
+        var y = rect.top + padding - fm.top
+        for (ln in rows) {
+            canvas.drawText(ln, rect.left + padding, y, textPaint)
             y += lineH
         }
     }
+
 
     private fun drawEditHint(canvas: Canvas) {
         val msg = "EDIT ROI: táhni hrany / rohy / uvnitř přesun"
@@ -496,42 +513,12 @@ class OverlayView @JvmOverloads constructor(
         canvas.drawText(msg, left + padding, bottom - padding, textPaint)
     }
 
-    private fun drawLabelTag(canvas: Canvas, rect: RectF, labelText: String) {
-        val padding = 8f
-        val textW = textPaint.measureText(labelText)
-        val fm = textPaint.fontMetrics
-        val textH = (fm.bottom - fm.top)
-        val bgLeft = rect.left
-        val bgBottom = rect.top
-        val bgTop = bgBottom - textH - padding * 2
-        val bgRight = bgLeft + textW + padding * 2
-        val topClamped = max(0f, bgTop)
-        val tagRect = RectF(bgLeft, topClamped, bgRight, bgBottom)
-        canvas.drawRoundRect(tagRect, 10f, 10f, textBgPaint)
-        val textY = bgBottom - padding
-        canvas.drawText(labelText, bgLeft + padding, textY, textPaint)
-    }
-
     private fun drawCornerDots(canvas: Canvas, rect: RectF) {
         val radius = 6f
         canvas.drawCircle(rect.left, rect.top, radius, dotPaint)
         canvas.drawCircle(rect.right, rect.top, radius, dotPaint)
         canvas.drawCircle(rect.left, rect.bottom, radius, dotPaint)
         canvas.drawCircle(rect.right, rect.bottom, radius, dotPaint)
-    }
-
-    private fun drawStatus(canvas: Canvas, message: String) {
-        val padding = 12f
-        val fm = textPaint.fontMetrics
-        val lineH = (fm.bottom - fm.top)
-        val textW = textPaint.measureText(message)
-        val left = padding
-        val top = padding
-        val right = left + textW + padding * 2
-        val bottom = top + lineH + padding * 2
-        val rect = RectF(left, top, right, bottom)
-        canvas.drawRoundRect(rect, 10f, 10f, textBgPaint)
-        canvas.drawText(message, left + padding, bottom - padding, textPaint)
     }
 
     private fun drawBrakeCue(canvas: Canvas, mapped: RectF) {

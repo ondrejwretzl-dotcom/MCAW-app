@@ -275,9 +275,10 @@ class TemporalTracker(
 
         val lockedScore = trackScore(locked)
         val bestScore = trackScore(bestVisible)
+        val extra = (lockedAgeFrames.coerceIn(0, 20) * 0.003f)
         val canSwitch =
             lockedAgeFrames >= minLockAgeFramesBeforeSwitch &&
-                bestScore >= (lockedScore + switchMargin) &&
+                bestScore >= (lockedScore + switchMargin + extra) &&
                 !graceActive(lockedMissFrames, tsMs)
 
         if (!canSwitch) {
