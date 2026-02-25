@@ -560,7 +560,14 @@ if (AppPreferences.debugOverlay) {
             val best0 = bestTrack.detection
             val bestBox = clampBox(best0.box, frameW, frameH)
             updateCutInState(tsMs, bestBox, frameW, frameH)
-            val label = DetectionLabelMapper.toCanonical(best0.label) ?: (best0.label ?: "unknown")
+            val rawLabel = best0.label ?: "unknown"
+            val label = DetectionLabelMapper.toCanonical(rawLabel) ?: rawLabel
+            val targetGroupLabel = when (label.lowercase(Locale.US)) {
+                "person" -> "Person"
+                "bicycle", "motorcycle" -> "Motorcycle"
+                "car", "truck", "bus", "van" -> "Vehicle"
+                else -> "Unknown"
+            }
 
             // --- Bottom-occlusion handling (dashboard / ROI crop) ---
             // We run detection on the ROI crop for performance and to exclude the dashboard.
@@ -872,7 +879,9 @@ if (standingState) {
 
 // ALWAYS-ON event log (sampled + transitions), written off-thread.
 if (level != prevLevel || frameIndex % eventEveryNFrames == 0L) {
-    val lockedId = lockedTrackId ?: -1L
+    // Audit contract: locked_id must be the exact selected target used for risk metrics.
+    val targetIdUsed = bestTrack.id
+    val trackerLockedId = tracker.getLockedTrackId() ?: -1L
     eventLogger.logEvent(
         tsMs = tsMs,
         risk = risk.riskScore,
@@ -883,12 +892,13 @@ if (level != prevLevel || frameIndex % eventEveryNFrames == 0L) {
         distM = distanceM,
         relV = approachSpeedMps,
         roi = roiContainment,
-	        qualityPoor = qualityPoor,
+        qualityPoor = qualityPoor,
         cutIn = (cutInBoostUntilMs > 0L && tsMs <= cutInBoostUntilMs),
         brake = brakeCue.active,
         egoBrake = imu.brakeConfidence,
         mode = modeRes.effectiveMode,
-        lockedId = lockedId,
+        lockedId = targetIdUsed,
+        trackerLockedId = trackerLockedId,
         label = label,
         detScore = best0.score
     )
@@ -914,6 +924,11 @@ sendOverlayUpdate(
                 riderSpeedAgeMs = riderSpeedAgeMs,
                 ttc = ttc,
                 label = label,
+                targetPresent = true,
+                targetTrackId = bestTrack.id,
+                targetGroupLabel = targetGroupLabel,
+                targetRawLabel = rawLabel,
+                targetDetScore = best0.score,
                 brakeCue = brakeCue.active,
                 alertLevel = lastAlertLevel,
                 alertReason = alertReason,
@@ -1118,6 +1133,11 @@ if (AppPreferences.debugOverlay) {
         riderSpeedAgeMs: Long = 0L,
         ttc: Float,
         label: String,
+        targetPresent: Boolean,
+        targetTrackId: Long,
+        targetGroupLabel: String,
+        targetRawLabel: String?,
+        targetDetScore: Float,
         brakeCue: Boolean,
         alertLevel: Int,
         alertReason: String = "",
@@ -1155,6 +1175,11 @@ if (AppPreferences.debugOverlay) {
         i.putExtra("rider_speed_age_ms", riderSpeedAgeMs)
         i.putExtra("ttc", ttc)
         i.putExtra("label", label)
+        i.putExtra("target_present", targetPresent)
+        i.putExtra("target_track_id", targetTrackId)
+        i.putExtra("target_group_label", targetGroupLabel)
+        i.putExtra("target_raw_label", targetRawLabel ?: "")
+        i.putExtra("target_det_score", targetDetScore)
         i.putExtra("brake_cue", brakeCue)
         i.putExtra("alert_level", alertLevel)
         i.putExtra("alert_reason", alertReason)
@@ -1184,6 +1209,11 @@ if (AppPreferences.debugOverlay) {
         val i = Intent("MCAW_DEBUG_UPDATE").setPackage(ctx.packageName)
         i.putExtra("clear", true)
         i.putExtra("risk_score", Float.NaN)
+        i.putExtra("target_present", false)
+        i.putExtra("target_track_id", -1L)
+        i.putExtra("target_group_label", "Unknown")
+        i.putExtra("target_raw_label", "")
+        i.putExtra("target_det_score", Float.NaN)
         i.putExtra("roi_trap_top_y_n", roiN.topY)
         i.putExtra("roi_trap_bottom_y_n", roiN.bottomY)
         i.putExtra("roi_trap_top_halfw_n", roiN.topHalfW)
