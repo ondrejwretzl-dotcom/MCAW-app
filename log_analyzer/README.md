@@ -1,24 +1,43 @@
-# MCAW Log Analyzer (first version)
+# MCAW Log Analyzer
 
-Webové „kukátko“ na logy z telefonu pro analytické čtení MCAW logů.
+Robustní webové „kukátko“ pro MCAW logy s tolerancí na odlišná schémata, celologovým KPI dashboardem a segmentovou analýzou podle objectId.
 
-## Co umí v této verzi
-- načíst více log souborů (`.txt`, `.csv`) přes upload,
-- **zpracovat pouze soubory s datem `2026-02-25`** v názvu,
-- parsovat řádky typu `S` (service), datové risk řádky a `M,...,METRICS`,
-- seskupit související události do časových oken,
-- zobrazit timeline s doporučením (co řešit prioritně),
-- vykreslit trend risk score,
-- zobrazit tabulku se sticky hlavičkou (scroll uvnitř tabulky),
-- zobrazit detail události včetně „lidského překladu“ reason bits a klíčových výpočtů.
+## Co umí
+- načítat libovolné `.txt/.csv/.log` soubory (bez omezení na konkrétní datum),
+- detekovat známé i neznámé struktury řádků,
+- při nekompatibilitě pokračovat částečným načtením a zobrazit warnings,
+- zobrazit `extraFields` (sloupce navíc mimo známý kontrakt),
+- Data quality panel (`valid`, `partial`, `rejected` + důvody),
+- closable detail události (tlačítko, ESC, klik mimo),
+- KPI dashboard:
+  - REL quality (invalid ratio + breakdown důvodů po bitech),
+  - false-red rate when bottom touch=true (before/after split),
+  - switch beneficial rate (TTC variance before/after 2s),
+  - standing suppressor missed-critical near stop (z manuálních tagů),
+- explicitní rozlišení tracker lock ID vs finální target ID ve výstupech,
+- Object Segments panel s grafy (TTC/REL/dist/speed) a markery (orange/red/switch/bottom-touch/suppress).
+
+## Definice KPI
+- **REL invalid ratio** = `invalid_rel_samples / relevant_rel_samples`.
+- **false-red** = `level=RED & bottomTouch=true & !(ttc_decreasing || dist_decreasing) v následujícím 2s okně`.
+- **switch beneficial** = po switchi je variace TTC ve +2s okně menší než v -2s okně.
+- **missed-critical near stop** = tag `near_stop_critical` + standing suppress aktivní + v okně nevznikl RED.
+
+## Manuální tagy scén
+Podporovaný import:
+- JSON: pole objektů `{ id, tsStart, tsEnd, kind, note }`
+- CSV: hlavička `id,tsStart,tsEnd,kind,note`
+
+`kind` použijte `near_stop_critical` pro KPI standing suppressor.
 
 ## Start
-
 ```bash
 cd log_analyzer
 npm install
 npm run dev
 ```
 
-## Poznámka
-Jde o první iteraci určenou pro rychlou orientaci v logu. Další krok může být přímé napojení na konkrétní MCAW datové kontrakty (verzování reason bits, mapování reason_id, validace vůči RiskEngine ref).
+## Testy
+```bash
+npm run test
+```
