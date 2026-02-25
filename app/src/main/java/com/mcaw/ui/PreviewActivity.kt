@@ -93,6 +93,8 @@ class PreviewActivity : ComponentActivity() {
                 overlay.roiMinDistM = Float.NaN
                 overlay.roiBottomTouch = false
                 overlay.speed = -1f
+                overlay.relDerivValid = false
+                overlay.relInvalidReasonMask = 0
                 overlay.objectSpeed = -1f
                 overlay.riderSpeed = -1f
                 overlay.riderSpeedSourceOrdinal = 0
@@ -125,6 +127,8 @@ class PreviewActivity : ComponentActivity() {
             overlay.roiMinDistM = i.getFloatExtra("roi_min_dist_m", Float.NaN)
             overlay.roiBottomTouch = i.getBooleanExtra("roi_bottom_touch", false)
             overlay.speed = i.getFloatExtra("speed", -1f) // REL (approach)
+            overlay.relDerivValid = i.getBooleanExtra(com.mcaw.ai.DetectionAnalyzer.EXTRA_REL_DERIV_VALID, true)
+            overlay.relInvalidReasonMask = i.getIntExtra(com.mcaw.ai.DetectionAnalyzer.EXTRA_REL_INVALID_REASON_MASK, 0)
             overlay.objectSpeed = i.getFloatExtra("object_speed", -1f) // OBJ
             overlay.riderSpeed = i.getFloatExtra("rider_speed", -1f) // RID
             overlay.riderSpeedSourceOrdinal = i.getIntExtra("rider_speed_src", 0)

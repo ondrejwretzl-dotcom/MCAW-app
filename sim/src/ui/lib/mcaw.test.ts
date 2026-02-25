@@ -45,3 +45,36 @@ test('golden C2_CITY_JAM_APPROACH_CUSTOM transformation', () => {
   assert.equal(spec.segments[1].ttcSec.kind, 'derived');
   assert.equal(issues.filter((i) => i.kind === 'error').length, 0);
 });
+
+import { RelStabilityState, K_INVALID_DERIV_FRAMES } from './relStability';
+
+test('rel stability invalidates on occlusion exit jump', () => {
+  const st = new RelStabilityState();
+  for (let i = 0; i < 6; i++) {
+    st.step({ tsMs: i * 100, distanceM: 5.0, hasBest: true, bestId: 1, bottomOccluded: true, riderSpeedKnown: true });
+  }
+  const before = st.relSignedEmaMps;
+  const jump = st.step({ tsMs: 600, distanceM: 12.0, hasBest: true, bestId: 1, bottomOccluded: false, riderSpeedKnown: true });
+  assert.equal(jump.relDerivValid, false);
+  for (let i = 1; i <= K_INVALID_DERIV_FRAMES; i++) {
+    const f = st.step({ tsMs: 600 + i * 100, distanceM: 5.0, hasBest: true, bestId: 1, bottomOccluded: false, riderSpeedKnown: true });
+    assert.equal(f.relDerivValid, false);
+  }
+  assert.ok(Math.abs(st.relSignedEmaMps - before) <= 0.5);
+});
+
+test('rel stability invalidates on id switch', () => {
+  const st = new RelStabilityState();
+  for (let i = 0; i < 6; i++) st.step({ tsMs: i * 100, distanceM: 8.0, hasBest: true, bestId: 1, bottomOccluded: false, riderSpeedKnown: true });
+  const out = st.step({ tsMs: 700, distanceM: 8.0, hasBest: true, bestId: 2, bottomOccluded: false, riderSpeedKnown: true });
+  assert.equal(out.relDerivValid, false);
+});
+
+test('rel stability invalidates on distance glitch without mode change', () => {
+  const st = new RelStabilityState();
+  for (let i = 0; i < 6; i++) st.step({ tsMs: i * 100, distanceM: 7.0, hasBest: true, bestId: 1, bottomOccluded: false, riderSpeedKnown: true });
+  const before = st.relSignedEmaMps;
+  const out = st.step({ tsMs: 700, distanceM: 10.5, hasBest: true, bestId: 1, bottomOccluded: false, riderSpeedKnown: true });
+  assert.equal(out.relDerivValid, false);
+  assert.ok(Math.abs(st.relSignedEmaMps - before) <= 0.5);
+});

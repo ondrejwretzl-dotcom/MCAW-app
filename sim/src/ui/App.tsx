@@ -15,6 +15,7 @@ import { safeBaseName, mpsToKmh, clamp, downloadText, toCsv, round3 } from './li
 import { ScenarioDraft, generateFrames } from './lib/scenario';
 import { validateScenario } from './lib/validate';
 import { buildMcawKotlinSnippet, buildMcawMarkdown, buildMcawSpec, defaultDraftMeta, DraftMeta } from './lib/mcaw';
+import { RelStabilityState } from './lib/relStability';
 import { templateC2 } from './lib/templates';
 
 type DataSource = 'upload' | 'builder';
@@ -149,15 +150,32 @@ export function App() {
     const tunedEma: number[] = [];
     const tunedDistOrange: number[] = [];
     const tunedDistRed: number[] = [];
+    const relDerivedMps: number[] = [];
+    const relDerivedValid: boolean[] = [];
 
     let baseThrFull: any = null;
 
     let mismatch = 0;
+    const relState = new RelStabilityState();
 
     for (const fr of frames) {
       const input = fr.in;
+      const relFrame = relState.step({
+        tsMs: Math.round(fr.tSec * 1000),
+        distanceM: Number(input.distanceM),
+        hasBest: Boolean(input.hasBest ?? true),
+        bestId: input.bestId === undefined ? undefined : Number(input.bestId),
+        bottomOccluded: input.bottomOccluded,
+        riderSpeedKnown: Number.isFinite(Number(input.riderSpeedMps)),
+      });
+
+      relDerivedMps.push(Number(relFrame.relSignedEmaMps));
+      relDerivedValid.push(Boolean(relFrame.relDerivValid));
+
       const evalInput: FrameIn = {
         ...input,
+        distanceM: Number(relFrame.distanceStableM),
+        approachSpeedMps: Number(relFrame.relDerivValid ? Math.max(0, relFrame.relSignedEmaMps) : Number(input.approachSpeedMps ?? 0)),
         effectiveMode: Number(input.effectiveMode ?? 1),
         roiContainment: Number(input.roiContainment ?? 1),
         egoOffsetN: Number(input.egoOffsetN ?? 0),
@@ -261,14 +279,14 @@ export function App() {
     // Input series
     const speedKmh = frames.map((f) => mpsToKmh(Number(f.in.riderSpeedMps ?? 0)));
     const distM = frames.map((f) => Number(f.in.distanceM));
-    const relMps = frames.map((f) => Number(f.in.approachSpeedMps));
+    const relMps = relDerivedMps.map((v, i) => (relDerivedValid[i] ? v : Number.NaN));
     const ttcSec = frames.map((f) => Number(f.in.ttcSec));
 
     // Table rows
     const rows: TableRow[] = frames.map((f, i) => ({
       tSec: f.tSec,
       distanceM: Number(f.in.distanceM),
-      relMps: Number(f.in.approachSpeedMps),
+      relMps: relDerivedValid[i] ? Number(relDerivedMps[i]) : Number.NaN,
       ttcSec: Number(f.in.ttcSec),
       speedKmh: mpsToKmh(Number(f.in.riderSpeedMps ?? 0)),
       baseRisk: baseRisk[i],

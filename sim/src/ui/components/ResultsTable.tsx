@@ -73,7 +73,7 @@ export function ResultsTable(props: {
               <tr key={idx} style={{ borderBottom: '1px solid #f0f0f0' }}>
                 <td style={{ padding: '6px 8px' }}>{round3(r.tSec)}</td>
                 <td style={{ padding: '6px 8px' }}>{round3(r.distanceM)}</td>
-                <td style={{ padding: '6px 8px' }}>{round3(r.relMps)}</td>
+                <td style={{ padding: '6px 8px' }}>{Number.isFinite(r.relMps) ? round3(r.relMps) : "—"}</td>
                 <td style={{ padding: '6px 8px' }}>{round3(r.ttcSec)}</td>
                 <td style={{ padding: '6px 8px' }}>{round3(r.speedKmh)}</td>
                 <td style={{ padding: '6px 8px' }}>{round3(r.baseRisk)}</td>
