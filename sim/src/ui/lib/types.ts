@@ -16,6 +16,9 @@ export type FrameIn = {
   riderSpeedConfidence?: number;
   egoBrakingConfidence?: number;
   leanDeg?: number;
+  bestId?: number;
+  hasBest?: boolean;
+  bottomOccluded?: boolean;
 };
 
 export type FrameOut = {

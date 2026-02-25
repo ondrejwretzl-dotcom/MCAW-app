@@ -49,6 +49,17 @@ class DetectionAnalyzer(
         const val EXTRA_ALERT_REASON = "extra_alert_reason"
         const val EXTRA_REASON_BITS = "extra_reason_bits"
         const val EXTRA_RISK_SCORE = "extra_risk_score"
+        const val EXTRA_REL_DERIV_VALID = "extra_rel_deriv_valid"
+        const val EXTRA_REL_INVALID_REASON_MASK = "extra_rel_invalid_reason_mask"
+        const val REL_MAX_RATE_MPS = 6.0f
+        const val DIST_JUMP_GUARD_M = 2.0f
+        const val K_INVALID_DERIV_FRAMES = 4
+        const val INVALID_ID_SWITCH = 1 shl 0
+        const val INVALID_TRACK_LOST = 1 shl 1
+        const val INVALID_TRACK_REACQUIRE = 1 shl 2
+        const val INVALID_OCCL_CHANGE = 1 shl 3
+        const val INVALID_DIST_GLITCH = 1 shl 4
+        const val INVALID_SPEED_SOURCE_RESET = 1 shl 5
     }
 
     private val analyzerLogFileName: String = SessionLogFile.fileName
@@ -224,6 +235,14 @@ class DetectionAnalyzer(
     private var approachEmaValid: Boolean = false
     private var relSignedEmaMps: Float = 0f
     private var relSignedEmaValid: Boolean = false
+    private var relDerivValid: Boolean = false
+    private var relInvalidReasonMask: Int = 0
+    private var lastHadBest: Boolean = false
+    private var lastBestId: Long = -1L
+    private var invalidDerivFramesLeft: Int = 0
+    private var prevDistanceForDerivM: Float = Float.NaN
+    private var prevDerivTsMs: Long = 0L
+    private var prevRiderSpeedKnown: Boolean = false
     private var prevRoiContainment: Float = Float.NaN
     private var prevEgoOffsetN: Float = Float.NaN
     private var prevDistanceM: Float = Float.NaN
@@ -479,6 +498,11 @@ if (AppPreferences.debugOverlay) {
             val bestTrack = selectLockedTarget(tracked, frameW, frameH, roiTrap, tsMs)
 
             if (bestTrack == null) {
+                if (lastHadBest) {
+                    triggerDerivativeInvalid(INVALID_TRACK_LOST, resetAdjacent = false)
+                }
+                lastHadBest = false
+                lastBestId = -1L
                 lockedTrackId = null
                 lockedSinceMs = 0L
                 switchCandidateId = null
@@ -524,6 +548,15 @@ if (AppPreferences.debugOverlay) {
                 riskEngine.resetState()
             }
 
+            val idSwitchedThisFrame = lastHadBest && bestTrack.id != lastBestId
+            if (!lastHadBest) {
+                triggerDerivativeInvalid(INVALID_TRACK_REACQUIRE, resetAdjacent = true)
+            } else if (idSwitchedThisFrame) {
+                triggerDerivativeInvalid(INVALID_ID_SWITCH, resetAdjacent = true)
+            }
+            lastHadBest = true
+            lastBestId = bestTrack.id
+
             val best0 = bestTrack.detection
             val bestBox = clampBox(best0.box, frameW, frameH)
             updateCutInState(tsMs, bestBox, frameW, frameH)
@@ -542,7 +575,11 @@ if (AppPreferences.debugOverlay) {
             val zoomFactor = AppPreferences.cameraZoomRatio.coerceAtLeast(1f)
             val bottomOcclEpsPx = DetectionPhysics.computeBottomOcclusionEpsPx(frameHRotI, zoomFactor)
             val bottomOccludedRaw = (cropBottomPx - bestBox.y2) <= bottomOcclEpsPx
+            val prevOccludedStable = bottomOccludedStable
             val bottomOccluded = updateBottomOcclusionState(bottomOccludedRaw)
+            if (prevOccludedStable != bottomOccluded) {
+                triggerDerivativeInvalid(INVALID_OCCL_CHANGE, resetAdjacent = false)
+            }
 
             // Distance estimation: blend bbox-height monocular + ground-plane (height + pitch) for robustness.
             val focalPx = estimateFocalLengthPx(frameHRotI)
@@ -594,8 +631,39 @@ if (AppPreferences.debugOverlay) {
             val distanceInput = stabilizeDistanceInput(distanceInputRaw, tsMs)
             val distanceM = smoothDistance(distanceInput)
 
-            // REL speed (signed internal) from sliding-window + EMA
-            val relSpeedSigned = computeRelativeSpeedSignedWindow(bestTrack.id, distanceM, tsMs)
+            val riderSpeedKnown = riderSpeedMps.isFinite()
+            if (riderSpeedKnown != prevRiderSpeedKnown) {
+                triggerDerivativeInvalid(INVALID_SPEED_SOURCE_RESET, resetAdjacent = false)
+            }
+            prevRiderSpeedKnown = riderSpeedKnown
+
+            if (invalidDerivFramesLeft > 0) invalidDerivFramesLeft -= 1
+            val dtMsForDeriv = tsMs - prevDerivTsMs
+            val dtValidForDeriv = prevDerivTsMs > 0L && dtMsForDeriv > 0L
+            val dtSecForDeriv = if (dtValidForDeriv) (dtMsForDeriv.toFloat() / 1000f).coerceIn(0.01f, 0.5f) else Float.NaN
+            relDerivValid = invalidDerivFramesLeft == 0 && distanceM.isFinite() && prevDistanceForDerivM.isFinite() && dtValidForDeriv
+
+            val relSpeedSignedSample = if (relDerivValid && dtSecForDeriv.isFinite()) {
+                (prevDistanceForDerivM - distanceM) / dtSecForDeriv
+            } else {
+                0f
+            }
+
+            if (relDerivValid) {
+                relSignedEmaMps = if (!relSignedEmaValid) relSpeedSignedSample else (relSignedEmaMps + RiskEngine.EMA_ALPHA_REL * (relSpeedSignedSample - relSignedEmaMps))
+                relSignedEmaValid = true
+                val approachSample = relSpeedSignedSample.coerceAtLeast(0f)
+                approachEmaMps = if (!approachEmaValid) approachSample else (approachEmaMps + RiskEngine.EMA_ALPHA_APP * (approachSample - approachEmaMps))
+                approachEmaValid = true
+                relInvalidReasonMask = 0
+                prevDistanceForDerivM = distanceM
+                prevDerivTsMs = tsMs
+            } else if (invalidDerivFramesLeft == 0 && distanceM.isFinite() && (!prevDistanceForDerivM.isFinite() || prevDerivTsMs <= 0L)) {
+                prevDistanceForDerivM = distanceM
+                prevDerivTsMs = tsMs
+            }
+
+            val relSpeedSigned = relSignedEmaMps
 
             // Brake cue (beta): jen pokud je zapnuté a jezdec jede
             val brakeCue = if (AppPreferences.brakeCueEnabled) {
@@ -612,11 +680,7 @@ if (AppPreferences.debugOverlay) {
                 BrakeCueResult(false, 0f, 0f, 0f)
             }
 
-            val approachSpeedFromDist = relSpeedSigned.coerceAtLeast(0f)
-            relSignedEmaMps = if (!relSignedEmaValid) relSpeedSigned else (relSignedEmaMps + RiskEngine.EMA_ALPHA_REL * (relSpeedSigned - relSignedEmaMps))
-            relSignedEmaValid = true
-            approachEmaMps = if (!approachEmaValid) approachSpeedFromDist else (approachEmaMps + RiskEngine.EMA_ALPHA_APP * (approachSpeedFromDist - approachEmaMps))
-            approachEmaValid = true
+            val approachSpeedFromDist = relSignedEmaMps.coerceAtLeast(0f)
 
             // TTC from bbox growth tends to be more stable than distance derivative
             val boxHPx = (bestBox.y2 - bestBox.y1).coerceAtLeast(0f)
@@ -699,7 +763,6 @@ if (AppPreferences.debugOverlay) {
             val roiContainment = containmentRatioInTrapezoid(bestBox, roiTrap.pts).coerceIn(0f, 1f)
             val egoOffset = egoOffsetInRoiN(bestBox, frameW, frameH).coerceIn(0f, 1f)
 
-            val riderSpeedKnown = riderSpeedMps.isFinite()
             val leanOk = imu.leanDeg.isFinite() && kotlin.math.abs(imu.leanDeg) <= 8f
             val imuCalmProxy = imu.brakeConfidence <= 0.20f && leanOk
 
@@ -791,7 +854,7 @@ if (AppPreferences.debugOverlay) {
             if (AppPreferences.debugOverlay && (frameIndex % logEveryNFrames == 0L)) {
                 val payload = RiskEngine.stripReasonVersion(risk.reasonBits)
                 traceLogger?.logLine(
-                    "M,$tsMs,METRICS,${bestTrack.id},${bestTrack.consecutiveDetections},$zoomFactor,${cropBottomPx.toInt()},${roiBottomPxF.toInt()},${bestBox.y2.toInt()},${bottomOcclEpsPx.toInt()},${if (bottomOccluded) 1 else 0},${distFromHeight ?: Float.NaN},${distFromGround ?: Float.NaN},${distCropBound ?: Float.NaN},$distanceInput,$approachSpeedMps,$ttcFromDist,$ttc,${String.format(java.util.Locale.US, "%.3f", risk.riskScore)},${risk.level},$payload,${RiskEngine.reasonId(risk.reasonBits)}"
+                    "M,$tsMs,METRICS,${bestTrack.id},${bestTrack.consecutiveDetections},$zoomFactor,${cropBottomPx.toInt()},${roiBottomPxF.toInt()},${bestBox.y2.toInt()},${bottomOcclEpsPx.toInt()},${if (bottomOccluded) 1 else 0},${if (idSwitchedThisFrame) 1 else 0},${if (relDerivValid) 1 else 0},$relInvalidReasonMask,${distFromHeight ?: Float.NaN},${distFromGround ?: Float.NaN},${distCropBound ?: Float.NaN},${distanceInputRaw},$distanceInput,$distanceM,$relSignedEmaMps,$approachSpeedMps,$ttcFromDist,$ttc,${String.format(java.util.Locale.US, "%.3f", risk.riskScore)},${risk.level},$payload,${RiskEngine.reasonId(risk.reasonBits)}"
                 )
             }
 
@@ -863,14 +926,16 @@ sendOverlayUpdate(
                     camHeightM = AppPreferences.cameraMountHeightM,
                     pitchDownDeg = AppPreferences.cameraPitchDownDeg
                 ) ?: Float.NaN,
-                roiBottomTouch = bottomOccluded
+                roiBottomTouch = bottomOccluded,
+                relDerivValid = relDerivValid,
+                relInvalidReasonMask = relInvalidReasonMask
             )
 
             flog(
                 "best id=${bestTrack.id} label=$label score=${best0.score} " +
                     "box=${bestBox.x1},${bestBox.y1},${bestBox.x2},${bestBox.y2} " +
-                    "distRaw=${distanceRaw ?: Float.NaN} dist=$distanceM " +
-                    "relSigned=$relSpeedSigned relApp=$approachSpeedFromDist " +
+                    "distRaw=${distanceRaw ?: Float.NaN} distStable=$distanceInput dist=$distanceM " +
+                    "bestId=${bestTrack.id} relValid=$relDerivValid relMask=$relInvalidReasonMask relEma=$relSignedEmaMps relApp=$approachSpeedFromDist " +
                     "riderRaw=$riderSpeedRawMps rider=$riderSpeedMps src=${speedReading.source} conf=${speedReading.confidence} obj=$objectSpeedMps " +
                     "ttcH=${ttcFromHeightsHeld ?: Float.NaN} ttcD=$ttcFromDist ttc=$ttc"
             )
@@ -888,7 +953,8 @@ sendOverlayUpdate(
                 brakeCue = brakeCue.active,
                 alertReason = alertReason,
                 reasonBits = reasonBits,
-                riskScore = risk.riskScore
+                riskScore = risk.riskScore,
+                relDerivValid = relDerivValid
             )
 
             
@@ -967,12 +1033,38 @@ if (AppPreferences.debugOverlay) {
         if (!distanceM.isFinite()) return distanceM
         val prev = lastDistanceInputM
         val prevTs = lastDistanceInputTsMs
-        lastDistanceInputM = distanceM
+
+        if (prev.isFinite() && kotlin.math.abs(distanceM - prev) > DIST_JUMP_GUARD_M) {
+            triggerDerivativeInvalid(INVALID_DIST_GLITCH, resetAdjacent = false)
+            lastDistanceInputM = prev
+            lastDistanceInputTsMs = tsMs
+            return prev
+        }
+
+        val out = if (!prev.isFinite() || prevTs <= 0L) {
+            distanceM
+        } else {
+            val dtSec = (((tsMs - prevTs).toFloat() / 1000f)).coerceIn(0.01f, 0.5f)
+            val maxDelta = REL_MAX_RATE_MPS * dtSec
+            distanceM.coerceIn(prev - maxDelta, prev + maxDelta)
+        }
+
+        lastDistanceInputM = out
         lastDistanceInputTsMs = tsMs
-        if (!prev.isFinite() || prevTs <= 0L) return distanceM
-        val dtSec = ((tsMs - prevTs).coerceAtLeast(1L)).toFloat() / 1000f
-        val maxRiseM = (2.5f * dtSec).coerceAtMost(1.2f)
-        return if (distanceM > prev + maxRiseM) prev + maxRiseM else distanceM
+        return out
+    }
+
+    private fun triggerDerivativeInvalid(mask: Int, resetAdjacent: Boolean) {
+        invalidDerivFramesLeft = K_INVALID_DERIV_FRAMES
+        relInvalidReasonMask = relInvalidReasonMask or mask
+        prevDistanceForDerivM = Float.NaN
+        prevDerivTsMs = 0L
+        recedingStableCount = 0
+        recedingDistanceTrendCount = 0
+        cutInProxyStableCount = 0
+        if (resetAdjacent) {
+            adjacentStableCount = 0
+        }
     }
 
     private fun isBottomOcclusionRedEligible(
@@ -1033,6 +1125,8 @@ if (AppPreferences.debugOverlay) {
         riskScore: Float = Float.NaN,
         roiMinDistM: Float = Float.NaN,
         roiBottomTouch: Boolean = false,
+        relDerivValid: Boolean = false,
+        relInvalidReasonMask: Int = 0,
         force: Boolean = false
     ) {
         if (!AppPreferences.debugOverlay) return
@@ -1070,6 +1164,8 @@ if (AppPreferences.debugOverlay) {
         // ROI diagnostics (helps validate that ROI bottom starts e.g. 2-3m ahead due to dashboard crop).
         i.putExtra("roi_min_dist_m", roiMinDistM)
         i.putExtra("roi_bottom_touch", roiBottomTouch)
+        i.putExtra(EXTRA_REL_DERIV_VALID, relDerivValid)
+        i.putExtra(EXTRA_REL_INVALID_REASON_MASK, relInvalidReasonMask)
 
         // keep ROI always in preview overlay
         i.putExtra("roi_trap_top_y_n", roiN.topY)
@@ -1112,6 +1208,7 @@ if (AppPreferences.debugOverlay) {
         alertReason: String = "",
         reasonBits: Int = 0,
         riskScore: Float = Float.NaN,
+        relDerivValid: Boolean = false,
         force: Boolean = false
     ) {
         val now = SystemClock.elapsedRealtime()
@@ -1134,6 +1231,7 @@ if (AppPreferences.debugOverlay) {
         i.putExtra(EXTRA_ALERT_REASON, alertReason)
         i.putExtra(EXTRA_REASON_BITS, reasonBits)
         i.putExtra(EXTRA_RISK_SCORE, riskScore)
+        i.putExtra(EXTRA_REL_DERIV_VALID, relDerivValid)
         ctx.sendBroadcast(i)
     }
 

@@ -138,6 +138,7 @@ class MainActivity : ComponentActivity() {
             val distance =
                 intent.getFloatExtra(DetectionAnalyzer.EXTRA_DISTANCE, Float.POSITIVE_INFINITY)
             val speed = intent.getFloatExtra(DetectionAnalyzer.EXTRA_SPEED, Float.POSITIVE_INFINITY)
+            val relDerivValid = intent.getBooleanExtra(DetectionAnalyzer.EXTRA_REL_DERIV_VALID, true)
             val objectSpeed =
                 intent.getFloatExtra(DetectionAnalyzer.EXTRA_OBJECT_SPEED, Float.POSITIVE_INFINITY)
             val riderSpeed =
@@ -169,11 +170,11 @@ class MainActivity : ComponentActivity() {
             val riderText = formatRiderSpeedFromMps(riderSpeed)
             applyRiderSpeedText(riderText, fromMetrics = true)
 
-            val speedKmh = if (speed.isFinite()) speed * 3.6f else Float.POSITIVE_INFINITY
+            val speedKmh = if (relDerivValid && speed.isFinite()) speed * 3.6f else Float.POSITIVE_INFINITY
             val objKmh = if (objectSpeed.isFinite()) objectSpeed * 3.6f else Float.POSITIVE_INFINITY
 
             if (hasTarget) {
-                txtSpeed.text = if (speedKmh.isFinite()) "%.1f".format(speedKmh) else "--.-"
+                txtSpeed.text = if (speedKmh.isFinite()) "%.1f".format(speedKmh) else "—"
                 val h2 = CalibrationHealth.evaluate()
                 txtObjectSpeed.text = if (h2.speedReliable && objKmh.isFinite()) "%.1f".format(objKmh) else "—"
                 txtDetectedObject.text = if (mappedLabel.isNotBlank()) mappedLabel else "--"

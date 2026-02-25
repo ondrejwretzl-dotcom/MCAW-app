@@ -198,6 +198,18 @@ class OverlayView @JvmOverloads constructor(
             invalidate()
         }
 
+    var relDerivValid: Boolean = false
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    var relInvalidReasonMask: Int = 0
+        set(value) {
+            field = value
+            invalidate()
+        }
+
     /** RID speed (m/s). */
     var riderSpeed: Float = -1f
         set(value) {
@@ -419,7 +431,15 @@ class OverlayView @JvmOverloads constructor(
             if (distance.isFinite() && distance >= 0f) add("DIST %.2f m".format(distance))
             if (roiMinDistM.isFinite()) add("ROImin ~%.2f m".format(roiMinDistM))
             if (roiBottomTouch) add("ROI  bottom touch")
-            if (speed.isFinite() && speed >= 0f) add("REL  %.1f km/h".format(speed * 3.6f))
+            if (relDerivValid && speed.isFinite() && speed >= 0f) add("REL  %.1f km/h".format(speed * 3.6f)) else add("REL  —")
+            if (!relDerivValid && relInvalidReasonMask != 0) {
+                val resetTag = when {
+                    (relInvalidReasonMask and com.mcaw.ai.DetectionAnalyzer.INVALID_ID_SWITCH) != 0 -> "ID"
+                    (relInvalidReasonMask and com.mcaw.ai.DetectionAnalyzer.INVALID_OCCL_CHANGE) != 0 -> "OCCL"
+                    else -> "RESET"
+                }
+                add("RELR $resetTag")
+            }
             if (objectSpeed.isFinite() && objectSpeed >= 0f) add("OBJ  %.1f km/h".format(objectSpeed * 3.6f))
             if (riderSpeed.isFinite() && riderSpeed >= 0f) add("RID  %.1f km/h".format(riderSpeed * 3.6f))
             if (riderSpeedConfidence > 0f || riderSpeedSourceOrdinal != 0 || riderSpeedAgeMs > 0L) {
