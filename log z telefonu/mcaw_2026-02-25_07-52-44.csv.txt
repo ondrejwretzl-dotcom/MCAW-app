@@ -1,0 +1,370 @@
+S,1772002364273,"ui_log Aplikace spuštěna"
+S,1772002364315,"app_start build=1.0.176(176)"
+S,1772002364335,"ui_log GPS monitor spuštěn"
+S,1772002364348,"gps_monitor_start"
+ts_ms,risk,level,state,reason_bits,ttc,dist,rel_v,roi,quality,cutin,brake,ego_brake,mode,locked_id,label,det_score,reason_id
+S,1772002367128,"ui_log GPS monitor zastaven"
+S,1772002367142,"gps_monitor_stop"
+1772002367348,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002367492,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002367628,TRACK,1,1,0,1,0.555,0.555,0,0,0,0,0,,,,0
+1772002367752,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002367873,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002367986,TRACK,1,2,0,1,0.552,0.552,0,0,0,0,0,,,,0
+1772002368107,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002368211,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002368302,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+S,1772002368409,"frame proxy=640x480 rot=90 rotFrame=480x640 model=1"
+S,1772002368409,"quality poor=false luma=104,1 grad=5,64"
+1772002368409,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+S,1772002368532,"counts raw=0 thr=0 nms=0 accepted=0 (roiSoft=0)"
+S,1772002368532,"roi trap n=RoiTrapN(topY=0.32237655, bottomY=0.51289237, topHalfW=0.104074046, bottomHalfW=0.17490739, centerX=0.41166663) boundsPx=[113,206,281,328] raw=0 roiSoft=0"
+1772002368533,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002368620,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002368701,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002368781,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002368862,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002368943,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002369025,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002369104,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002369186,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+S,1772002369268,"frame proxy=640x480 rot=90 rotFrame=480x640 model=1"
+S,1772002369268,"quality poor=true luma=107,1 grad=4,76"
+1772002369268,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+S,1772002369351,"counts raw=0 thr=0 nms=0 accepted=0 (roiSoft=0)"
+S,1772002369351,"roi trap n=RoiTrapN(topY=0.32237655, bottomY=0.51289237, topHalfW=0.104074046, bottomHalfW=0.17490739, centerX=0.41166663) boundsPx=[113,206,281,328] raw=0 roiSoft=0"
+1772002369353,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002369434,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002369517,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002369598,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002369681,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002369761,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002369844,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002369923,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002370006,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+S,1772002370091,"frame proxy=640x480 rot=90 rotFrame=480x640 model=1"
+S,1772002370091,"quality poor=false luma=103,3 grad=5,12"
+1772002370091,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+S,1772002370171,"counts raw=0 thr=0 nms=0 accepted=0 (roiSoft=0)"
+S,1772002370171,"roi trap n=RoiTrapN(topY=0.32237655, bottomY=0.51289237, topHalfW=0.104074046, bottomHalfW=0.17490739, centerX=0.41166663) boundsPx=[113,206,281,328] raw=0 roiSoft=0"
+1772002370173,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002370257,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002370338,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002370420,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002370503,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002370585,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002370670,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002370756,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002370841,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+S,1772002370922,"frame proxy=640x480 rot=90 rotFrame=480x640 model=1"
+S,1772002370923,"quality poor=false luma=103,6 grad=5,02"
+1772002370922,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+S,1772002371004,"counts raw=0 thr=0 nms=0 accepted=0 (roiSoft=0)"
+S,1772002371005,"roi trap n=RoiTrapN(topY=0.32237655, bottomY=0.51289237, topHalfW=0.104074046, bottomHalfW=0.17490739, centerX=0.41166663) boundsPx=[113,206,281,328] raw=0 roiSoft=0"
+1772002371006,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002371092,TRACK,2,1,0,2,0.424,0.424,0,0,0,0,0,,,,0
+S,1772002371172,"auto_mode effective=${modeName(modeRes.effectiveMode)} reason=${modeRes.reason}"
+1772002371174,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002371257,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002371337,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002371418,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002371500,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002371579,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002371659,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+S,1772002371739,"frame proxy=640x480 rot=90 rotFrame=480x640 model=1"
+S,1772002371739,"quality poor=false luma=110,0 grad=5,14"
+1772002371739,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+S,1772002371820,"counts raw=0 thr=0 nms=0 accepted=0 (roiSoft=0)"
+S,1772002371820,"roi trap n=RoiTrapN(topY=0.32237655, bottomY=0.51289237, topHalfW=0.104074046, bottomHalfW=0.17490739, centerX=0.41166663) boundsPx=[113,206,281,328] raw=0 roiSoft=0"
+1772002371822,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002371905,TRACK,3,1,0,3,0.401,0.401,0,0,0,0,0,,,,0
+1772002372066,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002372145,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002372227,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002372306,TRACK,3,3,0,3,0.396,0.396,0,0,0,0,0,,,,0
+1772002372385,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002372466,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+S,1772002372545,"frame proxy=640x480 rot=90 rotFrame=480x640 model=1"
+S,1772002372546,"quality poor=false luma=107,0 grad=5,10"
+1772002372545,TRACK,3,3,3,4,0.166,-1.000,0,0,1,400,0,,,,0
+1772002372545,0.211,0,SAFE,536887424,,6.126,0.000,0.595,0,0,0,0.334,2,3,"car",0.344,8320
+S,1772002372625,"counts raw=2 thr=1 nms=1 accepted=1 (roiSoft=2)"
+S,1772002372625,"roi trap n=RoiTrapN(topY=0.32237655, bottomY=0.51289237, topHalfW=0.104074046, bottomHalfW=0.17490739, centerX=0.41166663) boundsPx=[113,206,281,328] raw=2 roiSoft=2"
+M,1772002372545,METRICS,4,1,1.0,328,328,279,8,0,NaN,6.1258297,4.289885,6.1258297,0.0,Infinity,Infinity,0.211,0,16512,8320
+S,1772002372626,"risk level=0 score=0,21 state=${risk.state} bits=536887424 reason=QCONSERV DIST_DYN dynDist=true headwayO=1.8 headwayR=1.2"
+S,1772002372626,"best id=4 label=car score=0.34375 box=117.829216,262.16644,147.02281,279.61578 distRaw=6.1258297 dist=6.1258297 relSigned=0.0 relApp=0.0 riderRaw=18.369999 rider=18.31941 src=GPS conf=0.85 obj=18.31941 ttcH=NaN ttcD=Infinity ttc=Infinity"
+1772002372628,TRACK,4,1,0,4,0.156,0.373,0,0,0,0,0,,,,0
+1772002372709,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002372788,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002372871,TRACK,4,2,0,4,0.105,0.366,0,0,0,0,0,,,,0
+S,1772002373030,"perf avgMs pre=0 infer=85 post=1 total=88 mem=18MB/54MB"
+1772002373032,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002373116,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002373199,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002373282,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+S,1772002373360,"frame proxy=640x480 rot=90 rotFrame=480x640 model=1"
+S,1772002373360,"quality poor=true luma=103,8 grad=4,81"
+1772002373360,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+S,1772002373440,"counts raw=1 thr=0 nms=0 accepted=0 (roiSoft=1)"
+S,1772002373440,"roi trap n=RoiTrapN(topY=0.32237655, bottomY=0.51289237, topHalfW=0.104074046, bottomHalfW=0.17490739, centerX=0.41166663) boundsPx=[113,206,281,328] raw=8 roiSoft=1"
+1772002373442,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002373521,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002373599,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002373680,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002373763,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002373846,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002373940,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002374022,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002374102,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+S,1772002374186,"frame proxy=640x480 rot=90 rotFrame=480x640 model=1"
+S,1772002374186,"quality poor=true luma=105,6 grad=4,81"
+1772002374186,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+S,1772002374266,"counts raw=1 thr=0 nms=0 accepted=0 (roiSoft=1)"
+S,1772002374266,"roi trap n=RoiTrapN(topY=0.32237655, bottomY=0.51289237, topHalfW=0.104074046, bottomHalfW=0.17490739, centerX=0.41166663) boundsPx=[113,206,281,328] raw=1 roiSoft=1"
+1772002374268,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002374350,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002374433,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002374513,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002374593,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002374679,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002374758,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002374842,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002374922,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+S,1772002375001,"frame proxy=640x480 rot=90 rotFrame=480x640 model=1"
+S,1772002375001,"quality poor=true luma=111,4 grad=4,80"
+1772002375001,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+S,1772002375083,"counts raw=0 thr=0 nms=0 accepted=0 (roiSoft=0)"
+S,1772002375083,"roi trap n=RoiTrapN(topY=0.32237655, bottomY=0.51289237, topHalfW=0.104074046, bottomHalfW=0.17490739, centerX=0.41166663) boundsPx=[113,206,281,328] raw=1 roiSoft=0"
+1772002375084,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002375163,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002375244,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002375325,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002375405,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002375488,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002375566,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002375646,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002375725,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+S,1772002375806,"frame proxy=640x480 rot=90 rotFrame=480x640 model=1"
+S,1772002375806,"quality poor=true luma=109,1 grad=4,69"
+1772002375806,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+S,1772002375888,"counts raw=0 thr=0 nms=0 accepted=0 (roiSoft=0)"
+S,1772002375888,"roi trap n=RoiTrapN(topY=0.32237655, bottomY=0.51289237, topHalfW=0.104074046, bottomHalfW=0.17490739, centerX=0.41166663) boundsPx=[113,206,281,328] raw=1 roiSoft=0"
+1772002375890,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002375971,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002376056,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002376136,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002376236,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002376318,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002376398,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002376480,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002376561,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+S,1772002376641,"frame proxy=640x480 rot=90 rotFrame=480x640 model=1"
+S,1772002376641,"quality poor=true luma=107,3 grad=4,70"
+1772002376641,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+S,1772002376721,"counts raw=1 thr=0 nms=0 accepted=0 (roiSoft=1)"
+S,1772002376721,"roi trap n=RoiTrapN(topY=0.32237655, bottomY=0.51289237, topHalfW=0.104074046, bottomHalfW=0.17490739, centerX=0.41166663) boundsPx=[113,206,281,328] raw=1 roiSoft=1"
+1772002376722,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002376805,TRACK,5,1,0,5,0.170,0.448,0,0,0,0,0,,,,0
+1772002376985,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002377067,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002377147,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002377230,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+1772002377322,TRACK,6,1,0,6,0.028,0.464,0,0,0,0,0,,,,0
+1772002377432,TRACK,-1,0,0,-1,0.000,0.000,0,0,0,0,0,,,,3
+S,1772002377558,"frame proxy=640x480 rot=90 rotFrame=480x640 model=1"
+S,1772002377558,"quality poor=true luma=106,2 grad=4,78"
+1772002377558,TRACK,6,2,0,7,0.600,-1.000,0,0,0,0,0,,,,0
+1772002377558,0.172,0,SAFE,536887424,,33.973,0.000,1.000,1,0,0,0.416,2,6,"car",0.301,8320
+S,1772002377672,"counts raw=3 thr=3 nms=2 accepted=2 (roiSoft=3)"
+S,1772002377672,"roi trap n=RoiTrapN(topY=0.32237655, bottomY=0.51289237, topHalfW=0.104074046, bottomHalfW=0.17490739, centerX=0.41166663) boundsPx=[113,206,281,328] raw=20 roiSoft=3"
+M,1772002377558,METRICS,7,1,1.0,328,328,284,8,0,33.97288,5.8537474,4.289885,33.97288,0.0,Infinity,Infinity,0.172,0,16512,8320
+S,1772002377672,"risk level=0 score=0,17 state=${risk.state} bits=536887424 reason=QCONSERV DIST_DYN dynDist=true headwayO=1.8 headwayR=1.2"
+S,1772002377673,"best id=7 label=car score=0.30078125 box=188.96724,259.40088,219.8848,284.98068 distRaw=33.97288 dist=33.97288 relSigned=0.0 relApp=0.0 riderRaw=19.779999 rider=19.753223 src=GPS conf=0.85 obj=19.753223 ttcH=NaN ttcD=Infinity ttc=Infinity"
+1772002377674,TRACK,6,2,1,7,0.600,-1.000,0,0,1,400,0,,,,0
+1772002377787,TRACK,6,2,2,7,0.604,-1.000,0,0,1,287,0,,,,0
+1772002377872,TRACK,6,2,3,7,0.608,-1.000,0,0,1,202,0,,,,0
+1772002377950,TRACK,7,1,0,7,0.610,0.610,0,0,0,0,0,,,,0
+S,1772002378188,"perf avgMs pre=0 infer=85 post=3 total=89 mem=17MB/52MB"
+S,1772002378428,"frame proxy=640x480 rot=90 rotFrame=480x640 model=1"
+S,1772002378428,"quality poor=false luma=100,7 grad=4,98"
+1772002378428,0.188,0,SAFE,536887424,92.946,31.858,0.343,1.000,1,0,0,0.223,2,7,"car",0.358,8320
+S,1772002378505,"counts raw=2 thr=2 nms=1 accepted=1 (roiSoft=2)"
+S,1772002378505,"roi trap n=RoiTrapN(topY=0.32237655, bottomY=0.51289237, topHalfW=0.104074046, bottomHalfW=0.17490739, centerX=0.41166663) boundsPx=[113,206,281,328] raw=3 roiSoft=2"
+S,1772002378505,"brakeCue enabled=1 redRatio=0,000 redEma=0,000 dI=0,002 thr=0,28 dThr=0,03 strength=0,00 active=false"
+M,1772002378428,METRICS,7,11,1.0,328,328,286,8,0,31.13469,5.7736044,4.289885,31.13469,0.3427634,12.426415,92.94584,0.188,0,16512,8320
+S,1772002378505,"risk level=0 score=0,19 state=${risk.state} bits=536887424 reason=QCONSERV DIST_DYN dynDist=true headwayO=1.8 headwayR=1.2"
+S,1772002378506,"best id=7 label=car score=0.35787082 box=188.80238,258.7401,222.6384,286.65173 distRaw=31.13469 dist=31.85843 relSigned=2.5637667 relApp=2.5637667 riderRaw=19.43 rider=19.474102 src=GPS conf=0.85 obj=16.910336 ttcH=NaN ttcD=12.426415 ttc=92.94584"
+1772002378831,TRACK,7,12,0,7,0.635,0.635,0,0,0,0,0,,,,0
+S,1772002378992,"perf avgMs pre=0 infer=82 post=2 total=85 mem=18MB/56MB"
+S,1772002379232,"frame proxy=640x480 rot=90 rotFrame=480x640 model=1"
+S,1772002379232,"quality poor=false luma=103,6 grad=5,09"
+S,1772002379311,"counts raw=2 thr=2 nms=1 accepted=1 (roiSoft=2)"
+1772002379232,0.206,0,SAFE,536887424,90.775,29.340,0.323,1.000,0,0,0,0.414,2,7,"car",0.398,8320
+S,1772002379311,"roi trap n=RoiTrapN(topY=0.32237655, bottomY=0.51289237, topHalfW=0.104074046, bottomHalfW=0.17490739, centerX=0.41166663) boundsPx=[113,206,281,328] raw=15 roiSoft=2"
+S,1772002379311,"brakeCue enabled=1 redRatio=0,000 redEma=0,000 dI=0,008 thr=0,28 dThr=0,03 strength=0,00 active=false"
+M,1772002379232,METRICS,7,21,1.0,328,328,288,8,0,28.517101,5.6948795,4.289885,28.517101,0.3232215,9.232109,90.77504,0.206,0,16512,8320
+S,1772002379311,"risk level=0 score=0,21 state=${risk.state} bits=536887424 reason=QCONSERV DIST_DYN dynDist=true headwayO=1.8 headwayR=1.2"
+S,1772002379312,"best id=7 label=car score=0.3976775 box=186.29936,257.86267,222.24774,288.3363 distRaw=28.517101 dist=29.340445 relSigned=3.1780868 relApp=3.1780868 riderRaw=19.359999 rider=19.379416 src=GPS conf=0.85 obj=16.201328 ttcH=NaN ttcD=9.232109 ttc=90.77504"
+S,1772002379791,"perf avgMs pre=0 infer=81 post=2 total=84 mem=17MB/52MB"
+S,1772002380032,"frame proxy=640x480 rot=90 rotFrame=480x640 model=1"
+S,1772002380032,"quality poor=true luma=106,9 grad=4,85"
+1772002380032,0.229,0,SAFE,536887424,88.615,26.536,0.299,1.000,0,0,0,0.276,2,7,"car",0.475,8320
+1772002380032,TRACK,7,27,0,7,0.686,0.686,0,0,0,0,0,,,,0
+S,1772002380109,"counts raw=8 thr=8 nms=2 accepted=2 (roiSoft=8)"
+S,1772002380110,"roi trap n=RoiTrapN(topY=0.32237655, bottomY=0.51289237, topHalfW=0.104074046, bottomHalfW=0.17490739, centerX=0.41166663) boundsPx=[113,206,281,328] raw=28 roiSoft=8"
+S,1772002380110,"brakeCue enabled=1 redRatio=0,000 redEma=0,000 dI=0,000 thr=0,28 dThr=0,03 strength=0,00 active=false"
+M,1772002380032,METRICS,7,31,1.0,328,328,290,8,0,25.713737,5.611157,4.289885,25.713737,0.29945415,7.63138,88.615036,0.229,0,16512,8320
+S,1772002380110,"risk level=0 score=0,23 state=${risk.state} bits=536887424 reason=QCONSERV DIST_DYN dynDist=true headwayO=1.8 headwayR=1.2"
+S,1772002380110,"best id=7 label=car score=0.47536966 box=185.68227,256.38065,224.83871,290.17657 distRaw=25.713737 dist=26.53614 relSigned=3.47724 relApp=3.47724 riderRaw=19.48 rider=19.432932 src=GPS conf=0.85 obj=15.955692 ttcH=NaN ttcD=7.63138 ttc=88.615036"
+S,1772002380580,"perf avgMs pre=0 infer=80 post=1 total=82 mem=17MB/52MB"
+S,1772002380819,"frame proxy=640x480 rot=90 rotFrame=480x640 model=1"
+S,1772002380819,"quality poor=true luma=109,5 grad=4,53"
+1772002380819,0.246,0,SAFE,536887424,86.490,24.539,0.284,1.000,1,0,0,0.490,2,7,"car",0.537,8320
+S,1772002380896,"counts raw=6 thr=6 nms=1 accepted=1 (roiSoft=6)"
+S,1772002380896,"roi trap n=RoiTrapN(topY=0.32237655, bottomY=0.51289237, topHalfW=0.104074046, bottomHalfW=0.17490739, centerX=0.41166663) boundsPx=[113,206,281,328] raw=19 roiSoft=6"
+S,1772002380896,"brakeCue enabled=1 redRatio=0,000 redEma=0,000 dI=0,000 thr=0,28 dThr=0,03 strength=0,00 active=false"
+M,1772002380819,METRICS,7,41,1.0,328,328,292,8,0,23.85562,5.5160904,4.289885,23.85562,0.28372368,9.253039,86.49013,0.246,0,16512,8320
+S,1772002380896,"risk level=0 score=0,25 state=${risk.state} bits=536887424 reason=QCONSERV DIST_DYN dynDist=true headwayO=1.8 headwayR=1.2"
+S,1772002380896,"best id=7 label=car score=0.5369189 box=185.41574,255.9015,226.79286,292.3298 distRaw=23.85562 dist=24.539297 relSigned=2.6520257 relApp=2.6520257 riderRaw=19.539999 rider=19.486946 src=GPS conf=0.85 obj=16.83492 ttcH=NaN ttcD=9.253039 ttc=86.49013"
+1772002381213,TRACK,7,42,0,7,0.716,0.716,0,0,0,0,0,,,,0
+S,1772002381369,"perf avgMs pre=0 infer=79 post=1 total=82 mem=17MB/52MB"
+S,1772002381601,"frame proxy=640x480 rot=90 rotFrame=480x640 model=1"
+S,1772002381601,"quality poor=true luma=108,5 grad=4,67"
+S,1772002381683,"counts raw=8 thr=7 nms=1 accepted=1 (roiSoft=8)"
+1772002381601,0.258,0,SAFE,536887424,84.379,21.577,0.256,1.000,1,0,0,0.359,2,7,"car",0.466,8320
+S,1772002381683,"roi trap n=RoiTrapN(topY=0.32237655, bottomY=0.51289237, topHalfW=0.104074046, bottomHalfW=0.17490739, centerX=0.41166663) boundsPx=[113,206,281,328] raw=19 roiSoft=8"
+S,1772002381683,"brakeCue enabled=1 redRatio=0,000 redEma=0,000 dI=0,000 thr=0,28 dThr=0,03 strength=0,00 active=false"
+M,1772002381601,METRICS,7,51,1.0,328,328,294,8,0,20.807306,5.4314065,4.289885,20.807306,0.25571495,5.9793725,84.378716,0.258,0,16512,8320
+S,1772002381683,"risk level=0 score=0,26 state=${risk.state} bits=536887424 reason=QCONSERV DIST_DYN dynDist=true headwayO=1.8 headwayR=1.2"
+S,1772002381684,"best id=7 label=car score=0.4660216 box=182.6246,252.54231,226.68251,294.30743 distRaw=20.807306 dist=21.5769 relSigned=3.608556 relApp=3.608556 riderRaw=19.539999 rider=19.534302 src=GPS conf=0.85 obj=15.925746 ttcH=NaN ttcD=5.9793725 ttc=84.378716"
+S,1772002382173,"perf avgMs pre=0 infer=79 post=1 total=81 mem=17MB/52MB"
+S,1772002382413,"frame proxy=640x480 rot=90 rotFrame=480x640 model=1"
+S,1772002382414,"quality poor=true luma=108,0 grad=4,59"
+1772002382413,0.258,0,SAFE,536887424,82.186,18.883,0.230,1.000,1,0,0,0.383,2,7,"car",0.442,8320
+1772002382413,TRACK,7,57,0,12,0.760,0.758,1,0,0,0,0,,,,0
+S,1772002382493,"counts raw=16 thr=15 nms=2 accepted=2 (roiSoft=16)"
+S,1772002382493,"roi trap n=RoiTrapN(topY=0.32237655, bottomY=0.51289237, topHalfW=0.104074046, bottomHalfW=0.17490739, centerX=0.41166663) boundsPx=[113,206,281,328] raw=17 roiSoft=16"
+S,1772002382493,"brakeCue enabled=1 redRatio=0,000 redEma=0,000 dI=0,000 thr=0,28 dThr=0,03 strength=0,00 active=false"
+M,1772002382413,METRICS,7,61,1.0,328,328,297,8,0,18.11402,5.281823,4.289885,18.11402,0.22976434,5.6296906,82.18631,0.258,0,16512,8320
+S,1772002382494,"risk level=0 score=0,26 state=${risk.state} bits=536887424 reason=QCONSERV DIST_DYN dynDist=true headwayO=1.8 headwayR=1.2"
+S,1772002382494,"best id=7 label=car score=0.4416082 box=178.93378,249.97083,228.18259,297.9458 distRaw=18.11402 dist=18.883484 relSigned=3.3542666 relApp=3.3542666 riderRaw=19.199999 rider=19.245022 src=GPS conf=0.85 obj=15.890755 ttcH=NaN ttcD=5.6296906 ttc=82.18631"
+S,1772002382976,"perf avgMs pre=0 infer=79 post=1 total=81 mem=19MB/57MB"
+1772002382976,TRACK,7,64,0,12,0.779,0.777,1,0,0,0,0,,,,0
+S,1772002383218,"frame proxy=640x480 rot=90 rotFrame=480x640 model=1"
+S,1772002383218,"quality poor=false luma=106,3 grad=5,02"
+S,1772002383298,"counts raw=17 thr=14 nms=1 accepted=1 (roiSoft=17)"
+1772002383218,0.259,0,SAFE,536887424,80.013,16.740,0.209,1.000,1,0,0,0.345,2,7,"bus",0.531,8320
+S,1772002383298,"roi trap n=RoiTrapN(topY=0.32237655, bottomY=0.51289237, topHalfW=0.104074046, bottomHalfW=0.17490739, centerX=0.41166663) boundsPx=[113,206,281,328] raw=18 roiSoft=17"
+S,1772002383298,"brakeCue enabled=1 redRatio=0,000 redEma=0,000 dI=0,000 thr=0,28 dThr=0,03 strength=0,00 active=false"
+M,1772002383218,METRICS,7,71,1.0,328,328,302,8,0,16.084103,5.1011515,4.289885,16.084103,0.20922084,6.218949,80.01281,0.259,0,16512,8320
+S,1772002383298,"risk level=0 score=0,26 state=${risk.state} bits=536887424 reason=QCONSERV DIST_DYN dynDist=true headwayO=1.8 headwayR=1.2"
+S,1772002383299,"best id=7 label=bus score=0.5306637 box=172.83295,248.5765,229.30423,302.60623 distRaw=16.084103 dist=16.740347 relSigned=2.691829 relApp=2.691829 riderRaw=19.539999 rider=19.455706 src=GPS conf=0.85 obj=16.763876 ttcH=NaN ttcD=6.218949 ttc=80.01281"
+1772002383621,TRACK,7,72,0,7,0.819,0.819,0,0,0,0,0,,,,0
+S,1772002383797,"perf avgMs pre=0 infer=79 post=1 total=81 mem=17MB/52MB"
+S,1772002384043,"frame proxy=640x480 rot=90 rotFrame=480x640 model=1"
+S,1772002384043,"quality poor=false luma=105,4 grad=5,13"
+S,1772002384138,"counts raw=20 thr=19 nms=1 accepted=1 (roiSoft=20)"
+1772002384043,0.259,0,SAFE,536887424,77.785,14.591,0.188,1.000,0,0,0,0.437,2,7,"bus",0.661,8320
+S,1772002384138,"roi trap n=RoiTrapN(topY=0.32237655, bottomY=0.51289237, topHalfW=0.104074046, bottomHalfW=0.17490739, centerX=0.41166663) boundsPx=[113,206,281,328] raw=21 roiSoft=20"
+S,1772002384138,"brakeCue enabled=1 redRatio=0,000 redEma=0,000 dI=0,000 thr=0,28 dThr=0,03 strength=0,00 active=false"
+M,1772002384043,METRICS,7,81,1.0,328,328,308,8,0,13.965276,4.879433,4.289885,13.965276,0.18757845,5.6069384,77.78531,0.259,0,16512,8320
+S,1772002384138,"risk level=0 score=0,26 state=${risk.state} bits=536887424 reason=QCONSERV DIST_DYN dynDist=true headwayO=1.8 headwayR=1.2"
+S,1772002384139,"best id=7 label=bus score=0.66091967 box=169.1849,246.53778,235.06958,308.76495 distRaw=13.965276 dist=14.590848 relSigned=2.6022844 relApp=2.6022844 riderRaw=19.529999 rider=19.525043 src=GPS conf=0.85 obj=16.92276 ttcH=NaN ttcD=5.6069384 ttc=77.78531"
+S,1772002384682,"perf avgMs pre=0 infer=80 post=1 total=81 mem=19MB/58MB"
+S,1772002384918,"frame proxy=640x480 rot=90 rotFrame=480x640 model=1"
+S,1772002384918,"quality poor=false luma=105,9 grad=5,01"
+1772002384918,TRACK,7,87,0,7,0.841,0.841,0,0,0,0,0,,,,0
+1772002384918,0.259,0,SAFE,536887424,75.423,12.007,0.159,1.000,0,0,0,0.301,2,7,"car",0.664,8320
+S,1772002384997,"counts raw=17 thr=14 nms=2 accepted=2 (roiSoft=17)"
+S,1772002384997,"roi trap n=RoiTrapN(topY=0.32237655, bottomY=0.51289237, topHalfW=0.104074046, bottomHalfW=0.17490739, centerX=0.41166663) boundsPx=[113,206,281,328] raw=17 roiSoft=17"
+S,1772002384997,"brakeCue enabled=1 redRatio=0,000 redEma=0,000 dI=0,000 thr=0,28 dThr=0,03 strength=0,00 active=false"
+M,1772002384918,METRICS,7,91,1.0,328,328,318,8,0,11.198935,4.557476,4.289885,11.198935,0.15919065,4.085609,75.4228,0.259,0,16512,8320
+S,1772002384997,"risk level=0 score=0,26 state=${risk.state} bits=536887424 reason=QCONSERV DIST_DYN dynDist=true headwayO=1.8 headwayR=1.2"
+S,1772002384998,"best id=7 label=car score=0.6642265 box=163.95314,241.09897,243.56596,318.6974 distRaw=11.198935 dist=12.006605 relSigned=2.9387553 relApp=2.9387553 riderRaw=19.55 rider=19.539227 src=GPS conf=0.85 obj=16.600471 ttcH=3.4647672 ttcD=4.085609 ttc=75.4228"
+S,1772002385401,"bottom_occlusion enter"
+S,1772002385481,"perf avgMs pre=0 infer=79 post=1 total=81 mem=18MB/52MB"
+S,1772002385715,"frame proxy=640x480 rot=90 rotFrame=480x640 model=1"
+S,1772002385715,"quality poor=false luma=105,5 grad=5,30"
+S,1772002385793,"counts raw=21 thr=21 nms=1 accepted=1 (roiSoft=21)"
+1772002385715,0.282,0,SAFE,538984576,73.271,5.477,0.075,0.998,0,0,0,0.383,2,7,"bus",0.785,1056896
+S,1772002385793,"roi trap n=RoiTrapN(topY=0.32237655, bottomY=0.51289237, topHalfW=0.104074046, bottomHalfW=0.17490739, centerX=0.41166663) boundsPx=[113,206,281,328] raw=22 roiSoft=21"
+S,1772002385793,"brakeCue enabled=1 redRatio=0,008 redEma=0,005 dI=0,006 thr=0,28 dThr=0,03 strength=0,00 active=false"
+M,1772002385715,METRICS,7,101,1.0,328,328,327,8,1,9.060926,NaN,4.289885,4.289885,0.07475616,0.66273475,73.2709,0.282,0,2113664,1056896
+S,1772002385794,"risk level=0 score=0,28 state=${risk.state} bits=538984576 reason=QCONSERV DIST_DYN OCCL_CONF dynDist=true headwayO=1.8 headwayR=1.2"
+S,1772002385794,"best id=7 label=bus score=0.78451645 box=158.17949,231.56323,257.98947,327.4717 distRaw=9.060926 dist=5.477451 relSigned=8.264922 relApp=8.264922 riderRaw=19.55 rider=19.548843 src=GPS conf=0.85 obj=11.283921 ttcH=3.5526187 ttcD=0.66273475 ttc=73.2709"
+1772002386119,TRACK,7,102,0,7,0.811,0.842,0,0,0,0,1,,,,0
+S,1772002386282,"perf avgMs pre=0 infer=79 post=1 total=81 mem=18MB/52MB"
+S,1772002386522,"frame proxy=640x480 rot=90 rotFrame=480x640 model=1"
+S,1772002386522,"quality poor=false luma=104,7 grad=5,21"
+S,1772002386601,"counts raw=14 thr=13 nms=3 accepted=3 (roiSoft=14)"
+1772002386522,0.278,0,SAFE,538984576,71.092,4.357,0.061,0.946,0,0,0,0.503,2,7,"bus",0.588,1056896
+S,1772002386601,"roi trap n=RoiTrapN(topY=0.32237655, bottomY=0.51289237, topHalfW=0.104074046, bottomHalfW=0.17490739, centerX=0.41166663) boundsPx=[113,206,281,328] raw=27 roiSoft=14"
+S,1772002386602,"brakeCue enabled=1 redRatio=0,030 redEma=0,025 dI=0,008 thr=0,28 dThr=0,03 strength=0,00 active=false"
+M,1772002386522,METRICS,7,111,1.0,328,328,327,8,1,8.531668,NaN,4.289885,4.289885,0.061283417,2.0917995,71.092,0.278,0,2113664,1056896
+S,1772002386602,"risk level=0 score=0,28 state=${risk.state} bits=538984576 reason=QCONSERV DIST_DYN OCCL_CONF dynDist=true headwayO=1.8 headwayR=1.2"
+S,1772002386603,"best id=7 label=bus score=0.5881944 box=143.49655,226.11212,272.91373,327.97025 distRaw=8.531668 dist=4.356761 relSigned=2.0827813 relApp=2.0827813 riderRaw=19.0 rider=19.058933 src=GPS conf=0.85 obj=16.976152 ttcH=NaN ttcD=2.0917995 ttc=71.092"
+S,1772002387093,"perf avgMs pre=0 infer=79 post=1 total=81 mem=18MB/52MB"
+1772002387093,TRACK,7,114,0,16,0.726,0.825,1,0,0,0,1,,,,0
+1772002387172,TRACK,7,115,0,16,0.732,0.823,1,0,0,0,1,,,,0
+1772002387254,TRACK,7,116,0,16,0.738,0.820,1,0,0,0,1,,,,0
+S,1772002387336,"frame proxy=640x480 rot=90 rotFrame=480x640 model=1"
+S,1772002387337,"quality poor=false luma=100,8 grad=4,94"
+1772002387336,TRACK,7,117,0,7,0.689,0.819,0,0,0,0,1,0.000,,,4
+1772002387336,0.274,0,SAFE,538984576,69.550,4.294,0.062,0.898,1,0,0,0.369,2,7,"car",0.547,1056896
+S,1772002387416,"counts raw=18 thr=15 nms=1 accepted=1 (roiSoft=18)"
+S,1772002387416,"roi trap n=RoiTrapN(topY=0.32237655, bottomY=0.51289237, topHalfW=0.104074046, bottomHalfW=0.17490739, centerX=0.41166663) boundsPx=[113,206,281,328] raw=24 roiSoft=18"
+M,1772002387336,METRICS,7,121,1.0,328,328,327,8,1,8.406294,NaN,4.289885,4.289885,0.061734464,Infinity,69.55031,0.274,0,2113664,1056896
+S,1772002387416,"risk level=0 score=0,27 state=${risk.state} bits=538984576 reason=QCONSERV DIST_DYN OCCL_CONF dynDist=true headwayO=1.8 headwayR=1.2"
+S,1772002387417,"best id=7 label=car score=0.5469647 box=142.76155,224.62103,281.16037,327.9983 distRaw=8.406294 dist=4.293651 relSigned=0.15532146 relApp=0.15532146 riderRaw=15.71 rider=16.268297 src=GPS conf=0.85 obj=16.112976 ttcH=NaN ttcD=Infinity ttc=69.55031"
+1772002387736,TRACK,7,122,0,16,0.751,0.827,1,0,0,0,1,,,,0
+S,1772002387898,"perf avgMs pre=0 infer=79 post=1 total=81 mem=17MB/53MB"
+S,1772002387976,"auto_mode effective=${modeName(modeRes.effectiveMode)} reason=${modeRes.reason}"
+S,1772002388135,"frame proxy=640x480 rot=90 rotFrame=480x640 model=1"
+S,1772002388135,"quality poor=false luma=100,2 grad=5,38"
+S,1772002388215,"counts raw=16 thr=13 nms=1 accepted=1 (roiSoft=16)"
+1772002388135,0.252,0,SAFE,536887424,,4.290,0.010,0.970,0,0,0,0.517,1,7,"bus",0.674,8320
+S,1772002388215,"roi trap n=RoiTrapN(topY=0.32237655, bottomY=0.51289237, topHalfW=0.104074046, bottomHalfW=0.17490739, centerX=0.41166663) boundsPx=[113,206,281,328] raw=23 roiSoft=16"
+M,1772002388135,METRICS,7,131,1.0,328,328,327,8,1,8.556466,NaN,4.289885,4.289885,0.010171156,Infinity,Infinity,0.252,0,16512,8320
+S,1772002388215,"risk level=0 score=0,25 state=${risk.state} bits=536887424 reason=QCONSERV DIST_DYN dynDist=true headwayO=1.8 headwayR=1.2"
+S,1772002388216,"best id=7 label=bus score=0.67400235 box=143.14499,226.437,267.80444,327.9999 distRaw=8.556466 dist=4.290097 relSigned=0.010171156 relApp=0.010171156 riderRaw=12.799999 rider=13.622786 src=GPS conf=0.85 obj=13.612615 ttcH=NaN ttcD=Infinity ttc=Infinity"
+1772002388546,TRACK,7,132,0,7,0.872,0.875,0,0,0,0,1,0.000,,,4
+S,1772002388701,"perf avgMs pre=0 infer=79 post=1 total=81 mem=17MB/52MB"
+S,1772002388963,"frame proxy=640x480 rot=90 rotFrame=480x640 model=1"
+S,1772002388963,"quality poor=false luma=105,0 grad=5,63"
+S,1772002389059,"counts raw=11 thr=10 nms=2 accepted=2 (roiSoft=11)"
+S,1772002389059,"roi trap n=RoiTrapN(topY=0.32237655, bottomY=0.51289237, topHalfW=0.104074046, bottomHalfW=0.17490739, centerX=0.41166663) boundsPx=[113,206,281,328] raw=13 roiSoft=11"
+1772002388963,0.256,0,SAFE,536887424,,4.290,0.001,1.000,0,0,0,0.513,1,7,"car",0.483,8320
+M,1772002388963,METRICS,7,141,1.0,328,328,326,8,1,9.252535,NaN,4.289885,4.289885,5.941927E-4,Infinity,Infinity,0.256,0,16512,8320
+S,1772002389059,"risk level=0 score=0,26 state=${risk.state} bits=536887424 reason=QCONSERV DIST_DYN dynDist=true headwayO=1.8 headwayR=1.2"
+S,1772002389059,"best id=7 label=car score=0.48280954 box=148.01599,232.64758,249.18828,326.56992 distRaw=9.252535 dist=4.289897 relSigned=5.941927E-4 relApp=5.941927E-4 riderRaw=11.95 rider=12.473546 src=GPS conf=0.85 obj=12.472952 ttcH=NaN ttcD=Infinity ttc=Infinity"
+1772002389235,TRACK,7,140,0,19,0.862,0.856,1,0,0,0,1,,,,0
+S,1772002389584,"perf avgMs pre=0 infer=79 post=1 total=81 mem=18MB/55MB"
+S,1772002389836,"frame proxy=640x480 rot=90 rotFrame=480x640 model=1"
+S,1772002389836,"quality poor=false luma=107,3 grad=5,22"
+1772002389836,0.258,0,SAFE,536887424,,4.290,0.000,1.000,0,0,0,0.451,1,7,"bus",0.640,8320
+1772002389836,TRACK,7,147,0,7,0.866,0.866,0,0,0,0,1,,,,0
+S,1772002389916,"counts raw=15 thr=13 nms=2 accepted=2 (roiSoft=15)"
+S,1772002389917,"roi trap n=RoiTrapN(topY=0.32237655, bottomY=0.51289237, topHalfW=0.104074046, bottomHalfW=0.17490739, centerX=0.41166663) boundsPx=[113,206,281,328] raw=15 roiSoft=15"
+M,1772002389836,METRICS,7,151,1.0,328,328,318,8,1,11.107311,NaN,4.289885,4.289885,3.27586E-5,Infinity,Infinity,0.258,0,16512,8320
+S,1772002389917,"risk level=0 score=0,26 state=${risk.state} bits=536887424 reason=QCONSERV DIST_DYN dynDist=true headwayO=1.8 headwayR=1.2"
+S,1772002389921,"best id=7 label=bus score=0.63990426 box=157.12498,239.99744,237.60162,318.23596 distRaw=11.107311 dist=4.2898855 relSigned=3.27586E-5 relApp=3.27586E-5 riderRaw=11.44 rider=11.822616 src=GPS conf=0.85 obj=11.822583 ttcH=NaN ttcD=Infinity ttc=Infinity"
+S,1772002390015,"bottom_occlusion exit"
+S,1772002390551,"perf avgMs pre=0 infer=80 post=1 total=82 mem=17MB/52MB"
+S,1772002390796,"ui_log GPS monitor spuštěn"
+S,1772002390798,"frame proxy=640x480 rot=90 rotFrame=480x640 model=1"
+S,1772002390803,"gps_monitor_start"
+S,1772002390798,"quality poor=false luma=104,4 grad=5,09"
+S,1772002390871,"ui_log Metriky: TTC --.- s · Vzdálenost 11,97 m · Rel 0,00 km/h · Objekt autobus · WHY QCONSERV DIST_DYN SUP_RECEDING"
+S,1772002390890,"metrics ttc=--.- s dist=11,97 m rel=0,00 km/h obj=71,30 km/h level=0 brakeCue=false reason=QCONSERV DIST_DYN SUP_RECEDING"
+S,1772002390887,"counts raw=18 thr=17 nms=1 accepted=1 (roiSoft=18)"
+1772002390798,0.051,0,SAFE,537018496,,12.339,0.000,1.000,0,0,0,0.353,1,7,"bus",0.605,73856
+S,1772002390887,"roi trap n=RoiTrapN(topY=0.32237655, bottomY=0.51289237, topHalfW=0.104074046, bottomHalfW=0.17490739, centerX=0.41166663) boundsPx=[113,206,281,328] raw=19 roiSoft=18"
+M,1772002390798,METRICS,7,161,1.0,328,328,307,8,0,13.504136,4.913385,4.289885,13.45921,0.0,Infinity,Infinity,0.051,0,147584,73856
+S,1772002390942,"ui_log Metriky: TTC --.- s · Vzdálenost 12,34 m · Rel 0,00 km/h · Objekt autobus · WHY QCONSERV DIST_DYN SUP_RECEDING"
+S,1772002390887,"risk level=0 score=0,05 state=${risk.state} bits=537018496 reason=QCONSERV DIST_DYN SUP_RECEDING dynDist=true headwayO=1.8 headwayR=1.2"
+S,1772002390947,"metrics ttc=--.- s dist=12,34 m rel=0,00 km/h obj=71,12 km/h level=0 brakeCue=false reason=QCONSERV DIST_DYN SUP_RECEDING"
+S,1772002390888,"best id=7 label=bus score=0.60538864 box=162.42888,243.43616,230.2825,307.78827 distRaw=13.504136 dist=12.33872 relSigned=-8.149642 relApp=0.0 riderRaw=12.07 rider=11.607082 src=GPS conf=0.85 obj=19.756725 ttcH=NaN ttcD=Infinity ttc=Infinity"
+S,1772002391005,"ui_log Metriky: TTC --.- s · Vzdálenost 12,69 m · Rel 0,00 km/h · Objekt autobus · WHY QCONSERV DIST_DYN SUP_RECEDING"
+S,1772002391021,"metrics ttc=--.- s dist=12,69 m rel=0,00 km/h obj=69,97 km/h level=0 brakeCue=false reason=QCONSERV DIST_DYN SUP_RECEDING"
+S,1772002392538,"ui_log GPS monitor zastaven"
+S,1772002392577,"gps_monitor_stop"
