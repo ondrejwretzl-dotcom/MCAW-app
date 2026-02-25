@@ -1,0 +1,54 @@
+:root {
+  color-scheme: dark;
+  font-family: Inter, Arial, sans-serif;
+}
+body {
+  margin: 0;
+  background: #0f1115;
+  color: #f2f4f8;
+}
+.page { padding: 20px; max-width: 1500px; margin: 0 auto; }
+header h1 { margin-bottom: 6px; }
+.card {
+  border: 1px solid #2b3342;
+  background: #171c26;
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 16px;
+}
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.controls input { width: 100%; }
+.chips { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.chip { padding: 5px 8px; border-radius: 999px; font-size: 12px; }
+.chip.ok { background: #123523; color: #93ffbf; }
+.chip.mute { background: #2a2f38; color: #c2c8d0; }
+.chip.err { background: #421919; color: #ffb2b2; }
+.timeline { max-height: 360px; overflow: auto; display: flex; flex-direction: column; gap: 8px; }
+.timelineItem { text-align: left; border: 1px solid #2a3340; background: #121822; color: inherit; border-radius: 8px; padding: 10px; cursor: pointer; }
+.timelineItem small { display: block; color: #c0c8d2; margin-top: 4px; }
+.timelineItem.critical { border-left: 4px solid #ff5454; }
+.timelineItem.watch { border-left: 4px solid #ffa749; }
+.timelineItem.info { border-left: 4px solid #53b6ff; }
+.timelineItem.active { outline: 2px solid #6cc3ff; }
+.chart { width: 100%; height: 120px; background: #0f1420; border-radius: 8px; margin-bottom: 12px; }
+.riskPath { fill: none; stroke: #78d0ff; stroke-width: 1.4; }
+.line { stroke: #394354; stroke-width: 0.6; }
+.line.warn { stroke: #ffad55; }
+.line.red { stroke: #ff5858; }
+.filterRow { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
+.filterRow select { background: #0f1420; color: white; border: 1px solid #334154; border-radius: 8px; padding: 4px 8px; }
+.details ul { margin-top: 6px; }
+.details pre { max-height: 180px; overflow: auto; background: #0c1018; padding: 8px; border-radius: 8px; }
+.tableWrap { max-height: 340px; overflow: auto; border: 1px solid #2c3847; border-radius: 8px; }
+table { width: 100%; border-collapse: collapse; }
+thead th {
+  position: sticky;
+  top: 0;
+  background: #101723;
+  z-index: 2;
+}
+th, td { border-bottom: 1px solid #293444; padding: 8px; font-size: 13px; }
+tbody tr:hover { background: #202b3a; cursor: pointer; }
+tr.selected { background: #28364a; }
+.empty { color: #c2c8d2; padding: 12px; background: #0f1420; border-radius: 8px; }
+@media (max-width: 1000px) { .grid { grid-template-columns: 1fr; } }
