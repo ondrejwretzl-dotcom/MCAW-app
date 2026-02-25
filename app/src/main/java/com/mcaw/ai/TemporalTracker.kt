@@ -275,10 +275,13 @@ class TemporalTracker(
 
         val lockedScore = trackScore(locked)
         val bestScore = trackScore(bestVisible)
+        // Age hysteresis should suppress micro-flips, but still allow legitimate switches
+        // near the detector ceiling (scores are clamped to [0..1]).
         val extra = (lockedAgeFrames.coerceIn(0, 20) * 0.003f)
+        val effectiveExtra = extra * (1f - lockedScore)
         val canSwitch =
             lockedAgeFrames >= minLockAgeFramesBeforeSwitch &&
-                bestScore >= (lockedScore + switchMargin + extra) &&
+                bestScore >= (lockedScore + switchMargin + effectiveExtra) &&
                 !graceActive(lockedMissFrames, tsMs)
 
         if (!canSwitch) {
