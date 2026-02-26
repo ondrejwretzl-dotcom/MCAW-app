@@ -38,6 +38,11 @@ object LogContract {
     const val COL_LOCKED_ID = "locked_id"    // actual target trackId used for risk computation
 
     const val COL_TRACKER_LOCKED_ID = "tracker_locked_id" // tracker internal lock for switch diagnostics
+    const val COL_RIDER_SPEED_MPS = "rider_speed_mps"
+    const val COL_RIDER_SPEED_CONF = "rider_speed_conf"
+    const val COL_RIDER_SPEED_SRC = "rider_speed_src"
+    const val COL_RIDER_SPEED_AGE_MS = "rider_speed_age_ms"
+    const val COL_RIDER_SPEED_METHOD = "rider_speed_method"
 
     // Optional but very useful for audit & sync with video: what object was actually used for risk.
     // Kept at the end to keep backward CSV compatibility for existing parsers.
@@ -69,7 +74,12 @@ object LogContract {
         append(COL_LABEL).append(',')
         append(COL_DET_SCORE).append(',')
         append(COL_REASON_ID).append(',')
-        append(COL_TRACKER_LOCKED_ID)
+        append(COL_TRACKER_LOCKED_ID).append(',')
+        append(COL_RIDER_SPEED_MPS).append(',')
+        append(COL_RIDER_SPEED_CONF).append(',')
+        append(COL_RIDER_SPEED_SRC).append(',')
+        append(COL_RIDER_SPEED_AGE_MS).append(',')
+        append(COL_RIDER_SPEED_METHOD)
         append('\n')
     }
 
@@ -101,7 +111,12 @@ object LogContract {
         label: String,
         detScore: Float,
         reasonId: Int,
-        trackerLockedId: Long
+        trackerLockedId: Long,
+        riderSpeedMps: Float,
+        riderSpeedConf: Float,
+        riderSpeedSrc: Int,
+        riderSpeedAgeMs: Long,
+        riderSpeedMethod: Int
     ) {
         sb.append(tsMs).append(',')
         appendFloat(sb, risk, 3); sb.append(',')
@@ -124,7 +139,12 @@ object LogContract {
         appendCsvString(sb, label); sb.append(',')
         appendFloat(sb, detScore, 3); sb.append(',')
         sb.append(reasonId).append(',')
-        sb.append(trackerLockedId)
+        sb.append(trackerLockedId).append(',')
+        appendFloat(sb, riderSpeedMps, 3); sb.append(',')
+        appendFloat(sb, riderSpeedConf, 3); sb.append(',')
+        sb.append(riderSpeedSrc).append(',')
+        sb.append(riderSpeedAgeMs).append(',')
+        sb.append(riderSpeedMethod)
 
         sb.append('\n')
     }
