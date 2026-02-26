@@ -58,10 +58,9 @@ class PreviewActivity : ComponentActivity() {
     private lateinit var speedProvider: SpeedProvider
     private lateinit var speedMonitor: SpeedMonitor
 
-    private lateinit var txtDetectionLabel: TextView
-    private lateinit var txtPreviewStatus: TextView
-    private lateinit var txtActiveProfile: TextView
-    private lateinit var txtCalibrationHealth: TextView
+    private lateinit var txtHudPrimary: TextView
+    private lateinit var txtHudMetrics: TextView
+    private lateinit var txtHudRisk: TextView
 
     private val searchHandler = Handler(Looper.getMainLooper())
     private var searching = true
@@ -161,8 +160,18 @@ class PreviewActivity : ComponentActivity() {
             overlay.targetDetScore = targetDetScore
             overlay.label = targetGroupLabel
 
-            val mapped = LabelMapper.mapLabel(targetGroupLabel)
-            txtDetectionLabel.text = "Detekce: $mapped"
+            val mapped = if (AppPreferences.debugOverlay) LabelMapper.mapLabel(targetGroupLabel) else "Vehicle"
+            val cal = CalibrationHealth.evaluate().state.name
+            txtHudPrimary.text = "Stav: ${if (searching) "Hledám" else "Sledování"} · Kalibrace: $cal · Detekce: $mapped"
+            if (AppPreferences.debugOverlay) {
+                txtHudMetrics.visibility = View.VISIBLE
+                txtHudMetrics.text = "ID=$targetTrackId raw=${targetRawLabel ?: "-"} map=$targetGroupLabel\nDist=${overlay.distance} REL=${overlay.speed} TTC=${overlay.ttc} deriv=${overlay.relDerivValid}"
+            } else {
+                txtHudMetrics.visibility = View.GONE
+                txtHudMetrics.text = ""
+            }
+            val riskText = if (overlay.riskScore.isFinite()) String.format("Risk: %.2f L%d · %s", overlay.riskScore, overlay.alertLevel, overlay.alertReason) else "Risk: --"
+            txtHudRisk.text = riskText
             logActivity("detection_found group=$targetGroupLabel raw=${targetRawLabel ?: ""} id=$targetTrackId")
         }
     }
@@ -184,10 +193,9 @@ class PreviewActivity : ComponentActivity() {
         overlay = findViewById(R.id.overlay)
 
         val txtPreviewBuild = findViewById<TextView>(R.id.txtPreviewBuild)
-        txtDetectionLabel = findViewById(R.id.txtDetectionLabel)
-        txtPreviewStatus = findViewById(R.id.txtPreviewStatus)
-        txtActiveProfile = findViewById(R.id.txtActiveProfile)
-        txtCalibrationHealth = findViewById(R.id.txtCalibrationHealth)
+        txtHudPrimary = findViewById(R.id.txtHudPrimary)
+        txtHudMetrics = findViewById(R.id.txtHudMetrics)
+        txtHudRisk = findViewById(R.id.txtHudRisk)
 
         speedProvider = SpeedProvider(this)
         speedMonitor = SpeedMonitor(speedProvider)
@@ -241,7 +249,7 @@ class PreviewActivity : ComponentActivity() {
         val eff = runCatching { EfficientDetTFLiteDetector(this, "efficientdet_lite0.tflite") }.getOrNull()
 
         if (yolo == null && eff == null) {
-            txtDetectionLabel.text = "Detekce: nelze načíst modely"
+            txtHudPrimary.text = "Stav: nelze načíst modely"
             logActivity("models_failed")
         } else {
             logActivity("models_loaded yolo=${yolo != null} efficient=${eff != null}")
@@ -375,23 +383,19 @@ class PreviewActivity : ComponentActivity() {
     private fun updateCalibrationHealthUi() {
         val h = CalibrationHealth.evaluate()
         if (h.bannerText.isBlank()) {
-            txtCalibrationHealth.visibility = View.GONE
-            txtCalibrationHealth.text = ""
-        } else {
-            txtCalibrationHealth.visibility = View.VISIBLE
-            txtCalibrationHealth.text = h.bannerText
+            // calibration status now shown in unified HUD primary line
         }
     }
 
     private fun updateSearchingLabel() {
         if (!searching) {
-            txtPreviewStatus.text = "Živý náhled aktivní"
+            txtHudPrimary.text = "Živý náhled aktivní"
             stopSearching()
             return
         }
         searchDots = (searchDots + 1) % 4
         val dots = ".".repeat(searchDots)
-        txtPreviewStatus.text = "Hledám objekt$dots"
+        txtHudPrimary.text = "Hledám objekt$dots"
         searchHandler.postDelayed({ updateSearchingLabel() }, 500L)
     }
 
@@ -406,7 +410,7 @@ class PreviewActivity : ComponentActivity() {
         } else {
             ProfileManager.findById(id)?.name ?: "?"
         }
-        txtActiveProfile.text = "Profil: $name"
+        txtHudPrimary.text = "Profil: $name"
     }
 
     private fun logActivity(msg: String) {
