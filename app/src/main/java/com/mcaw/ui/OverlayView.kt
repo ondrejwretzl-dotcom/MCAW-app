@@ -453,7 +453,6 @@ class OverlayView @JvmOverloads constructor(
             if (brakeCueActive) drawBrakeCue(canvas, mappedBox)
         }
 
-        drawTargetHud(canvas)
 
         if (roiEditMode) {
             drawEditHint(canvas)
@@ -462,41 +461,8 @@ class OverlayView @JvmOverloads constructor(
     }
 
     private fun drawTargetHud(canvas: Canvas) {
-        val group = if (targetPresent) mapGroup(targetGroupLabel) else "Unknown"
-        val rows = ArrayList<String>(10)
-        rows.add("TARGET $group")
-        if (targetPresent) {
-            if (showTelemetry && targetRawLabel?.isNotBlank() == true) rows.add("RAW  ${targetRawLabel}")
-            rows.add("ID   $targetTrackId")
-            if (ttc.isFinite() && ttc >= 0f) rows.add("TTC  %.2f s".format(ttc)) else rows.add("TTC  —")
-            if (relDerivValid && speed.isFinite() && speed >= 0f) rows.add("REL  %.1f km/h".format(speed * 3.6f)) else rows.add("REL  —")
-            if (distance.isFinite() && distance >= 0f) rows.add("DIST %.2f m".format(distance)) else rows.add("DIST —")
-            if (riskScore.isFinite()) rows.add("RISK %.2f".format(riskScore)) else rows.add("RISK —")
-            rows.add("LVL  $alertLevel")
-            if (targetDetScore.isFinite()) rows.add("DET  %.2f".format(targetDetScore))
-        } else {
-            rows.add("NO TARGET")
-        }
-
-        val fm = textPaint.fontMetrics
-        val lineH = fm.bottom - fm.top
-        val padding = 10f
-        var textW = 0f
-        for (ln in rows) textW = max(textW, textPaint.measureText(ln))
-        val panelW = min(textW + padding * 2f, width * 0.25f)
-        val panelH = lineH * rows.size + padding * 2f
-        val top = if (alertLevel > 0) 130f else 16f
-        val left = 12f
-        val rect = RectF(left, top, left + panelW, top + panelH)
-        canvas.drawRoundRect(rect, 10f, 10f, textBgPaint)
-
-        var y = rect.top + padding - fm.top
-        for (ln in rows) {
-            canvas.drawText(ln, rect.left + padding, y, textPaint)
-            y += lineH
-        }
+        // HUD text moved to top bar in PreviewActivity.
     }
-
 
     private fun drawEditHint(canvas: Canvas) {
         val msg = "EDIT ROI: táhni hrany / rohy / uvnitř přesun"

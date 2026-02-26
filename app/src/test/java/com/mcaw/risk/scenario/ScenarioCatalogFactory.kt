@@ -19,6 +19,8 @@ object ScenarioCatalogFactory {
 
         list += cityParkedPassBy()
         list += cityJamApproach()
+        list += v1WhiteVanBottomOcclusionContinuity()
+        list += v2FollowNoFlap()
         list += tunnelExposureDrop()
         list += highwaySteadyFollowing()
         list += highwaySuddenBrake()
@@ -570,6 +572,107 @@ object ScenarioCatalogFactory {
                     ttcSlopeSecPerSec = { _ -> -0.8f },
                     riderSpeedConfidence = { t -> if (t < hazard + 0.7f) 0.35f else 0.10f },
                     riderAccelMps2 = { _ -> -0.3f }
+                )
+            )
+        )
+    }
+
+    private fun v1WhiteVanBottomOcclusionContinuity(): Scenario {
+        val hazard = 4.0f
+        return Scenario(
+            id = "R1_V1_WHITE_VAN_BOTTOM_OCCLUSION",
+            title = "Regrese: V1 bílá dodávka u ROI-bottom musí držet ORANGE/RED kontinuitu",
+            domain = Domain.CITY,
+            vehicle = Vehicle.CAR,
+            notes = """
+                Anti-regression scénář pro problém "zaseknutí" distance/REL/TTC při přiblížení k ROI bottom.
+                TTC je v hazard fázi částečně invalidní (simulace okluze), ale přibližování zůstává vysoké.
+
+                Očekávání: RiskEngine musí i přes invalid TTC vstoupit do ORANGE a následně RED
+                bez výrazného flappingu.
+            """.trimIndent(),
+            config = ScenarioConfig(
+                effectiveMode = 1,
+                hz = 10,
+                riderSpeedMps = 13.5f,
+                riderSpeedConfidence = 0.92f,
+                qualityWeight = 0.92f,
+                roiContainment = 0.95f,
+                egoOffsetN = 0.22f
+            ),
+            expectations = listOf(
+                Expectation.MustEnterLevelBy(level = 1, latestSecAfterHazard = 1.2f, hazardTimeSec = hazard, message = "Při přiblížení dodávky musí přijít ORANGE i při částečně invalid TTC."),
+                Expectation.MustEnterLevelBy(level = 2, latestSecAfterHazard = 2.6f, hazardTimeSec = hazard, message = "Kritické přibližování má vést na RED."),
+                Expectation.MaxTransitionsInWindow(maxTransitions = 4, windowSec = 5f, message = "ROI-bottom okluze nesmí způsobit flapping alertů.")
+            ),
+            segments = listOf(
+                Segment(
+                    tFromSec = 0f,
+                    tToSec = hazard,
+                    label = "stable follow",
+                    distanceM = { _ -> 33f },
+                    approachSpeedMps = { _ -> 1.2f },
+                    ttcSec = { _ -> 9.5f }
+                ),
+                Segment(
+                    tFromSec = hazard,
+                    tToSec = 10f,
+                    label = "bottom-occluded closing",
+                    distanceM = { t -> max(4.8f, 33f - (t - hazard) * 6.3f) },
+                    approachSpeedMps = { t -> minOf(8.6f, 6.2f + (t - hazard) * 0.5f) },
+                    // Simulace ztráty spolehlivého TTC poblíž ROI-bottom; rozhodování musí držet dist+rel.
+                    ttcSec = { t -> if (t < hazard + 1.0f) 3.8f else Float.NaN },
+                    ttcSlopeSecPerSec = { _ -> -1.2f },
+                    roiContainment = { _ -> 0.98f },
+                    egoOffsetN = { _ -> 0.20f }
+                )
+            )
+        )
+    }
+
+    private fun v2FollowNoFlap(): Scenario {
+        val hazard = 3.5f
+        return Scenario(
+            id = "R2_V2_FOLLOW_STABLE_ORANGE",
+            title = "Regrese: V2 follow musí vstoupit do ORANGE bez flappingu",
+            domain = Domain.HIGHWAY,
+            vehicle = Vehicle.CAR,
+            notes = """
+                Následování pomalejšího vozidla se středním až vyšším přibližováním,
+                kde očekáváme včasný ORANGE bez přeskakování mezi levely.
+            """.trimIndent(),
+            config = ScenarioConfig(
+                effectiveMode = 1,
+                hz = 10,
+                riderSpeedMps = 15f,
+                riderSpeedConfidence = 0.90f,
+                qualityWeight = 0.95f,
+                roiContainment = 0.90f,
+                egoOffsetN = 0.25f
+            ),
+            expectations = listOf(
+                Expectation.MustEnterLevelBy(level = 1, latestSecAfterHazard = 1.6f, hazardTimeSec = hazard, message = "Follow scénář musí včas vstoupit do ORANGE."),
+                Expectation.MaxTransitionsInWindow(maxTransitions = 3, windowSec = 6f, message = "Follow scénář musí být stabilní bez flappingu.")
+            ),
+            segments = listOf(
+                Segment(
+                    tFromSec = 0f,
+                    tToSec = hazard,
+                    label = "safe follow",
+                    distanceM = { _ -> 42f },
+                    approachSpeedMps = { _ -> 1.0f },
+                    ttcSec = { _ -> 12f }
+                ),
+                Segment(
+                    tFromSec = hazard,
+                    tToSec = 10f,
+                    label = "controlled close-in",
+                    distanceM = { t -> max(9.5f, 42f - (t - hazard) * 4.9f) },
+                    approachSpeedMps = { _ -> 5.0f },
+                    ttcSec = { t -> max(2.1f, 7.0f - (t - hazard) * 0.65f) },
+                    ttcSlopeSecPerSec = { _ -> -0.9f },
+                    roiContainment = { _ -> 0.92f },
+                    egoOffsetN = { _ -> 0.24f }
                 )
             )
         )

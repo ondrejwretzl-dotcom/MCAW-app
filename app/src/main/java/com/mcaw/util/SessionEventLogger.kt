@@ -40,6 +40,11 @@ class SessionEventLogger(
         var trackerLockedId: Long = -1L
         var label: String = ""
         var detScore: Float = Float.NaN
+        var riderSpeedMps: Float = Float.NaN
+        var riderSpeedConfidence: Float = 0f
+        var riderSpeedSourceOrdinal: Int = 0
+        var riderSpeedAgeMs: Long = 0L
+        var riderSpeedMethod: Int = 0
     }
 
     @Volatile
@@ -105,7 +110,12 @@ class SessionEventLogger(
         lockedId: Long,
         trackerLockedId: Long,
         label: String,
-        detScore: Float
+        detScore: Float,
+        riderSpeedMps: Float,
+        riderSpeedConfidence: Float,
+        riderSpeedSourceOrdinal: Int,
+        riderSpeedAgeMs: Long,
+        riderSpeedMethod: Int
     ) {
         if (!started) return
 
@@ -132,6 +142,11 @@ class SessionEventLogger(
         ev.trackerLockedId = trackerLockedId
         ev.label = label
         ev.detScore = detScore
+        ev.riderSpeedMps = riderSpeedMps
+        ev.riderSpeedConfidence = riderSpeedConfidence
+        ev.riderSpeedSourceOrdinal = riderSpeedSourceOrdinal
+        ev.riderSpeedAgeMs = riderSpeedAgeMs
+        ev.riderSpeedMethod = riderSpeedMethod
 
         val shouldPostDrain: Boolean = synchronized(lock) {
             val wasEmpty = queue.isEmpty()
@@ -172,7 +187,12 @@ class SessionEventLogger(
                 label = ev.label,
                 detScore = ev.detScore,
                 reasonId = RiskEngine.reasonId(ev.reasonBits),
-                trackerLockedId = ev.trackerLockedId
+                trackerLockedId = ev.trackerLockedId,
+                riderSpeedMps = ev.riderSpeedMps,
+                riderSpeedConf = ev.riderSpeedConfidence,
+                riderSpeedSrc = ev.riderSpeedSourceOrdinal,
+                riderSpeedAgeMs = ev.riderSpeedAgeMs,
+                riderSpeedMethod = ev.riderSpeedMethod
             )
             PublicLogWriter.appendLogLine(context, fileName, sb.toString().trimEnd())
 

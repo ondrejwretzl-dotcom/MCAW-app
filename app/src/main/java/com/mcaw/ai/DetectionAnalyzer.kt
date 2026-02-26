@@ -43,6 +43,7 @@ class DetectionAnalyzer(
         const val EXTRA_RIDER_SPEED = "extra_rider_speed" // RID speed (m/s)
         const val EXTRA_RIDER_SPEED_SOURCE = "extra_rider_speed_source" // ordinal of SpeedProvider.Source
         const val EXTRA_RIDER_SPEED_CONFIDENCE = "extra_rider_speed_confidence" // 0..1
+        const val EXTRA_RIDER_SPEED_METHOD = "extra_rider_speed_method"
         const val EXTRA_LEVEL = "extra_level"
         const val EXTRA_LABEL = "extra_label"
         const val EXTRA_BRAKE_CUE = "extra_brake_cue"
@@ -51,8 +52,6 @@ class DetectionAnalyzer(
         const val EXTRA_RISK_SCORE = "extra_risk_score"
         const val EXTRA_REL_DERIV_VALID = "extra_rel_deriv_valid"
         const val EXTRA_REL_INVALID_REASON_MASK = "extra_rel_invalid_reason_mask"
-        const val REL_MAX_RATE_MPS = 6.0f
-        const val DIST_JUMP_GUARD_M = 2.0f
         const val K_INVALID_DERIV_FRAMES = 4
         const val INVALID_ID_SWITCH = 1 shl 0
         const val INVALID_TRACK_LOST = 1 shl 1
@@ -60,6 +59,15 @@ class DetectionAnalyzer(
         const val INVALID_OCCL_CHANGE = 1 shl 3
         const val INVALID_DIST_GLITCH = 1 shl 4
         const val INVALID_SPEED_SOURCE_RESET = 1 shl 5
+        const val DIST_CLAMPED_BY_GUARD = 1 shl 6
+        const val OCCL_EXTRAP_ACTIVE = 1 shl 7
+        const val OCCL_FALLBACK_HOLD = 1 shl 8
+
+        const val RIDER_SPEED_METHOD_UNKNOWN = 0
+        const val RIDER_SPEED_METHOD_PROVIDER_DIRECT = 1
+        const val RIDER_SPEED_METHOD_HOLD_LAST_PROVIDER = 2
+        const val RIDER_SPEED_METHOD_IMU_DECEL_FALLBACK = 3
+        const val RIDER_SPEED_METHOD_OTHER_SENSOR = 4
     }
 
     private val analyzerLogFileName: String = SessionLogFile.fileName
@@ -225,6 +233,12 @@ class DetectionAnalyzer(
     private var distEmaValid: Boolean = false
     private var bottomOcclusionCounter: Int = 0
     private var bottomOccludedStable: Boolean = false
+    private var lastReliableDistM: Float = Float.NaN
+    private var lastReliableRelMps: Float = Float.NaN
+    private var lastReliableTsMs: Long = 0L
+    private var lastReliableLockedId: Long = -1L
+    private var bottomOcclActive: Boolean = false
+    private var bottomOcclStartTsMs: Long = 0L
     private var lastDistanceInputM: Float = Float.NaN
     private var lastDistanceInputTsMs: Long = -1L
 
@@ -379,6 +393,7 @@ private fun updateCutInState(tsMs: Long, box: Box, frameW: Float, frameH: Float)
 
             // Hard cut: ignore everything below ROI bottom edge (hood/dashboard).
             // IMPORTANT: Do NOT hard-gate left/right/top – detection may run outside ROI above the bottom edge.
+            // Anti-regression: inference crop only, not physics gate (distance/REL/TTC must continue through bottom occlusion).
             val roiBottomPx = roiTrap.bounds.bottom.toInt().coerceIn(1, frameH.toInt())
             val roiRect = android.graphics.Rect(
                 0,
@@ -415,10 +430,14 @@ private fun updateCutInState(tsMs: Long, box: Box, frameW: Float, frameH: Float)
                 0f
             }
             var riderSpeedAgeMs = if (speedReading.timestampMs > 0L) (nowEl - speedReading.timestampMs).coerceAtLeast(0L) else 0L
+            var riderSpeedMethod = RIDER_SPEED_METHOD_UNKNOWN
 
             val riderSpeedRawMps = run {
                 val v = speedReading.speedMps
-                if (v.isFinite() && v >= 0f) return@run v
+                if (v.isFinite() && v >= 0f) {
+                    riderSpeedMethod = if (riderSpeedSourceOrdinal == SpeedProvider.Source.SENSOR.ordinal) RIDER_SPEED_METHOD_OTHER_SENSOR else if (riderSpeedAgeMs <= 600L) RIDER_SPEED_METHOD_PROVIDER_DIRECT else RIDER_SPEED_METHOD_HOLD_LAST_PROVIDER
+                    return@run v
+                }
 
                 // Fallback: if we had a recent speed, keep it and apply only braking-based decel.
                 val lastV = AppPreferences.lastSpeedMps
@@ -438,10 +457,12 @@ private fun updateCutInState(tsMs: Long, box: Box, frameW: Float, frameH: Float)
                         val imuK = (0.15f + 0.35f * imu.brakeConfidence.coerceIn(0f, 1f)).coerceIn(0f, 0.50f)
                         riderSpeedConfidence = (imuK * ageK).coerceIn(0f, 0.50f)
                         riderSpeedAgeMs = ageMs.coerceAtLeast(0L)
+                        riderSpeedMethod = RIDER_SPEED_METHOD_IMU_DECEL_FALLBACK
                         return@run (lastV - decel * dtSec).coerceAtLeast(0f)
                     }
                 }
 
+                riderSpeedMethod = RIDER_SPEED_METHOD_UNKNOWN
                 Float.NaN
             }
 
@@ -585,7 +606,16 @@ if (AppPreferences.debugOverlay) {
             val prevOccludedStable = bottomOccludedStable
             val bottomOccluded = updateBottomOcclusionState(bottomOccludedRaw)
             if (prevOccludedStable != bottomOccluded) {
-                triggerDerivativeInvalid(INVALID_OCCL_CHANGE, resetAdjacent = false)
+                // Anti-regression: occlusion change alone must not invalidate REL derivative.
+                relInvalidReasonMask = relInvalidReasonMask or INVALID_OCCL_CHANGE
+                if (bottomOccluded && !bottomOcclActive) {
+                    bottomOcclActive = true
+                    bottomOcclStartTsMs = tsMs
+                }
+                if (!bottomOccluded) {
+                    bottomOcclActive = false
+                    bottomOcclStartTsMs = 0L
+                }
             }
 
             // Distance estimation: blend bbox-height monocular + ground-plane (height + pitch) for robustness.
@@ -630,12 +660,31 @@ if (AppPreferences.debugOverlay) {
                 if (distanceRaw != null && distanceRaw.isFinite()) distanceRaw * AppPreferences.distanceScale else distanceRaw
             val distanceCandidate = distanceScaled?.takeIf { it.isFinite() }
 
-            val distanceInputRaw = if (bottomOccluded) {
-                DetectionPhysics.minFinite(distanceCandidate, distCropBound) ?: if (distEmaValid && distEma.isFinite()) distEma else Float.NaN
-            } else {
+            var distanceInputRaw = if (!bottomOccluded) {
+                bottomOcclActive = false
                 distanceCandidate ?: Float.NaN
+            } else {
+                if (!bottomOcclActive) {
+                    bottomOcclActive = true
+                    bottomOcclStartTsMs = tsMs
+                }
+                val dtOccMs = (tsMs - bottomOcclStartTsMs).coerceAtLeast(0L)
+                val dtRelMs = (tsMs - lastReliableTsMs).coerceAtLeast(0L)
+                // Anti-regression: do not clamp to distCropBound while bottom-occluded.
+                if (dtOccMs <= 800L && lastReliableRelMps.isFinite() && lastReliableDistM.isFinite() && bestTrack.id == lastReliableLockedId && lastReliableTsMs > 0L) {
+                    relInvalidReasonMask = relInvalidReasonMask or OCCL_EXTRAP_ACTIVE
+                    val pred = lastReliableDistM - lastReliableRelMps * (dtRelMs.toFloat() / 1000f)
+                    pred.coerceIn(1.0f, lastReliableDistM)
+                } else {
+                    relInvalidReasonMask = relInvalidReasonMask or OCCL_FALLBACK_HOLD
+                    val holdBase = if (lastDistanceInputM.isFinite()) lastDistanceInputM else (distanceCandidate ?: lastReliableDistM)
+                    if (holdBase.isFinite()) {
+                        val dtSec = (((tsMs - lastDistanceInputTsMs).toFloat() / 1000f)).coerceIn(0.01f, 0.5f)
+                        (holdBase - 1.0f * dtSec).coerceAtLeast(1.0f)
+                    } else Float.NaN
+                }
             }
-            val distanceInput = stabilizeDistanceInput(distanceInputRaw, tsMs)
+            val distanceInput = stabilizeDistanceInput(distanceInputRaw, tsMs, riderSpeedMps)
             val distanceM = smoothDistance(distanceInput)
 
             val riderSpeedKnown = riderSpeedMps.isFinite()
@@ -671,6 +720,14 @@ if (AppPreferences.debugOverlay) {
             }
 
             val relSpeedSigned = relSignedEmaMps
+
+            val reliableApproach = relSpeedSigned.coerceAtLeast(0f)
+            if (bestTrack.id == lastBestId && relDerivValid && distanceM.isFinite() && reliableApproach.isFinite() && reliableApproach in 0f..80f) {
+                lastReliableDistM = distanceM
+                lastReliableRelMps = reliableApproach
+                lastReliableTsMs = tsMs
+                lastReliableLockedId = bestTrack.id
+            }
 
             // Brake cue (beta): jen pokud je zapnuté a jezdec jede
             val brakeCue = if (AppPreferences.brakeCueEnabled) {
@@ -861,7 +918,7 @@ if (AppPreferences.debugOverlay) {
             if (AppPreferences.debugOverlay && (frameIndex % logEveryNFrames == 0L)) {
                 val payload = RiskEngine.stripReasonVersion(risk.reasonBits)
                 traceLogger?.logLine(
-                    "M,$tsMs,METRICS,${bestTrack.id},${bestTrack.consecutiveDetections},$zoomFactor,${cropBottomPx.toInt()},${roiBottomPxF.toInt()},${bestBox.y2.toInt()},${bottomOcclEpsPx.toInt()},${if (bottomOccluded) 1 else 0},${if (idSwitchedThisFrame) 1 else 0},${if (relDerivValid) 1 else 0},$relInvalidReasonMask,${distFromHeight ?: Float.NaN},${distFromGround ?: Float.NaN},${distCropBound ?: Float.NaN},${distanceInputRaw},$distanceInput,$distanceM,$relSignedEmaMps,$approachSpeedMps,$ttcFromDist,$ttc,${String.format(java.util.Locale.US, "%.3f", risk.riskScore)},${risk.level},$payload,${RiskEngine.reasonId(risk.reasonBits)}"
+                    "M,$tsMs,METRICS,${bestTrack.id},${bestTrack.consecutiveDetections},$zoomFactor,${cropBottomPx.toInt()},${roiBottomPxF.toInt()},${bestBox.y2.toInt()},${bottomOcclEpsPx.toInt()},${if (bottomOccluded) 1 else 0},${if (idSwitchedThisFrame) 1 else 0},${if (relDerivValid) 1 else 0},$relInvalidReasonMask,${distFromHeight ?: Float.NaN},${distFromGround ?: Float.NaN},${distCropBound ?: Float.NaN},${distanceInputRaw},$distanceInput,$distanceM,$relSignedEmaMps,$approachSpeedMps,$ttcFromDist,$ttc,${String.format(java.util.Locale.US, "%.3f", risk.riskScore)},${risk.level},$payload,${RiskEngine.reasonId(risk.reasonBits)},$riderSpeedRawMps,$riderSpeedMps,$riderSpeedConfidence,$riderSpeedSourceOrdinal,$riderSpeedAgeMs,$riderSpeedMethod"
                 )
             }
 
@@ -900,7 +957,12 @@ if (level != prevLevel || frameIndex % eventEveryNFrames == 0L) {
         lockedId = targetIdUsed,
         trackerLockedId = trackerLockedId,
         label = label,
-        detScore = best0.score
+        detScore = best0.score,
+        riderSpeedMps = riderSpeedMps,
+        riderSpeedConfidence = riderSpeedConfidence,
+        riderSpeedSourceOrdinal = riderSpeedSourceOrdinal,
+        riderSpeedAgeMs = riderSpeedAgeMs,
+        riderSpeedMethod = riderSpeedMethod
     )
 }
 
@@ -922,6 +984,7 @@ sendOverlayUpdate(
                 riderSpeedSourceOrdinal = riderSpeedSourceOrdinal,
                 riderSpeedConfidence = riderSpeedConfidence,
                 riderSpeedAgeMs = riderSpeedAgeMs,
+                riderSpeedMethod = riderSpeedMethod,
                 ttc = ttc,
                 label = label,
                 targetPresent = true,
@@ -962,6 +1025,7 @@ sendOverlayUpdate(
                 riderSpeed = riderSpeedMps,
                 riderSpeedSourceOrdinal = riderSpeedSourceOrdinal,
                 riderSpeedConfidence = riderSpeedConfidence,
+                riderSpeedMethod = riderSpeedMethod,
                 ttc = ttc,
                 level = level,
                 label = label,
@@ -1044,24 +1108,29 @@ if (AppPreferences.debugOverlay) {
         return bottomOccludedStable
     }
 
-    private fun stabilizeDistanceInput(distanceM: Float, tsMs: Long): Float {
+    private fun stabilizeDistanceInput(distanceM: Float, tsMs: Long, riderSpeedMps: Float): Float {
         if (!distanceM.isFinite()) return distanceM
         val prev = lastDistanceInputM
         val prevTs = lastDistanceInputTsMs
-
-        if (prev.isFinite() && kotlin.math.abs(distanceM - prev) > DIST_JUMP_GUARD_M) {
-            triggerDerivativeInvalid(INVALID_DIST_GLITCH, resetAdjacent = false)
-            lastDistanceInputM = prev
-            lastDistanceInputTsMs = tsMs
-            return prev
-        }
 
         val out = if (!prev.isFinite() || prevTs <= 0L) {
             distanceM
         } else {
             val dtSec = (((tsMs - prevTs).toFloat() / 1000f)).coerceIn(0.01f, 0.5f)
-            val maxDelta = REL_MAX_RATE_MPS * dtSec
-            distanceM.coerceIn(prev - maxDelta, prev + maxDelta)
+            val maxRate = if (riderSpeedMps.isFinite()) max(18f, riderSpeedMps * 0.8f + 4f) else 18f
+            val jumpGuard = max(2.0f, maxRate * dtSec * 2.0f)
+            val delta = distanceM - prev
+            var soft = distanceM
+            if (abs(delta) > jumpGuard) {
+                relInvalidReasonMask = relInvalidReasonMask or DIST_CLAMPED_BY_GUARD
+                soft = prev + kotlin.math.sign(delta) * jumpGuard
+                if (abs(delta) > jumpGuard * 3f) {
+                    triggerDerivativeInvalid(INVALID_DIST_GLITCH, resetAdjacent = false)
+                }
+            }
+            // Anti-regression: no freeze on jump; soft clamp only.
+            val maxDelta = maxRate * dtSec
+            soft.coerceIn(prev - maxDelta, prev + maxDelta)
         }
 
         lastDistanceInputM = out
@@ -1131,6 +1200,7 @@ if (AppPreferences.debugOverlay) {
         riderSpeedSourceOrdinal: Int = 0,
         riderSpeedConfidence: Float = 0f,
         riderSpeedAgeMs: Long = 0L,
+        riderSpeedMethod: Int = RIDER_SPEED_METHOD_UNKNOWN,
         ttc: Float,
         label: String,
         targetPresent: Boolean,
@@ -1173,6 +1243,7 @@ if (AppPreferences.debugOverlay) {
         i.putExtra("rider_speed_src", riderSpeedSourceOrdinal)
         i.putExtra("rider_speed_conf", riderSpeedConfidence)
         i.putExtra("rider_speed_age_ms", riderSpeedAgeMs)
+        i.putExtra("rider_speed_method", riderSpeedMethod)
         i.putExtra("ttc", ttc)
         i.putExtra("label", label)
         i.putExtra("target_present", targetPresent)
@@ -1231,6 +1302,7 @@ if (AppPreferences.debugOverlay) {
         riderSpeed: Float,
         riderSpeedSourceOrdinal: Int = 0,
         riderSpeedConfidence: Float = 0f,
+        riderSpeedMethod: Int = RIDER_SPEED_METHOD_UNKNOWN,
         ttc: Float,
         level: Int,
         label: String,
@@ -1254,6 +1326,7 @@ if (AppPreferences.debugOverlay) {
         i.putExtra(EXTRA_RIDER_SPEED, riderSpeed)
         i.putExtra(EXTRA_RIDER_SPEED_SOURCE, riderSpeedSourceOrdinal)
         i.putExtra(EXTRA_RIDER_SPEED_CONFIDENCE, riderSpeedConfidence)
+        i.putExtra(EXTRA_RIDER_SPEED_METHOD, riderSpeedMethod)
         i.putExtra(EXTRA_TTC, ttc)
         i.putExtra(EXTRA_LEVEL, level)
         i.putExtra(EXTRA_LABEL, label)
@@ -1445,6 +1518,12 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
 
         distEmaValid = false
         distEma = Float.NaN
+        lastReliableDistM = Float.NaN
+        lastReliableRelMps = Float.NaN
+        lastReliableTsMs = 0L
+        lastReliableLockedId = -1L
+        bottomOcclActive = false
+        bottomOcclStartTsMs = 0L
 
         lastBoxHeightPx = Float.NaN
         lastBoxHeightTimestampMs = -1L
