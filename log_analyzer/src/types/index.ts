@@ -28,6 +28,11 @@ export type RiskRow = {
   label?: string;
   detScore?: number;
   reasonId?: number;
+  riderSpeedMps?: number;
+  riderSpeedConfidence?: number;
+  riderSpeedSource?: number;
+  riderSpeedAgeMs?: number;
+  riderSpeedMethod?: number;
   rawColumns: string[];
   extraFields: Record<string, string>;
   source: string;
@@ -56,6 +61,12 @@ export type MetricsRow = {
   reasonPayload?: number;
   reasonId?: number;
   finalTargetId?: number;
+  riderSpeedRawMps?: number;
+  riderSpeedMps?: number;
+  riderSpeedConfidence?: number;
+  riderSpeedSource?: number;
+  riderSpeedAgeMs?: number;
+  riderSpeedMethod?: number;
   rawColumns: string[];
   extraFields: Record<string, string>;
   source: string;
@@ -81,6 +92,7 @@ export type ParsedLogData = {
     hasRisk: boolean;
     hasMetrics: boolean;
     unknownCount: number;
+    hasRiderSpeedContract: boolean;
   };
   dataQuality: {
     validRows: number;

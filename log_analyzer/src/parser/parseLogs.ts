@@ -19,6 +19,7 @@ export function parseLoadedLogs(loaded: LoadedFile[]): ParsedLogData {
   let validRows = 0;
   let partialRows = 0;
   let rejectedRows = 0;
+  let hasRiderSpeedContract = false;
 
   for (const file of loaded) {
     const lines = file.text.split(/\r?\n/).filter(Boolean);
@@ -33,6 +34,7 @@ export function parseLoadedLogs(loaded: LoadedFile[]): ParsedLogData {
         if (!riskHeaderSeen) {
           warnings.push(`Soubor ${file.fileName}: risk header se liší od očekávaného kontraktu.`);
         }
+        if (cols.includes("rider_speed_mps") && cols.includes("rider_speed_method")) hasRiderSpeedContract = true;
         continue;
       }
 
@@ -43,6 +45,7 @@ export function parseLoadedLogs(loaded: LoadedFile[]): ParsedLogData {
           continue;
         }
         serviceRows.push({ type: 'service', ts, message: cols.slice(2).join(','), file: file.fileName });
+        if (toNum(cols[30]) != null || toNum(cols[34]) != null) hasRiderSpeedContract = true;
         validRows += 1;
         continue;
       }
@@ -74,6 +77,12 @@ export function parseLoadedLogs(loaded: LoadedFile[]): ParsedLogData {
           reasonPayload: 26,
           reasonId: 27,
           finalTargetId: 28,
+          riderSpeedRawMps: 29,
+          riderSpeedMps: 30,
+          riderSpeedConfidence: 31,
+          riderSpeedSource: 32,
+          riderSpeedAgeMs: 33,
+          riderSpeedMethod: 34,
         });
         metricsRows.push({
           type: 'metrics',
@@ -98,6 +107,12 @@ export function parseLoadedLogs(loaded: LoadedFile[]): ParsedLogData {
           reasonPayload: toNum(cols[26]),
           reasonId: toNum(cols[27]),
           finalTargetId: toNum(cols[28]),
+          riderSpeedRawMps: toNum(cols[29]),
+          riderSpeedMps: toNum(cols[30]),
+          riderSpeedConfidence: toNum(cols[31]),
+          riderSpeedSource: toNum(cols[32]),
+          riderSpeedAgeMs: toNum(cols[33]),
+          riderSpeedMethod: toNum(cols[34]),
           rawColumns: cols,
           extraFields,
           source: file.fileName,
@@ -129,6 +144,11 @@ export function parseLoadedLogs(loaded: LoadedFile[]): ParsedLogData {
           detScore: 16,
           reasonId: 17,
           finalTargetId: 18,
+          riderSpeedMps: 19,
+          riderSpeedConfidence: 20,
+          riderSpeedSource: 21,
+          riderSpeedAgeMs: 22,
+          riderSpeedMethod: 23,
         });
         const risk = toNum(cols[1]);
         const row: RiskRow = {
@@ -152,10 +172,16 @@ export function parseLoadedLogs(loaded: LoadedFile[]): ParsedLogData {
           detScore: toNum(cols[16]),
           reasonId: toNum(cols[17]),
           finalTargetId: toNum(cols[18]),
+          riderSpeedMps: toNum(cols[19]),
+          riderSpeedConfidence: toNum(cols[20]),
+          riderSpeedSource: toNum(cols[21]),
+          riderSpeedAgeMs: toNum(cols[22]),
+          riderSpeedMethod: toNum(cols[23]),
           rawColumns: cols,
           extraFields,
           source: file.fileName,
         };
+        if (row.riderSpeedMps != null || row.riderSpeedMethod != null) hasRiderSpeedContract = true;
         riskRows.push(row);
         if (risk == null || row.level == null) partialRows += 1;
         else validRows += 1;
@@ -180,6 +206,7 @@ export function parseLoadedLogs(loaded: LoadedFile[]): ParsedLogData {
     hasRisk: riskRows.length > 0,
     hasMetrics: metricsRows.length > 0,
     unknownCount: unknownRows.length,
+    hasRiderSpeedContract,
   };
 
   return {
