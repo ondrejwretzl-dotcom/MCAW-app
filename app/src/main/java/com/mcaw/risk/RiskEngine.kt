@@ -97,6 +97,8 @@ class RiskEngine {
         const val BIT_SUPPRESS_BOTTOM_OCCLUSION_NO_CONFIRM = 1 shl 19
         const val BIT_OCCLUSION_CANDIDATE = 1 shl 20
         const val BIT_OCCLUSION_CONFIRMED = 1 shl 21
+        const val BIT_SUPPRESS_RECEDING_HARD = 1 shl 22
+        const val BIT_SUPPRESS_STEADY_GAP_HARD = 1 shl 23
 
         const val EMA_ALPHA_REL = 0.25f
         const val EMA_ALPHA_APP = 0.20f
@@ -163,6 +165,8 @@ class RiskEngine {
             if ((payload and BIT_SUPPRESS_BOTTOM_OCCLUSION_NO_CONFIRM) != 0) aux = aux or (1 shl 15)
             if ((payload and BIT_OCCLUSION_CANDIDATE) != 0) aux = aux or (1 shl 16)
             if ((payload and BIT_OCCLUSION_CONFIRMED) != 0) aux = aux or (1 shl 17)
+            if ((payload and BIT_SUPPRESS_RECEDING_HARD) != 0) aux = aux or (1 shl 18)
+            if ((payload and BIT_SUPPRESS_STEADY_GAP_HARD) != 0) aux = aux or (1 shl 19)
 
             return core or (aux shl 3)
         }
@@ -191,6 +195,8 @@ class RiskEngine {
             if ((payload and BIT_SUPPRESS_BOTTOM_OCCLUSION_NO_CONFIRM) != 0) sb.append("SUP_OCCL_NO_CONF ")
             if ((payload and BIT_OCCLUSION_CANDIDATE) != 0) sb.append("OCCL_CAND ")
             if ((payload and BIT_OCCLUSION_CONFIRMED) != 0) sb.append("OCCL_CONF ")
+            if ((payload and BIT_SUPPRESS_RECEDING_HARD) != 0) sb.append("SUP_REC_HARD ")
+            if ((payload and BIT_SUPPRESS_STEADY_GAP_HARD) != 0) sb.append("SUP_STEADY_HARD ")
             if ((payload and BIT_RED_COMBO_OK) != 0) sb.append("RED_OK ")
             if ((payload and BIT_RED_GUARDED) != 0) sb.append("RED_GUARD ")
             // trim trailing space
@@ -281,6 +287,8 @@ class RiskEngine {
         occlusionConfirmed: Boolean = false,
         suppressAdjacentOvertake: Boolean = false,
         suppressRecedingObject: Boolean = false,
+        suppressRecedingHard: Boolean = false,
+        suppressSteadyGapHard: Boolean = false,
         suppressStanding: Boolean = false,
         disableTtcApproachWeight: Boolean = false,
         // C2: quality acts as a weight (0..1), not a hard gate.
@@ -418,6 +426,12 @@ class RiskEngine {
             lastLevel = 1
             level = 1
         }
+        val hardSuppressed = suppressRecedingHard || suppressSteadyGapHard
+        val allowRedFinal = if (hardSuppressed) false else allowRed
+        if (hardSuppressed) {
+            level = 0
+            lastLevel = 0
+        }
 
         val state = when (level) {
             2 -> State.CRITICAL
@@ -444,9 +458,11 @@ class RiskEngine {
             if (suppressAdjacentOvertake) bits = bits or BIT_SUPPRESS_ADJACENT_OVERTAKE
             if (suppressRecedingObject) bits = bits or BIT_SUPPRESS_RECEDING_OBJECT
             if (suppressStanding) bits = bits or BIT_SUPPRESS_STANDING
+            if (suppressRecedingHard) bits = bits or BIT_SUPPRESS_RECEDING_HARD
+            if (suppressSteadyGapHard) bits = bits or BIT_SUPPRESS_STEADY_GAP_HARD
             if (slopeStrong) bits = bits or BIT_TTC_SLOPE_STRONG
-            if (level == 2 && allowRed) bits = bits or BIT_RED_COMBO_OK
-            if (level == 1 && preGuardLevel == 2 && !allowRed) bits = bits or BIT_RED_GUARDED
+            if (level == 2 && allowRedFinal) bits = bits or BIT_RED_COMBO_OK
+            if (level == 1 && preGuardLevel == 2 && !allowRedFinal) bits = bits or BIT_RED_GUARDED
         } else {
             if (conserv >= 0.15f) bits = bits or BIT_QUALITY_CONSERV
             if (riderSpeedConfidence < 0.60f) bits = bits or BIT_SPEED_LOWCONF
@@ -457,6 +473,8 @@ class RiskEngine {
             if (suppressAdjacentOvertake) bits = bits or BIT_SUPPRESS_ADJACENT_OVERTAKE
             if (suppressRecedingObject) bits = bits or BIT_SUPPRESS_RECEDING_OBJECT
             if (suppressStanding) bits = bits or BIT_SUPPRESS_STANDING
+            if (suppressRecedingHard) bits = bits or BIT_SUPPRESS_RECEDING_HARD
+            if (suppressSteadyGapHard) bits = bits or BIT_SUPPRESS_STEADY_GAP_HARD
         }
 
         // --- D2-3: Audit invariants (O(1), no allocations) ---
@@ -468,7 +486,7 @@ class RiskEngine {
             if ((bits and (BIT_TTC or BIT_DIST or BIT_REL)) == 0) {
                 bits = bits or BIT_TTC
             }
-        } else if (preGuardLevel == 2 && level == 1) {
+        } else if (preGuardLevel == 2 && level == 1 && !hardSuppressed) {
             // Guard potlačil RED -> vždy audit bit (i kdyby se změnila výše uvedená podmínka).
             bits = bits or BIT_RED_GUARDED
         }

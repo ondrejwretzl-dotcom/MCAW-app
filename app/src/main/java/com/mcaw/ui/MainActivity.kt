@@ -138,6 +138,9 @@ class MainActivity : ComponentActivity() {
             val distance =
                 intent.getFloatExtra(DetectionAnalyzer.EXTRA_DISTANCE, Float.POSITIVE_INFINITY)
             val speed = intent.getFloatExtra(DetectionAnalyzer.EXTRA_SPEED, Float.POSITIVE_INFINITY)
+            val relSigned = intent.getFloatExtra(DetectionAnalyzer.EXTRA_REL_SIGNED_MPS, Float.NaN)
+            val trendState = intent.getIntExtra(DetectionAnalyzer.EXTRA_TREND_STATE, DetectionAnalyzer.TREND_STEADY)
+            val steadySuppressActive = intent.getBooleanExtra(DetectionAnalyzer.EXTRA_STEADY_SUPPRESS_ACTIVE, false)
             val relDerivValid = intent.getBooleanExtra(DetectionAnalyzer.EXTRA_REL_DERIV_VALID, true)
             val objectSpeed =
                 intent.getFloatExtra(DetectionAnalyzer.EXTRA_OBJECT_SPEED, Float.POSITIVE_INFINITY)
@@ -171,6 +174,7 @@ class MainActivity : ComponentActivity() {
             applyRiderSpeedText(riderText, fromMetrics = true)
 
             val speedKmh = if (relDerivValid && speed.isFinite()) speed * 3.6f else Float.POSITIVE_INFINITY
+            val relSignedKmh = if (relDerivValid && relSigned.isFinite()) relSigned * 3.6f else Float.NaN
             val objKmh = if (objectSpeed.isFinite()) objectSpeed * 3.6f else Float.POSITIVE_INFINITY
 
             if (hasTarget) {

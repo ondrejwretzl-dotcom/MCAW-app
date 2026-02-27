@@ -25,7 +25,6 @@ function mergePoints(data: ParsedLogData): SegmentPoint[] {
   for (const m of data.metricsRows) {
     const p = byTs.get(m.ts) ?? { ts: m.ts };
     p.lockId = m.lockId ?? p.lockId;
-    p.finalTargetId = m.finalTargetId ?? p.finalTargetId;
     p.ttc = m.ttc ?? p.ttc;
     p.rel = m.relSignedEma ?? p.rel;
     p.dist = m.distM ?? p.dist;
