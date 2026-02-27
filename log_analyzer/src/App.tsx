@@ -169,7 +169,7 @@ export function App() {
                   const maxRisk = Math.max(0, ...g.riskRows.map((r) => r.risk ?? 0));
                   const maxLevel = Math.max(0, ...g.riskRows.map((r) => r.level ?? 0));
                   const lockSet = new Set(g.metricsRows.map((m) => m.lockId).filter((x) => x != null));
-                  const finalSet = new Set(g.metricsRows.map((m) => m.finalTargetId).filter((x) => x != null));
+                  const finalSet = new Set(g.riskRows.map((r) => r.finalTargetId).filter((x) => x != null));
                   return (
                     <tr key={g.id} onClick={() => { setSelectedId(g.id); setDetailOpen(true); }}>
                       <td>{fmt(g.tsStart)}</td>

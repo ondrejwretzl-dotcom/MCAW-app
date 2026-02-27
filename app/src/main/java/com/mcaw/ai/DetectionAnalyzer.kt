@@ -52,6 +52,13 @@ class DetectionAnalyzer(
         const val EXTRA_RISK_SCORE = "extra_risk_score"
         const val EXTRA_REL_DERIV_VALID = "extra_rel_deriv_valid"
         const val EXTRA_REL_INVALID_REASON_MASK = "extra_rel_invalid_reason_mask"
+        const val EXTRA_REL_SIGNED_MPS = "extra_rel_signed_mps"
+        const val EXTRA_TREND_STATE = "extra_trend_state"
+        const val EXTRA_STEADY_SUPPRESS_ACTIVE = "extra_steady_suppress_active"
+        const val EXTRA_STEADY_MS = "extra_steady_ms"
+        const val EXTRA_APPROACH_MS = "extra_approach_ms"
+        const val EXTRA_DIST_SOURCE = "extra_dist_source"
+        const val EXTRA_DIST_CONF = "extra_dist_conf"
         const val K_INVALID_DERIV_FRAMES = 4
         const val INVALID_ID_SWITCH = 1 shl 0
         const val INVALID_TRACK_LOST = 1 shl 1
@@ -68,6 +75,23 @@ class DetectionAnalyzer(
         const val RIDER_SPEED_METHOD_HOLD_LAST_PROVIDER = 2
         const val RIDER_SPEED_METHOD_IMU_DECEL_FALLBACK = 3
         const val RIDER_SPEED_METHOD_OTHER_SENSOR = 4
+
+        const val TREND_STEADY = 0
+        const val TREND_APPROACH = 1
+        const val TREND_RECEDE = 2
+        const val DIST_SOURCE_BOTTOM = 0
+        const val DIST_SOURCE_GROUND = 1
+        const val DIST_SOURCE_GROUND_PRED = 2
+        const val DIST_SOURCE_HEIGHT = 3
+        const val DIST_SOURCE_BLEND = 4
+        const val REL_EPS_IN = 0.35f
+        const val REL_EPS_OUT = 0.55f
+        const val DIST_STEADY_EPS = 0.20f
+        const val DIST_APPROACH_EPS = 0.25f
+        const val STEADY_SUPPRESS_MS = 1200L
+        const val STEADY_SUPPRESS_RIDER_MIN_MPS = 3.0f
+        const val UNSUPPRESS_CONFIRM_MS = 300L
+        const val SUPPRESS_REENTER_MS = 400L
     }
 
     private val analyzerLogFileName: String = SessionLogFile.fileName
@@ -272,6 +296,13 @@ class DetectionAnalyzer(
     private var speedEmaValid: Boolean = false
     private var speedDeltaEmaMps: Float = 0f
     private var speedDeltaEmaValid: Boolean = false
+    private var trendState: Int = TREND_STEADY
+    private var steadyMs: Long = 0L
+    private var approachMs: Long = 0L
+    private var steadySuppressActive: Boolean = false
+    private var reenterCooldownMs: Long = 0L
+    private var distSlopeEmaMps: Float = Float.NaN
+    private var distSlopeValid: Boolean = false
 
     // Brake cue (heuristika rozsvícených brzdových světel) – držíme krátkou historii pro stabilitu
     private var brakeRedRatioEma: Float = 0f
@@ -650,10 +681,48 @@ if (AppPreferences.debugOverlay) {
             // Weight ground estimate more when bbox bottom is near the bottom of frame (likely on road).
             val yBottomN = (bestBox.y2 / frameH).coerceIn(0f, 1f)
             val wGround = ((yBottomN - 0.65f) / 0.35f).coerceIn(0f, 1f)
+            val bottomUnderRoi = bestBox.y2 >= cropBottomPx
+            val bottomYPredPx = ((bestBox.y1 + (bestBox.x2 - bestBox.x1).coerceAtLeast(1f) * 0.62f).coerceIn(0f, frameH))
+            val distGroundPred = if (bottomOccludedStable || bottomUnderRoi) {
+                DetectionPhysics.estimateDistanceGroundPlaneMetersAtYPx(
+                    yBottomPx = bottomYPredPx,
+                    frameHeightPx = frameHRotI,
+                    focalPx = focalPx,
+                    camHeightM = AppPreferences.cameraMountHeightM,
+                    pitchDownDeg = AppPreferences.cameraPitchDownDeg
+                )
+            } else null
+
+            var distSource = DIST_SOURCE_HEIGHT
+            var distConf = 0f
             val distanceRaw = when {
-                distFromHeight != null && distFromGround != null -> (distFromGround * wGround) + (distFromHeight * (1f - wGround))
-                distFromGround != null -> distFromGround
-                else -> distFromHeight
+                distFromHeight != null && distFromGround != null -> {
+                    distSource = DIST_SOURCE_BLEND
+                    distConf = 1f
+                    (distFromGround * wGround) + (distFromHeight * (1f - wGround))
+                }
+                distFromGround != null -> {
+                    distSource = DIST_SOURCE_GROUND
+                    distConf = 0.90f
+                    distFromGround
+                }
+                distGroundPred != null && distFromHeight != null -> {
+                    val predBlend = 0.65f
+                    distSource = DIST_SOURCE_BLEND
+                    distConf = 0.65f
+                    distGroundPred * predBlend + distFromHeight * (1f - predBlend)
+                }
+                distGroundPred != null -> {
+                    distSource = DIST_SOURCE_GROUND_PRED
+                    distConf = 0.55f
+                    distGroundPred
+                }
+                distFromHeight != null -> {
+                    distSource = DIST_SOURCE_HEIGHT
+                    distConf = 0.40f
+                    distFromHeight
+                }
+                else -> null
             }
 
             val distanceScaled =
@@ -670,7 +739,6 @@ if (AppPreferences.debugOverlay) {
                 }
                 val dtOccMs = (tsMs - bottomOcclStartTsMs).coerceAtLeast(0L)
                 val dtRelMs = (tsMs - lastReliableTsMs).coerceAtLeast(0L)
-                // Anti-regression: do not clamp to distCropBound while bottom-occluded.
                 if (dtOccMs <= 800L && lastReliableRelMps.isFinite() && lastReliableDistM.isFinite() && bestTrack.id == lastReliableLockedId && lastReliableTsMs > 0L) {
                     relInvalidReasonMask = relInvalidReasonMask or OCCL_EXTRAP_ACTIVE
                     val pred = lastReliableDistM - lastReliableRelMps * (dtRelMs.toFloat() / 1000f)
@@ -684,6 +752,7 @@ if (AppPreferences.debugOverlay) {
                     } else Float.NaN
                 }
             }
+            distConf = distConf.coerceIn(0f, 1f)
             val distanceInput = stabilizeDistanceInput(distanceInputRaw, tsMs, riderSpeedMps)
             val distanceM = smoothDistance(distanceInput)
 
@@ -803,10 +872,9 @@ if (AppPreferences.debugOverlay) {
                 }
             }
 
-            // Approach speed used for alerting (derived from final smoothed TTC if available)
-            val approachSpeedMps =
-                if (ttc.isFinite() && ttc > 0f && distanceM.isFinite()) (distanceM / ttc).coerceIn(0f, 80f)
-                else approachSpeedFromDist
+            val relSignedMps = relSignedEmaMps
+            val relAbsMps = if (relSignedMps.isFinite()) abs(relSignedMps) else Float.NaN
+            val approachSpeedMps = relAbsMps
 
             // OBJ = rider - relSigned (relSigned = rider - object)
             val objectSpeedMps =
@@ -860,6 +928,54 @@ if (AppPreferences.debugOverlay) {
             val distGrowing = prevDistanceM.isFinite() && distanceM.isFinite() && (distanceM > prevDistanceM + 0.05f)
             recedingDistanceTrendCount = if (distGrowing) (recedingDistanceTrendCount + 1) else 0
             val recedingStable = recedingStableCount >= RiskEngine.K_STABLE && recedingDistanceTrendCount >= RiskEngine.K_STABLE
+            val suppressRecedingHard = recedingStable
+
+            val dtMsSafe = if (dtMsForDeriv > 0L) dtMsForDeriv else 0L
+            if (reenterCooldownMs > 0L && dtMsSafe > 0L) reenterCooldownMs = (reenterCooldownMs - dtMsSafe).coerceAtLeast(0L)
+
+            val trendApproach = relSignedMps.isFinite() && relSignedMps > REL_EPS_OUT
+            val trendRecede = relSignedMps.isFinite() && relSignedMps < -REL_EPS_OUT
+            val trendSteady = relSignedMps.isFinite() && abs(relSignedMps) < REL_EPS_IN
+            trendState = when (trendState) {
+                TREND_APPROACH -> if (trendSteady) TREND_STEADY else TREND_APPROACH
+                TREND_RECEDE -> if (trendSteady) TREND_STEADY else TREND_RECEDE
+                else -> if (trendApproach) TREND_APPROACH else if (trendRecede) TREND_RECEDE else TREND_STEADY
+            }
+
+            if (relDerivValid && dtSecForDeriv.isFinite() && dtSecForDeriv > 0f && prevDistanceForDerivM.isFinite() && distanceM.isFinite()) {
+                val slopeSample = (distanceM - prevDistanceForDerivM) / dtSecForDeriv
+                distSlopeEmaMps = if (!distSlopeValid || !distSlopeEmaMps.isFinite()) slopeSample else (distSlopeEmaMps + RiskEngine.EMA_ALPHA_REL * (slopeSample - distSlopeEmaMps))
+                distSlopeValid = distSlopeEmaMps.isFinite()
+            } else {
+                distSlopeValid = false
+                distSlopeEmaMps = Float.NaN
+            }
+
+            val approachIndication = (relSignedMps.isFinite() && relSignedMps > REL_EPS_OUT) || (distSlopeValid && distSlopeEmaMps < -DIST_APPROACH_EPS)
+            if (approachIndication && dtMsSafe > 0L) {
+                approachMs += dtMsSafe
+            } else {
+                approachMs = 0L
+            }
+
+            val steadyCandidate = trendState == TREND_STEADY && distSlopeValid && abs(distSlopeEmaMps) < DIST_STEADY_EPS && relDerivValid
+            if (steadyCandidate && dtMsSafe > 0L) {
+                steadyMs += dtMsSafe
+            } else if (!relDerivValid || !distSlopeValid) {
+                // no grow on invalid derivatives
+            } else {
+                steadyMs = 0L
+            }
+
+            if (!steadySuppressActive && steadyMs >= STEADY_SUPPRESS_MS && riderSpeedMps.isFinite() && riderSpeedMps >= STEADY_SUPPRESS_RIDER_MIN_MPS && reenterCooldownMs == 0L) {
+                steadySuppressActive = true
+            }
+            if (approachMs >= UNSUPPRESS_CONFIRM_MS) {
+                steadySuppressActive = false
+                reenterCooldownMs = SUPPRESS_REENTER_MS
+                steadyMs = 0L
+            }
+            val suppressSteadyGapHard = steadySuppressActive
 
             val speedStableNow = speedEmaValid && speedDeltaEmaValid && speedEmaMps < RiskEngine.STAND_SPEED_MPS && speedDeltaEmaMps < 0.12f
             standingStableCount = if (speedStableNow) (standingStableCount + 1) else 0
@@ -898,6 +1014,8 @@ if (AppPreferences.debugOverlay) {
         occlusionConfirmed = occlusionConfirmed,
         suppressAdjacentOvertake = adjacentStable && !cutInEvidence,
         suppressRecedingObject = recedingStable,
+        suppressRecedingHard = suppressRecedingHard,
+        suppressSteadyGapHard = suppressSteadyGapHard,
         suppressStanding = standingState,
         disableTtcApproachWeight = recedingStable,
         qualityWeight = qualityWeight,
@@ -918,7 +1036,7 @@ if (AppPreferences.debugOverlay) {
             if (AppPreferences.debugOverlay && (frameIndex % logEveryNFrames == 0L)) {
                 val payload = RiskEngine.stripReasonVersion(risk.reasonBits)
                 traceLogger?.logLine(
-                    "M,$tsMs,METRICS,${bestTrack.id},${bestTrack.consecutiveDetections},$zoomFactor,${cropBottomPx.toInt()},${roiBottomPxF.toInt()},${bestBox.y2.toInt()},${bottomOcclEpsPx.toInt()},${if (bottomOccluded) 1 else 0},${if (idSwitchedThisFrame) 1 else 0},${if (relDerivValid) 1 else 0},$relInvalidReasonMask,${distFromHeight ?: Float.NaN},${distFromGround ?: Float.NaN},${distCropBound ?: Float.NaN},${distanceInputRaw},$distanceInput,$distanceM,$relSignedEmaMps,$approachSpeedMps,$ttcFromDist,$ttc,${String.format(java.util.Locale.US, "%.3f", risk.riskScore)},${risk.level},$payload,${RiskEngine.reasonId(risk.reasonBits)},$riderSpeedRawMps,$riderSpeedMps,$riderSpeedConfidence,$riderSpeedSourceOrdinal,$riderSpeedAgeMs,$riderSpeedMethod"
+                    "M,$tsMs,METRICS2,${bestTrack.id},${bestTrack.consecutiveDetections},$zoomFactor,${cropBottomPx.toInt()},${roiBottomPxF.toInt()},${bestBox.y2.toInt()},${bottomOcclEpsPx.toInt()},${if (bottomOccluded) 1 else 0},${if (idSwitchedThisFrame) 1 else 0},${if (relDerivValid) 1 else 0},$relInvalidReasonMask,${distFromHeight ?: Float.NaN},${distFromGround ?: Float.NaN},${distGroundPred ?: Float.NaN},${distCropBound ?: Float.NaN},${distanceInputRaw},$distanceInput,$distanceM,${distSlopeEmaMps},${relSignedMps},${relAbsMps},$approachSpeedMps,$ttcFromDist,$ttc,${String.format(java.util.Locale.US, "%.3f", risk.riskScore)},${risk.level},$payload,${RiskEngine.reasonId(risk.reasonBits)},$trendState,$steadyMs,$approachMs,${if (steadySuppressActive) 1 else 0},$reenterCooldownMs,$distSource,$distConf,$riderSpeedRawMps,$riderSpeedMps,$riderSpeedConfidence,$riderSpeedSourceOrdinal,$riderSpeedAgeMs,$riderSpeedMethod"
                 )
             }
 
@@ -979,6 +1097,8 @@ sendOverlayUpdate(
                 frameH = frameH,
                 dist = distanceM,
                 approachSpeed = approachSpeedMps,
+                relSignedMps = relSignedMps,
+                relAbsMps = relAbsMps,
                 objectSpeed = objectSpeedMps,
                 riderSpeed = riderSpeedMps,
                 riderSpeedSourceOrdinal = riderSpeedSourceOrdinal,
@@ -1006,7 +1126,17 @@ sendOverlayUpdate(
                 ) ?: Float.NaN,
                 roiBottomTouch = bottomOccluded,
                 relDerivValid = relDerivValid,
-                relInvalidReasonMask = relInvalidReasonMask
+                relInvalidReasonMask = relInvalidReasonMask,
+                trendState = trendState,
+                steadyMs = steadyMs,
+                approachMs = approachMs,
+                steadySuppressActive = steadySuppressActive,
+                reenterCooldownMs = reenterCooldownMs,
+                distSlopeEmaMps = distSlopeEmaMps,
+                distSource = distSource,
+                distConf = distConf,
+                bottomPredPx = bottomYPredPx,
+                distGroundPredM = distGroundPred ?: Float.NaN
             )
 
             flog(
@@ -1033,7 +1163,14 @@ sendOverlayUpdate(
                 alertReason = alertReason,
                 reasonBits = reasonBits,
                 riskScore = risk.riskScore,
-                relDerivValid = relDerivValid
+                relDerivValid = relDerivValid,
+                relSignedMps = relSignedMps,
+                trendState = trendState,
+                steadySuppressActive = steadySuppressActive,
+                steadyMs = steadyMs,
+                approachMs = approachMs,
+                distSource = distSource,
+                distConf = distConf
             )
 
             
@@ -1195,6 +1332,8 @@ if (AppPreferences.debugOverlay) {
         frameH: Float,
         dist: Float,
         approachSpeed: Float,
+        relSignedMps: Float,
+        relAbsMps: Float,
         objectSpeed: Float,
         riderSpeed: Float,
         riderSpeedSourceOrdinal: Int = 0,
@@ -1217,6 +1356,16 @@ if (AppPreferences.debugOverlay) {
         roiBottomTouch: Boolean = false,
         relDerivValid: Boolean = false,
         relInvalidReasonMask: Int = 0,
+        trendState: Int = TREND_STEADY,
+        steadyMs: Long = 0L,
+        approachMs: Long = 0L,
+        steadySuppressActive: Boolean = false,
+        reenterCooldownMs: Long = 0L,
+        distSlopeEmaMps: Float = Float.NaN,
+        distSource: Int = DIST_SOURCE_BOTTOM,
+        distConf: Float = 0f,
+        bottomPredPx: Float = Float.NaN,
+        distGroundPredM: Float = Float.NaN,
         force: Boolean = false
     ) {
         if (!AppPreferences.debugOverlay) return
@@ -1237,7 +1386,9 @@ if (AppPreferences.debugOverlay) {
         i.putExtra("right", box.x2)
         i.putExtra("bottom", box.y2)
         i.putExtra("dist", dist)
-        i.putExtra("speed", approachSpeed) // REL (approach)
+        i.putExtra("speed", approachSpeed) // REL abs
+        i.putExtra("rel_signed_mps", relSignedMps)
+        i.putExtra("rel_abs_mps", relAbsMps)
         i.putExtra("object_speed", objectSpeed) // OBJ
         i.putExtra("rider_speed", riderSpeed) // RID
         i.putExtra("rider_speed_src", riderSpeedSourceOrdinal)
@@ -1262,6 +1413,16 @@ if (AppPreferences.debugOverlay) {
         i.putExtra("roi_bottom_touch", roiBottomTouch)
         i.putExtra(EXTRA_REL_DERIV_VALID, relDerivValid)
         i.putExtra(EXTRA_REL_INVALID_REASON_MASK, relInvalidReasonMask)
+        i.putExtra("trend_state", trendState)
+        i.putExtra("steady_ms", steadyMs)
+        i.putExtra("approach_ms", approachMs)
+        i.putExtra("steady_suppress_active", steadySuppressActive)
+        i.putExtra("reenter_cooldown_ms", reenterCooldownMs)
+        i.putExtra("dist_slope_ema_mps", distSlopeEmaMps)
+        i.putExtra("dist_source", distSource)
+        i.putExtra("dist_conf", distConf)
+        i.putExtra("bottom_pred_px", bottomPredPx)
+        i.putExtra("dist_ground_pred_m", distGroundPredM)
 
         // keep ROI always in preview overlay
         i.putExtra("roi_trap_top_y_n", roiN.topY)
@@ -1292,6 +1453,20 @@ if (AppPreferences.debugOverlay) {
         i.putExtra("roi_trap_center_x_n", roiN.centerX)
         i.putExtra("roi_min_dist_m", Float.NaN)
         i.putExtra("roi_bottom_touch", false)
+        i.putExtra("rel_signed_mps", Float.NaN)
+        i.putExtra("rel_abs_mps", Float.NaN)
+        i.putExtra(EXTRA_REL_DERIV_VALID, false)
+        i.putExtra(EXTRA_REL_INVALID_REASON_MASK, 0)
+        i.putExtra("trend_state", TREND_STEADY)
+        i.putExtra("steady_ms", 0L)
+        i.putExtra("approach_ms", 0L)
+        i.putExtra("steady_suppress_active", false)
+        i.putExtra("reenter_cooldown_ms", 0L)
+        i.putExtra("dist_slope_ema_mps", Float.NaN)
+        i.putExtra("dist_source", DIST_SOURCE_BOTTOM)
+        i.putExtra("dist_conf", 0f)
+        i.putExtra("bottom_pred_px", Float.NaN)
+        i.putExtra("dist_ground_pred_m", Float.NaN)
         ctx.sendBroadcast(i)
     }
 
@@ -1311,6 +1486,13 @@ if (AppPreferences.debugOverlay) {
         reasonBits: Int = 0,
         riskScore: Float = Float.NaN,
         relDerivValid: Boolean = false,
+        relSignedMps: Float = Float.NaN,
+        trendState: Int = TREND_STEADY,
+        steadySuppressActive: Boolean = false,
+        steadyMs: Long = 0L,
+        approachMs: Long = 0L,
+        distSource: Int = DIST_SOURCE_BOTTOM,
+        distConf: Float = 0f,
         force: Boolean = false
     ) {
         val now = SystemClock.elapsedRealtime()
@@ -1335,23 +1517,38 @@ if (AppPreferences.debugOverlay) {
         i.putExtra(EXTRA_REASON_BITS, reasonBits)
         i.putExtra(EXTRA_RISK_SCORE, riskScore)
         i.putExtra(EXTRA_REL_DERIV_VALID, relDerivValid)
+        i.putExtra(EXTRA_REL_SIGNED_MPS, relSignedMps)
+        i.putExtra(EXTRA_TREND_STATE, trendState)
+        i.putExtra(EXTRA_STEADY_SUPPRESS_ACTIVE, steadySuppressActive)
+        i.putExtra(EXTRA_STEADY_MS, steadyMs)
+        i.putExtra(EXTRA_APPROACH_MS, approachMs)
+        i.putExtra(EXTRA_DIST_SOURCE, distSource)
+        i.putExtra(EXTRA_DIST_CONF, distConf)
         ctx.sendBroadcast(i)
     }
 
     private fun sendMetricsClear() {
         lastTtcLevel = 0
         sendMetricsUpdate(
-            dist = Float.POSITIVE_INFINITY,
-            approachSpeed = Float.POSITIVE_INFINITY,
-            objectSpeed = Float.POSITIVE_INFINITY,
-            riderSpeed = Float.POSITIVE_INFINITY,
-            ttc = Float.POSITIVE_INFINITY,
+            dist = Float.NaN,
+            approachSpeed = Float.NaN,
+            objectSpeed = Float.NaN,
+            riderSpeed = Float.NaN,
+            ttc = Float.NaN,
             level = 0,
             label = "",
             brakeCue = false,
             alertReason = "clear",
             reasonBits = 0,
             riskScore = Float.NaN,
+            relDerivValid = false,
+            relSignedMps = Float.NaN,
+            trendState = TREND_STEADY,
+            steadySuppressActive = false,
+            steadyMs = 0L,
+            approachMs = 0L,
+            distSource = DIST_SOURCE_BOTTOM,
+            distConf = 0f,
             force = true
         )
     }
@@ -1542,6 +1739,13 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
         lastTtcFiniteTsMs = -1L
         lastTtcHeight = Float.POSITIVE_INFINITY
         lastTtcHeightTsMs = -1L
+        trendState = TREND_STEADY
+        steadyMs = 0L
+        approachMs = 0L
+        steadySuppressActive = false
+        reenterCooldownMs = 0L
+        distSlopeEmaMps = Float.NaN
+        distSlopeValid = false
     }
 
     /**

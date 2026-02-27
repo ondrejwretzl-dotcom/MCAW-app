@@ -175,7 +175,9 @@ export function App() {
       const evalInput: FrameIn = {
         ...input,
         distanceM: Number(relFrame.distanceStableM),
-        approachSpeedMps: Number(relFrame.relDerivValid ? Math.max(0, relFrame.relSignedEmaMps) : Number(input.approachSpeedMps ?? 0)),
+        approachSpeedMps: Number(relFrame.relDerivValid ? Math.abs(relFrame.relSignedEmaMps) : Number(input.approachSpeedMps ?? 0)),
+        suppressRecedingHard: relFrame.trendState === 2,
+        suppressSteadyGapHard: relFrame.steadySuppressActive,
         effectiveMode: Number(input.effectiveMode ?? 1),
         roiContainment: Number(input.roiContainment ?? 1),
         egoOffsetN: Number(input.egoOffsetN ?? 0),
