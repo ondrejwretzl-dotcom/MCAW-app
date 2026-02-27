@@ -59,6 +59,8 @@ export interface EvaluateInput {
   occlusionConfirmed?: boolean;
   suppressAdjacentOvertake?: boolean;
   suppressRecedingObject?: boolean;
+  suppressRecedingHard?: boolean;
+  suppressSteadyGapHard?: boolean;
   suppressStanding?: boolean;
   disableTtcApproachWeight?: boolean;
   qualityWeight?: number;
@@ -108,6 +110,8 @@ export const BIT_SUPPRESS_STANDING = 1 << 18;
 export const BIT_SUPPRESS_BOTTOM_OCCLUSION_NO_CONFIRM = 1 << 19;
 export const BIT_OCCLUSION_CANDIDATE = 1 << 20;
 export const BIT_OCCLUSION_CONFIRMED = 1 << 21;
+export const BIT_SUPPRESS_RECEDING_HARD = 1 << 22;
+export const BIT_SUPPRESS_STEADY_GAP_HARD = 1 << 23;
 
 export const EMA_ALPHA_REL = 0.25;
 export const EMA_ALPHA_APP = 0.20;
@@ -300,6 +304,7 @@ export class RiskEngineRef {
       risk = Math.min(before * 1.10, before + 0.08);
     }
     if (input.suppressStanding) risk = 0;
+    const hardSuppressed = !!input.suppressRecedingHard || !!input.suppressSteadyGapHard;
 
     // --- CRITICAL combo guard ---
     const slopeThr = -1.0 - 0.40 * conserv;
@@ -321,6 +326,11 @@ export class RiskEngineRef {
       level = 1;
     }
 
+    const allowRedFinal = hardSuppressed ? false : allowRed;
+    if (hardSuppressed) {
+      this.lastLevel = 0;
+      level = 0;
+    }
     const state: State = level === 2 ? 'CRITICAL' : (level === 1 ? 'CAUTION' : 'SAFE');
 
     // --- reason bits ---
@@ -343,9 +353,11 @@ export class RiskEngineRef {
       if (input.suppressAdjacentOvertake) bits |= BIT_SUPPRESS_ADJACENT_OVERTAKE;
       if (input.suppressRecedingObject) bits |= BIT_SUPPRESS_RECEDING_OBJECT;
       if (input.suppressStanding) bits |= BIT_SUPPRESS_STANDING;
+      if (input.suppressRecedingHard) bits |= BIT_SUPPRESS_RECEDING_HARD;
+      if (input.suppressSteadyGapHard) bits |= BIT_SUPPRESS_STEADY_GAP_HARD;
       if (slopeStrong) bits |= BIT_TTC_SLOPE_STRONG;
-      if (level === 2 && allowRed) bits |= BIT_RED_COMBO_OK;
-      if (level === 1 && preGuardLevel === 2 && !allowRed) bits |= BIT_RED_GUARDED;
+      if (level === 2 && allowRedFinal) bits |= BIT_RED_COMBO_OK;
+      if (level === 1 && preGuardLevel === 2 && !allowRedFinal) bits |= BIT_RED_GUARDED;
     } else {
       if (conserv >= 0.15) bits |= BIT_QUALITY_CONSERV;
       if (riderSpeedConfidence < 0.60) bits |= BIT_SPEED_LOWCONF;
@@ -357,6 +369,8 @@ export class RiskEngineRef {
       if (input.suppressAdjacentOvertake) bits |= BIT_SUPPRESS_ADJACENT_OVERTAKE;
       if (input.suppressRecedingObject) bits |= BIT_SUPPRESS_RECEDING_OBJECT;
       if (input.suppressStanding) bits |= BIT_SUPPRESS_STANDING;
+      if (input.suppressRecedingHard) bits |= BIT_SUPPRESS_RECEDING_HARD;
+      if (input.suppressSteadyGapHard) bits |= BIT_SUPPRESS_STEADY_GAP_HARD;
     }
 
     // audit invariants

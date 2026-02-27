@@ -23,6 +23,12 @@ export type RelFrameOut = {
   relSignedEmaMps: number;
   relDerivValid: boolean;
   relInvalidReasonMask: number;
+  trendState: number;
+  steadyMs: number;
+  approachMs: number;
+  steadySuppressActive: boolean;
+  reenterCooldownMs: number;
+  distSlopeEmaMps: number;
 };
 
 export class RelStabilityState {
@@ -38,6 +44,12 @@ export class RelStabilityState {
   prevDerivTsMs = 0;
   relSignedEmaMps = 0;
   relSignedEmaValid = false;
+  trendState = 0;
+  steadyMs = 0;
+  approachMs = 0;
+  steadySuppressActive = false;
+  reenterCooldownMs = 0;
+  distSlopeEmaMps = Number.NaN;
 
   private trigger(mask: number): void {
     this.invalidDerivFramesLeft = K_INVALID_DERIV_FRAMES;
@@ -97,11 +109,41 @@ export class RelStabilityState {
       this.prevDerivTsMs = ctx.tsMs;
     }
 
+    const dtMsSafe = Math.max(0, dtMs);
+    if (this.reenterCooldownMs > 0 && dtMsSafe > 0) this.reenterCooldownMs = Math.max(0, this.reenterCooldownMs - dtMsSafe);
+    const rel = this.relSignedEmaMps;
+    const approach = Number.isFinite(rel) && rel > 0.55;
+    const recede = Number.isFinite(rel) && rel < -0.55;
+    const steady = Number.isFinite(rel) && Math.abs(rel) < 0.35;
+    this.trendState = this.trendState === 1 ? (steady ? 0 : 1) : this.trendState === 2 ? (steady ? 0 : 2) : (approach ? 1 : (recede ? 2 : 0));
+    if (relDerivValid && Number.isFinite(this.prevDistanceForDerivM) && Number.isFinite(distanceStableM) && dtSec > 0) {
+      const slope = (distanceStableM - this.prevDistanceForDerivM) / dtSec;
+      this.distSlopeEmaMps = Number.isFinite(this.distSlopeEmaMps) ? (this.distSlopeEmaMps + 0.25 * (slope - this.distSlopeEmaMps)) : slope;
+    } else {
+      this.distSlopeEmaMps = Number.NaN;
+    }
+    const approachInd = (Number.isFinite(rel) && rel > 0.55) || (Number.isFinite(this.distSlopeEmaMps) && this.distSlopeEmaMps < -0.25);
+    this.approachMs = approachInd ? (this.approachMs + dtMsSafe) : 0;
+    const steadyOk = this.trendState === 0 && Number.isFinite(this.distSlopeEmaMps) && Math.abs(this.distSlopeEmaMps) < 0.20 && relDerivValid;
+    if (steadyOk) this.steadyMs += dtMsSafe;
+    if (!this.steadySuppressActive && this.steadyMs >= 1200 && this.reenterCooldownMs === 0) this.steadySuppressActive = true;
+    if (this.approachMs >= 300) {
+      this.steadySuppressActive = false;
+      this.reenterCooldownMs = 400;
+      this.steadyMs = 0;
+    }
+
     return {
       distanceStableM,
       relSignedEmaMps: this.relSignedEmaMps,
       relDerivValid,
       relInvalidReasonMask: this.relInvalidReasonMask,
+      trendState: this.trendState,
+      steadyMs: this.steadyMs,
+      approachMs: this.approachMs,
+      steadySuppressActive: this.steadySuppressActive,
+      reenterCooldownMs: this.reenterCooldownMs,
+      distSlopeEmaMps: this.distSlopeEmaMps,
     };
   }
 }

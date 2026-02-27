@@ -54,7 +54,9 @@ data class ScenarioConfig(
     /** ego offset normalized 0..2 */
     val egoOffsetN: Float = 0.0f,
     /** lean angle deg (NaN if unknown / car) */
-    val leanDeg: Float = Float.NaN
+    val leanDeg: Float = Float.NaN,
+    /** derive REL from distance derivative EMA in runner (default MCAW 2.0 contract) */
+    val deriveRelFromDistance: Boolean = true
 )
 
 data class Segment(
@@ -116,6 +118,7 @@ data class SimFrame(
     val tsMs: Long,
     val distM: Float,
     val relMpsRaw: Float,
+    val relDerivValid: Boolean,
     val ttcSec: Float,
     val ttcSlope: Float,
     val roiContainment: Float,
@@ -229,6 +232,7 @@ fun buildFrames(s: Scenario): List<SimFrame> {
                     tsMs = tsMs,
                     distM = dist,
                     relMpsRaw = relRaw,
+                    relDerivValid = true,
                     ttcSec = ttc,
                     ttcSlope = slope,
                     roiContainment = roi,

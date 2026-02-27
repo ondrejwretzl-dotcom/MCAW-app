@@ -92,8 +92,17 @@ class PreviewActivity : ComponentActivity() {
                 overlay.roiMinDistM = Float.NaN
                 overlay.roiBottomTouch = false
                 overlay.speed = -1f
+                overlay.relSignedMps = Float.NaN
                 overlay.relDerivValid = false
                 overlay.relInvalidReasonMask = 0
+                overlay.trendState = DetectionAnalyzer.TREND_STEADY
+                overlay.steadyMs = 0L
+                overlay.approachMs = 0L
+                overlay.steadySuppressActive = false
+                overlay.reenterCooldownMs = 0L
+                overlay.distSlopeEmaMps = Float.NaN
+                overlay.distSource = DetectionAnalyzer.DIST_SOURCE_BOTTOM
+                overlay.distConf = 0f
                 overlay.objectSpeed = -1f
                 overlay.riderSpeed = -1f
                 overlay.riderSpeedSourceOrdinal = 0
@@ -130,9 +139,18 @@ class PreviewActivity : ComponentActivity() {
             overlay.distance = if (h.distanceReliable) i.getFloatExtra("dist", -1f) else Float.NaN
             overlay.roiMinDistM = i.getFloatExtra("roi_min_dist_m", Float.NaN)
             overlay.roiBottomTouch = i.getBooleanExtra("roi_bottom_touch", false)
-            overlay.speed = i.getFloatExtra("speed", -1f) // REL (approach)
+            overlay.speed = i.getFloatExtra("speed", -1f) // REL abs
+            overlay.relSignedMps = i.getFloatExtra("rel_signed_mps", Float.NaN)
             overlay.relDerivValid = i.getBooleanExtra(com.mcaw.ai.DetectionAnalyzer.EXTRA_REL_DERIV_VALID, true)
             overlay.relInvalidReasonMask = i.getIntExtra(com.mcaw.ai.DetectionAnalyzer.EXTRA_REL_INVALID_REASON_MASK, 0)
+            overlay.trendState = i.getIntExtra("trend_state", DetectionAnalyzer.TREND_STEADY)
+            overlay.steadyMs = i.getLongExtra("steady_ms", 0L)
+            overlay.approachMs = i.getLongExtra("approach_ms", 0L)
+            overlay.steadySuppressActive = i.getBooleanExtra("steady_suppress_active", false)
+            overlay.reenterCooldownMs = i.getLongExtra("reenter_cooldown_ms", 0L)
+            overlay.distSlopeEmaMps = i.getFloatExtra("dist_slope_ema_mps", Float.NaN)
+            overlay.distSource = i.getIntExtra("dist_source", DetectionAnalyzer.DIST_SOURCE_BOTTOM)
+            overlay.distConf = i.getFloatExtra("dist_conf", 0f)
             overlay.objectSpeed = i.getFloatExtra("object_speed", -1f) // OBJ
             overlay.riderSpeed = i.getFloatExtra("rider_speed", -1f) // RID
             overlay.riderSpeedSourceOrdinal = i.getIntExtra("rider_speed_src", 0)
@@ -165,7 +183,7 @@ class PreviewActivity : ComponentActivity() {
             txtHudPrimary.text = "Stav: ${if (searching) "Hledám" else "Sledování"} · Kalibrace: $cal · Detekce: $mapped"
             if (AppPreferences.debugOverlay) {
                 txtHudMetrics.visibility = View.VISIBLE
-                txtHudMetrics.text = "ID=$targetTrackId raw=${targetRawLabel ?: "-"} map=$targetGroupLabel\nDist=${overlay.distance} REL=${overlay.speed} TTC=${overlay.ttc} deriv=${overlay.relDerivValid}"
+                txtHudMetrics.text = "ID=$targetTrackId raw=${targetRawLabel ?: "-"} map=$targetGroupLabel\nDist=${overlay.distance} RELs=${overlay.relSignedMps} RELa=${overlay.speed} TTC=${overlay.ttc} deriv=${overlay.relDerivValid}\ntrend=${overlay.trendState} steady=${overlay.steadyMs}ms approach=${overlay.approachMs}ms sup=${overlay.steadySuppressActive}\ndistSrc=${overlay.distSource} conf=${overlay.distConf} slope=${overlay.distSlopeEmaMps}"
             } else {
                 txtHudMetrics.visibility = View.GONE
                 txtHudMetrics.text = ""

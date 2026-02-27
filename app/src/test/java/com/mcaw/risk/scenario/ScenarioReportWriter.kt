@@ -46,7 +46,8 @@ object ScenarioReportWriter {
         sb.append("- qualityWeight (default): ").append(fmt(s.config.qualityWeight)).append("\n")
         sb.append("- roiContainment (default): ").append(fmt(s.config.roiContainment)).append("\n")
         sb.append("- egoOffsetN (default): ").append(fmt(s.config.egoOffsetN)).append("\n")
-        sb.append("- leanDeg (default): ").append(if (s.config.leanDeg.isFinite()) fmt(s.config.leanDeg) else "NaN").append("\n\n")
+        sb.append("- leanDeg (default): ").append(if (s.config.leanDeg.isFinite()) fmt(s.config.leanDeg) else "NaN").append("\n")
+        sb.append("- approachSpeed source: ").append(if (s.config.deriveRelFromDistance) "derived_from_distance_ema" else "segment_legacy").append("\n\n")
 
         sb.append("## Prahy enginu (odvozeno z kódu)\n")
         val d = run.derived

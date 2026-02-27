@@ -198,6 +198,60 @@ class OverlayView @JvmOverloads constructor(
             invalidate()
         }
 
+    var relSignedMps: Float = Float.NaN
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    var trendState: Int = 0
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    var steadyMs: Long = 0L
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    var approachMs: Long = 0L
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    var steadySuppressActive: Boolean = false
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    var reenterCooldownMs: Long = 0L
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    var distSlopeEmaMps: Float = Float.NaN
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    var distSource: Int = 0
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    var distConf: Float = 0f
+        set(value) {
+            field = value
+            invalidate()
+        }
+
     var relDerivValid: Boolean = false
         set(value) {
             field = value

@@ -60,7 +60,15 @@ export type MetricsRow = {
   level?: number;
   reasonPayload?: number;
   reasonId?: number;
-  finalTargetId?: number;
+  trendState?: number;
+  steadyMs?: number;
+  approachMs?: number;
+  steadySuppressActive?: number;
+  reenterCooldownMs?: number;
+  distSlopeEma?: number;
+  relAbsEma?: number;
+  distSource?: number;
+  distConf?: number;
   riderSpeedRawMps?: number;
   riderSpeedMps?: number;
   riderSpeedConfidence?: number;

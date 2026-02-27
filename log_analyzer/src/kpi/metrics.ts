@@ -67,7 +67,6 @@ export function switchBeneficialRate(data: ParsedLogData): SwitchBeneficialResul
     return {
       ts: s.ts,
       lockId: s.lockId,
-      finalTargetId: s.finalTargetId,
       beforeVar,
       afterVar,
       beneficial: afterVar < beforeVar,
