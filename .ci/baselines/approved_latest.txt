@@ -1,1 +1,0 @@
-.ci/baselines/default/sha256:d2a26bfabbb9d7483b4701a01686965325d93354e572aefede593b14ce36948e/summary.json

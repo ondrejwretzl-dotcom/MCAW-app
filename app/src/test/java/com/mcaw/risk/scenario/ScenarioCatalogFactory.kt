@@ -12,7 +12,7 @@ import kotlin.math.max
  */
 object ScenarioCatalogFactory {
 
-    const val CATALOG_VERSION = "2026-02-24"
+    const val CATALOG_VERSION = "2026-02-27"
 
     fun createDefaultCatalog(): ScenarioCatalog {
         val list = ArrayList<Scenario>()
@@ -24,6 +24,9 @@ object ScenarioCatalogFactory {
         list += tunnelExposureDrop()
         list += highwaySteadyFollowing()
         list += highwaySuddenBrake()
+        list += cityRecedingHardSuppress()
+        list += highwaySteadyGapHardSuppress()
+        list += highwaySteadyToApproachUnsuppress()
         list += ruralCurveOncomingIgnored()
 
         // Moto
@@ -673,6 +676,127 @@ object ScenarioCatalogFactory {
                     ttcSlopeSecPerSec = { _ -> -0.9f },
                     roiContainment = { _ -> 0.92f },
                     egoOffsetN = { _ -> 0.24f }
+                )
+            )
+        )
+    }
+
+    private fun cityRecedingHardSuppress(): Scenario {
+        val hazard = 1.0f
+        return Scenario(
+            id = "C3_RECEDING_HARD_SUPPRESS",
+            title = "Město: receding target musí být hard-suppressed",
+            domain = Domain.CITY,
+            vehicle = Vehicle.CAR,
+            notes = """
+                Cílená regrese pro receding hard suppress.
+                I při malé vzdálenosti a nízkém TTC distance roste (target se vzdaluje), proto level nesmí vstoupit nad 0.
+            """.trimIndent(),
+            config = ScenarioConfig(
+                effectiveMode = 1,
+                hz = 10,
+                riderSpeedMps = 12f,
+                qualityWeight = 1.0f,
+                deriveRelFromDistance = true
+            ),
+            expectations = listOf(
+                Expectation.MustNotEnterLevel(level = 1, message = "Receding hard suppress musí držet SAFE."),
+                Expectation.MustNotEnterLevel(level = 2, message = "Receding hard suppress nesmí pustit RED."),
+                Expectation.MaxTransitionsInWindow(maxTransitions = 1, windowSec = 6f, message = "Bez blikání při receding supresi.")
+            ),
+            segments = listOf(
+                Segment(
+                    tFromSec = 0f,
+                    tToSec = 7f,
+                    label = "receding despite close distance",
+                    distanceM = { t -> 4.2f + t * 0.85f },
+                    approachSpeedMps = { _ -> 6.0f },
+                    ttcSec = { _ -> 1.1f },
+                    ttcSlopeSecPerSec = { _ -> 0.2f }
+                )
+            )
+        )
+    }
+
+    private fun highwaySteadyGapHardSuppress(): Scenario {
+        val hazard = 1.2f
+        return Scenario(
+            id = "H3_STEADY_GAP_HARD_SUPPRESS",
+            title = "Dálnice: steady gap hard suppress po 1.2s stability",
+            domain = Domain.HIGHWAY,
+            vehicle = Vehicle.CAR,
+            notes = """
+                Scénář drží stabilní distance a téměř nulovou derivaci po více než 1.2s.
+                Očekávání: steady suppress aktivní => level zůstává 0 i když TTC je nízké.
+            """.trimIndent(),
+            config = ScenarioConfig(
+                effectiveMode = 2,
+                hz = 10,
+                riderSpeedMps = 27f,
+                qualityWeight = 0.95f,
+                deriveRelFromDistance = true
+            ),
+            expectations = listOf(
+                Expectation.MustNotEnterLevel(level = 1, message = "Steady gap hard suppress nesmí pustit ORANGE."),
+                Expectation.MustNotEnterLevel(level = 2, message = "Steady gap hard suppress nesmí pustit RED."),
+                Expectation.MaxTransitionsInWindow(maxTransitions = 1, windowSec = 8f, message = "Bez flappingu během steady suprese.")
+            ),
+            segments = listOf(
+                Segment(
+                    tFromSec = 0f,
+                    tToSec = 6f,
+                    label = "long steady follow",
+                    distanceM = { t -> 9.0f + (if ((t * 10f).toInt() % 2 == 0) 0.02f else -0.02f) },
+                    approachSpeedMps = { _ -> 4.5f },
+                    ttcSec = { _ -> 1.4f },
+                    ttcSlopeSecPerSec = { _ -> 0f }
+                )
+            )
+        )
+    }
+
+    private fun highwaySteadyToApproachUnsuppress(): Scenario {
+        val hazard = 2.0f
+        return Scenario(
+            id = "H4_STEADY_TO_APPROACH_UNSUPPRESS",
+            title = "Dálnice: steady suppress -> approach unsuppress po 300ms",
+            domain = Domain.HIGHWAY,
+            vehicle = Vehicle.CAR,
+            notes = """
+                První fáze drží steady suppress aktivní.
+                Poté distance konzistentně klesá tak, aby approach indication drželo >=300ms a suppress se vypnul.
+            """.trimIndent(),
+            config = ScenarioConfig(
+                effectiveMode = 2,
+                hz = 10,
+                riderSpeedMps = 29f,
+                qualityWeight = 0.95f,
+                deriveRelFromDistance = true
+            ),
+            expectations = listOf(
+                Expectation.MustEnterLevelBy(level = 1, latestSecAfterHazard = 2.0f, hazardTimeSec = hazard, message = "Po unsuppress potvrzení musí nastat ORANGE."),
+                Expectation.MaxTransitionsInWindow(maxTransitions = 3, windowSec = 6f, message = "Unsuppress bez blikání.")
+            ),
+            segments = listOf(
+                Segment(
+                    tFromSec = 0f,
+                    tToSec = hazard,
+                    label = "steady suppressed",
+                    distanceM = { t -> 8.8f + (if ((t * 10f).toInt() % 2 == 0) 0.02f else -0.02f) },
+                    approachSpeedMps = { _ -> 4.0f },
+                    ttcSec = { _ -> 1.5f },
+                    ttcSlopeSecPerSec = { _ -> 0f }
+                ),
+                Segment(
+                    tFromSec = hazard,
+                    tToSec = 6f,
+                    label = "confirmed approach",
+                    distanceM = { t -> (8.8f - (t - hazard) * 2.2f).coerceAtLeast(4.8f) },
+                    approachSpeedMps = { _ -> 6.5f },
+                    ttcSec = { t -> (1.5f - (t - hazard) * 0.18f).coerceAtLeast(0.9f) },
+                    ttcSlopeSecPerSec = { _ -> -0.6f },
+                    brakeCueActive = { t -> t >= hazard + 0.6f },
+                    brakeCueStrength = { _ -> 0.8f }
                 )
             )
         )

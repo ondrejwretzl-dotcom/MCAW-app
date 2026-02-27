@@ -13,6 +13,9 @@ class ScenarioCatalogRegressionCoverageTest {
 
         assertTrue(ids.contains("R1_V1_WHITE_VAN_BOTTOM_OCCLUSION"))
         assertTrue(ids.contains("R2_V2_FOLLOW_STABLE_ORANGE"))
+        assertTrue(ids.contains("C3_RECEDING_HARD_SUPPRESS"))
+        assertTrue(ids.contains("H3_STEADY_GAP_HARD_SUPPRESS"))
+        assertTrue(ids.contains("H4_STEADY_TO_APPROACH_UNSUPPRESS"))
 
         assertEquals("Scenario IDs must stay unique", ids.toSet().size, ids.size)
     }

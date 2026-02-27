@@ -3,13 +3,41 @@ package com.mcaw.risk.scenario
 import com.mcaw.risk.RiskEngine
 import java.io.File
 import kotlin.math.abs
-import kotlin.math.max
 
 object ScenarioRunner {
 
+    private const val TREND_STEADY = 0
+    private const val TREND_APPROACH = 1
+    private const val TREND_RECEDE = 2
+
+    private const val REL_EPS_IN = 0.35f
+    private const val REL_EPS_OUT = 0.55f
+    private const val DIST_STEADY_EPS = 0.20f
+    private const val DIST_APPROACH_EPS = 0.25f
+    private const val STEADY_SUPPRESS_MS = 1200L
+    private const val STEADY_SUPPRESS_RIDER_MIN_MPS = 3.0f
+    private const val UNSUPPRESS_CONFIRM_MS = 300L
+    private const val SUPPRESS_REENTER_MS = 400L
+
+    private data class TrendGateState(
+        var prevTsMs: Long = -1L,
+        var prevDistanceM: Float = Float.NaN,
+        var relSignedEmaMps: Float = 0f,
+        var relDerivValid: Boolean = false,
+        var distSlopeEmaMps: Float = Float.NaN,
+        var distSlopeValid: Boolean = false,
+        var trendState: Int = TREND_STEADY,
+        var steadyMs: Long = 0L,
+        var approachMs: Long = 0L,
+        var steadySuppressActive: Boolean = false,
+        var reenterCooldownMs: Long = 0L,
+        var recedingStableCount: Int = 0,
+        var recedingDistanceTrendCount: Int = 0
+    )
+
     fun runScenario(s: Scenario): ScenarioRun {
         val engine = RiskEngine()
-        val frames = buildFrames(s)
+        val baseFrames = buildFrames(s)
 
         // derived thresholds are computed once per scenario (qualityWeight is per-frame; use scenario default)
         val dynEnabled = s.config.dynamicDistanceEnabled ?: com.mcaw.config.AppPreferences.dynamicDistanceThresholdEnabled
@@ -24,15 +52,27 @@ object ScenarioRunner {
             dynamicDistanceRedSec = dynRedSec
         )
 
-        val levels = ArrayList<Int>(frames.size)
+        val levels = ArrayList<Int>(baseFrames.size)
         val events = ArrayList<SimEvent>(32)
-        val frameTraceEvents = ArrayList<FrameTraceEvent>(frames.size)
+        val frameTraceEvents = ArrayList<FrameTraceEvent>(baseFrames.size)
+        val frames = ArrayList<SimFrame>(baseFrames.size)
 
         var lastLevel = 0
         var transitions = 0
+        val tg = TrendGateState()
 
-        for (f in frames) {
-            val rel = f.relMpsRaw.coerceAtLeast(0f)
+        for (f in baseFrames) {
+            val derivedRelEnabled = s.config.deriveRelFromDistance
+            val trendOut = if (derivedRelEnabled) {
+                updateTrendGate(tg, f)
+            } else {
+                val rel = f.relMpsRaw
+                TrendOut(relSignedMps = rel, relDerivValid = true, suppressRecedingHard = false, suppressSteadyGapHard = false)
+            }
+            val relSigned = if (trendOut.relSignedMps.isFinite()) trendOut.relSignedMps else 0f
+            val rel = abs(relSigned)
+            frames.add(f.copy(relMpsRaw = relSigned, relDerivValid = trendOut.relDerivValid))
+
             val r = engine.evaluate(
                 tsMs = f.tsMs,
                 effectiveMode = s.config.effectiveMode,
@@ -50,6 +90,8 @@ object ScenarioRunner {
                 riderSpeedConfidence = f.riderSpeedConfidence,
                 egoBrakingConfidence = f.egoBrakingConfidence,
                 leanDeg = f.leanDeg,
+                suppressRecedingHard = trendOut.suppressRecedingHard,
+                suppressSteadyGapHard = trendOut.suppressSteadyGapHard,
                 dynamicDistanceEnabled = dynEnabled,
                 dynamicDistanceRedSec = dynRedSec,
                 dynamicDistanceOrangeSec = dynOrangeSec
@@ -116,7 +158,8 @@ object ScenarioRunner {
                             "ttcSlope" to f.ttcSlope,
                             "roi" to f.roiContainment,
                             "egoOffsetN" to f.egoOffsetN,
-                            "qW" to f.qualityWeight
+                            "qW" to f.qualityWeight,
+                            "relDerived" to derivedRelEnabled
                         )
                     )
                 )
@@ -140,12 +183,111 @@ object ScenarioRunner {
                 extra = mapOf(
                     "frames" to frames.size,
                     "transitions" to transitions,
-                    "durationSec" to ((frames.lastOrNull()?.tSec ?: 0f) - (frames.firstOrNull()?.tSec ?: 0f))
+                    "durationSec" to ((frames.lastOrNull()?.tSec ?: 0f) - (frames.firstOrNull()?.tSec ?: 0f)),
+                    "approachSpeedSource" to if (s.config.deriveRelFromDistance) "derived_from_distance_ema" else "segment_legacy"
                 )
             )
         )
 
         return ScenarioRun(s, derived, frames, levels, events, frameTraceEvents, verdicts)
+    }
+
+    private data class TrendOut(
+        val relSignedMps: Float,
+        val relDerivValid: Boolean,
+        val suppressRecedingHard: Boolean,
+        val suppressSteadyGapHard: Boolean
+    )
+
+    private fun updateTrendGate(state: TrendGateState, frame: SimFrame): TrendOut {
+        val prevTs = state.prevTsMs
+        val dtMs = if (prevTs >= 0L) (frame.tsMs - prevTs).coerceAtLeast(0L) else 0L
+        val dtSec = dtMs.toFloat() / 1000f
+
+        val derivValid = prevTs >= 0L && dtSec > 0f && frame.distM.isFinite() && state.prevDistanceM.isFinite()
+
+        if (state.reenterCooldownMs > 0L && dtMs > 0L) {
+            state.reenterCooldownMs = (state.reenterCooldownMs - dtMs).coerceAtLeast(0L)
+        }
+
+        var relSigned = 0f
+        if (derivValid) {
+            val distSlopeSample = (frame.distM - state.prevDistanceM) / dtSec
+            relSigned = -distSlopeSample
+            state.relSignedEmaMps = if (!state.relDerivValid || !state.relSignedEmaMps.isFinite()) {
+                relSigned
+            } else {
+                state.relSignedEmaMps + RiskEngine.EMA_ALPHA_REL * (relSigned - state.relSignedEmaMps)
+            }
+            val slopeSample = (frame.distM - state.prevDistanceM) / dtSec
+            state.distSlopeEmaMps = if (!state.distSlopeValid || !state.distSlopeEmaMps.isFinite()) {
+                slopeSample
+            } else {
+                state.distSlopeEmaMps + RiskEngine.EMA_ALPHA_REL * (slopeSample - state.distSlopeEmaMps)
+            }
+            state.distSlopeValid = state.distSlopeEmaMps.isFinite()
+            state.relDerivValid = state.relSignedEmaMps.isFinite()
+            relSigned = state.relSignedEmaMps
+        } else {
+            state.relDerivValid = false
+            state.distSlopeValid = false
+            state.distSlopeEmaMps = Float.NaN
+            relSigned = 0f
+        }
+
+        val trendApproach = state.relDerivValid && relSigned > REL_EPS_OUT
+        val trendRecede = state.relDerivValid && relSigned < -REL_EPS_OUT
+        val trendSteady = state.relDerivValid && abs(relSigned) < REL_EPS_IN
+        state.trendState = when (state.trendState) {
+            TREND_APPROACH -> if (trendSteady) TREND_STEADY else TREND_APPROACH
+            TREND_RECEDE -> if (trendSteady) TREND_STEADY else TREND_RECEDE
+            else -> if (trendApproach) TREND_APPROACH else if (trendRecede) TREND_RECEDE else TREND_STEADY
+        }
+
+        val approachIndication = (state.relDerivValid && relSigned > REL_EPS_OUT) ||
+            (state.distSlopeValid && state.distSlopeEmaMps < -DIST_APPROACH_EPS)
+        if (approachIndication && dtMs > 0L) {
+            state.approachMs += dtMs
+        } else {
+            state.approachMs = 0L
+        }
+
+        val steadyCandidate = state.trendState == TREND_STEADY && state.distSlopeValid &&
+            abs(state.distSlopeEmaMps) < DIST_STEADY_EPS && state.relDerivValid
+        if (steadyCandidate && dtMs > 0L) {
+            state.steadyMs += dtMs
+        } else if (state.relDerivValid && state.distSlopeValid) {
+            state.steadyMs = 0L
+        }
+
+        if (!state.steadySuppressActive && state.steadyMs >= STEADY_SUPPRESS_MS &&
+            frame.riderSpeedMps.isFinite() && frame.riderSpeedMps >= STEADY_SUPPRESS_RIDER_MIN_MPS &&
+            state.reenterCooldownMs == 0L
+        ) {
+            state.steadySuppressActive = true
+        }
+        if (state.approachMs >= UNSUPPRESS_CONFIRM_MS) {
+            state.steadySuppressActive = false
+            state.reenterCooldownMs = SUPPRESS_REENTER_MS
+            state.steadyMs = 0L
+        }
+
+        val recedingNow = state.relDerivValid && relSigned < -RiskEngine.RECEDE_EPS_MPS
+        state.recedingStableCount = if (recedingNow) state.recedingStableCount + 1 else 0
+        val distGrowing = derivValid && frame.distM > state.prevDistanceM + 0.05f
+        state.recedingDistanceTrendCount = if (distGrowing) state.recedingDistanceTrendCount + 1 else 0
+        val suppressRecedingHard = state.recedingStableCount >= RiskEngine.K_STABLE &&
+            state.recedingDistanceTrendCount >= RiskEngine.K_STABLE
+
+        state.prevTsMs = frame.tsMs
+        state.prevDistanceM = frame.distM
+
+        return TrendOut(
+            relSignedMps = relSigned,
+            relDerivValid = state.relDerivValid,
+            suppressRecedingHard = suppressRecedingHard,
+            suppressSteadyGapHard = state.steadySuppressActive
+        )
     }
 
     private fun evaluateExpectations(s: Scenario, frames: List<SimFrame>, levels: List<Int>): List<Verdict> {

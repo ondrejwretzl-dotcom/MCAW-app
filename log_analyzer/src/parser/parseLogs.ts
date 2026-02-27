@@ -59,8 +59,8 @@ export function parseLoadedLogs(loaded: LoadedFile[]): ParsedLogData {
         const isV2 = cols[2] === 'METRICS2';
         const idx = isV2
           ? {
-              lockId: 3, consecutiveDetections: 4, roiBottomPx: 7, boxBottomPx: 8, bottomTouch: 9,
-              idSwitched: 10, relDerivValid: 11, relInvalidReasonMask: 12, distInputRaw: 18,
+              lockId: 3, consecutiveDetections: 4, roiBottomPx: 7, boxBottomPx: 8, bottomTouch: 10,
+              idSwitched: 11, relDerivValid: 12, relInvalidReasonMask: 13, distInputRaw: 18,
               distInput: 19, distM: 20, distSlopeEma: 21, relSignedEma: 22, relAbsEma: 23,
               approachSpeed: 24, ttcFromDist: 25, ttc: 26, riskScore: 27, level: 28,
               reasonPayload: 29, reasonId: 30, trendState: 31, steadyMs: 32, approachMs: 33,

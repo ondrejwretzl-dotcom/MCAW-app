@@ -45,6 +45,23 @@ Každý běh scénářů generuje do `build/reports/mcaw_scenarios/<timestamp>/`
 
 ## 3) Doporučený provozní režim
 
+## 3a) Regenerace baseline po změně katalogu/kontraktu (P1 update)
+
+Po změnách kontraktu (např. nové scénáře `C3/H3/H4` nebo změna výpočtu REL na `derived_from_distance_ema`) je nutné baseline regenerovat.
+
+1. **Jednorázově odpoj starou baseline** (aby compare nevynucoval starý snapshot):
+   - nepředávej `mcaw.baselineSummary`, případně smaž lokální soubor staré baseline.
+2. Spusť katalog a vygeneruj nový `summary.json`:
+   - `./gradlew :app:testDebugUnitTest --tests com.mcaw.risk.ScenarioSimulationReportTest`
+3. Po validaci reportu (`INDEX.md`, `index.html`) zapni gate a vytvoř kandidáta:
+   - `-Dmcaw.baseline.updateEnabled=true`
+   - `-Dmcaw.baseline.candidateOut=<path>/baseline_summary.json`
+4. Candidate schval jako nový approved baseline.
+
+Poznámka: Scenario report explicitně uvádí `approachSpeed source` (derived vs legacy), aby byl audit kontraktu jednoznačný.
+
+---
+
 ## Fáze A – první baseline (jednorázově)
 1. Spusť scénáře bez baseline (`mcaw.baselineSummary` nevyplňuj).
 2. Zapni baseline update gate:
