@@ -11,7 +11,7 @@ class ScenarioCatalogRegressionCoverageTest {
         val catalog = ScenarioCatalogFactory.createDefaultCatalog()
         val ids = catalog.scenarios.map { it.id }
 
-        assertTrue(ids.contains("R1_V1_WHITE_VAN_BOTTOM_OCCLUSION"))
+        assertTrue(ids.contains("R1_V1_TTC_INVALID_CLOSING_CONTINUES"))
         assertTrue(ids.contains("R2_V2_FOLLOW_STABLE_ORANGE"))
         assertTrue(ids.contains("C3_RECEDING_HARD_SUPPRESS"))
         assertTrue(ids.contains("H3_STEADY_GAP_HARD_SUPPRESS"))
