@@ -835,13 +835,19 @@ if (AppPreferences.debugOverlay) {
                 Float.POSITIVE_INFINITY
             }
 
+            val occlusionConfirmedForFusion =
+                bottomOcclusionCounter >= RiskEngine.K_CONFIRM_OCCL &&
+                    distanceM.isFinite() &&
+                    distanceM < RiskEngine.DIST_CLOSE_M &&
+                    approachEmaMps > RiskEngine.APPROACH_EPS_MPS
+
             val ttcRaw = DetectionPhysics.fuseTtc(
                 ttcHeightSec = ttcFromHeightsHeld,
                 ttcDistSec = ttcFromDist,
                 distanceM = distanceM,
                 approachMps = approachSpeedFromDist,
                 bottomOccluded = bottomOccluded,
-                occlusionConfirmed = occlusionConfirmed,
+                occlusionConfirmed = occlusionConfirmedForFusion,
                 qualityWeight = qualityWeight,
                 out3 = ttcFusionOut
             )
@@ -999,7 +1005,7 @@ if (AppPreferences.debugOverlay) {
             }
 
             val occlusionCandidate = bottomOccluded && roiContainment < 0.5f
-            val occlusionConfirmed = bottomOcclusionCounter >= RiskEngine.K_CONFIRM_OCCL && distanceM.isFinite() && distanceM < RiskEngine.DIST_CLOSE_M && approachEmaMps > RiskEngine.APPROACH_EPS_MPS
+            val occlusionConfirmed = occlusionConfirmedForFusion
 
             val risk = riskEngine.evaluate(
         tsMs = tsMs,
