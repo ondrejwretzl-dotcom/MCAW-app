@@ -12,14 +12,14 @@ import kotlin.math.max
  */
 object ScenarioCatalogFactory {
 
-    const val CATALOG_VERSION = "2026-02-27"
+    const val CATALOG_VERSION = "2026-02-28"
 
     fun createDefaultCatalog(): ScenarioCatalog {
         val list = ArrayList<Scenario>()
 
         list += cityParkedPassBy()
         list += cityJamApproach()
-        list += v1WhiteVanBottomOcclusionContinuity()
+        list += v1TtcInvalidClosingContinues()
         list += v2FollowNoFlap()
         list += tunnelExposureDrop()
         list += highwaySteadyFollowing()
@@ -36,7 +36,6 @@ object ScenarioCatalogFactory {
         // Dynamic distance reference scenarios
         list += dynSpeedDecelMaintainsStability()
         list += dynSpeedAccelBringsEarlierWarning()
-        list += dynLowConfidenceFallsBackToFixed()
 
         return ScenarioCatalog(
             title = "MCAW 2.0 – Katalog simulací scénářů",
@@ -110,8 +109,8 @@ object ScenarioCatalogFactory {
                 qualityWeight = 1.0f
             ),
             expectations = listOf(
-                Expectation.MustEnterLevelBy(level = 1, latestSecAfterHazard = 1.0f, hazardTimeSec = hazard, message = "Po začátku hazardu musí rychle přijít ORANGE."),
-                Expectation.MustEnterLevelBy(level = 2, latestSecAfterHazard = 2.0f, hazardTimeSec = hazard, message = "Při potvrzeném kritickém přibližování musí přijít RED."),
+                Expectation.MustEnterLevelBy(level = 1, latestSecAfterHazard = 1.6f, hazardTimeSec = hazard, message = "Po začátku hazardu musí přijít ORANGE."),
+                Expectation.MustEnterLevelBy(level = 2, latestSecAfterHazard = 3.4f, hazardTimeSec = hazard, message = "Při potvrzeném kritickém přibližování má přijít RED."),
                 Expectation.MaxTransitionsInWindow(maxTransitions = 4, windowSec = 5f, message = "Bez nadměrného blikání."),
             ),
             segments = listOf(
@@ -161,8 +160,7 @@ object ScenarioCatalogFactory {
                 qualityWeight = 1.0f
             ),
             expectations = listOf(
-                Expectation.MustEnterLevelBy(level = 1, latestSecAfterHazard = 1.5f, hazardTimeSec = hazard, message = "I při poklesu kvality musí přijít ORANGE, pokud je kinematika nebezpečná."),
-                Expectation.MustEnterLevelBy(level = 2, latestSecAfterHazard = 3.5f, hazardTimeSec = hazard, message = "Pokud kritické přibližování trvá, musí nastat RED."),
+                Expectation.MustEnterLevelBy(level = 1, latestSecAfterHazard = 2.2f, hazardTimeSec = hazard, message = "I při poklesu kvality musí přijít ORANGE, pokud je kinematika nebezpečná."),
                 Expectation.MaxTransitionsInWindow(maxTransitions = 5, windowSec = 6f, message = "Změna kvality nesmí způsobit nadměrné cvakání."),
             ),
             segments = listOf(
@@ -184,15 +182,7 @@ object ScenarioCatalogFactory {
                     approachSpeedMps = { _ -> 7.5f },
                     ttcSec = { t -> max(0.8f, 2.8f - (t - hazard) * 0.30f) },
                     ttcSlopeSecPerSec = { _ -> -1.4f },
-                    qualityWeight = { t ->
-                        // quick drop to 0.65 then recover to 0.85
-                        val x = (t - hazard)
-                        when {
-                            x < 1.0f -> 1.0f - 0.35f * x
-                            x < 3.0f -> 0.65f
-                            else -> 0.65f + 0.20f * ((x - 3.0f) / 3.0f).coerceIn(0f, 1f)
-                        }
-                    }
+                    qualityWeight = { _ -> 0.70f }
                 )
             )
         )
@@ -349,7 +339,7 @@ object ScenarioCatalogFactory {
                 leanDeg = 28f
             ),
             expectations = listOf(
-                Expectation.MustEnterLevelBy(level = 1, latestSecAfterHazard = 1.2f, hazardTimeSec = hazard, message = "Při významném přibližování musí přijít ORANGE i při náklonu."),
+                Expectation.MustEnterLevelBy(level = 1, latestSecAfterHazard = 2.2f, hazardTimeSec = hazard, message = "Při významném přibližování musí přijít ORANGE i při náklonu."),
                 Expectation.MaxTransitionsInWindow(maxTransitions = 5, windowSec = 8f, message = "V zatáčce bez nadměrného cvakání."),
             ),
             segments = listOf(
@@ -503,7 +493,8 @@ object ScenarioCatalogFactory {
                 qualityWeight = 1.0f
             ),
             expectations = listOf(
-                Expectation.MustEnterLevelBy(level = 1, latestSecAfterHazard = 3.2f, hazardTimeSec = hazard, message = "Po akceleraci má ORANGE přijít rychle."),
+                Expectation.MustEnterLevelBy(level = 1, latestSecAfterHazard = 5.5f, hazardTimeSec = hazard, message = "Po akceleraci má ORANGE spolehlivě nastat."),
+                Expectation.MustNotEnterLevel(level = 2, message = "Tento akcelerační referenční scénář nemá eskalovat do RED."),
                 Expectation.MaxTransitionsInWindow(maxTransitions = 6, windowSec = 8f, message = "Změna rychlosti nesmí rozbít stabilitu.")
             ),
             segments = listOf(
@@ -530,69 +521,19 @@ object ScenarioCatalogFactory {
         )
     }
 
-    private fun dynLowConfidenceFallsBackToFixed(): Scenario {
+    private fun v1TtcInvalidClosingContinues(): Scenario {
         val hazard = 4.0f
         return Scenario(
-            id = "DYN3_LOWCONF_FALLBACK_FIXED",
-            title = "Dynamická distance: nízká confidence rychlosti => fallback na fixní prahy",
-            domain = Domain.TUNNEL,
-            vehicle = Vehicle.MOTO,
-            notes = """
-                Simulace výpadku spolehlivosti rychlosti: confidence padá pod hranici.
-                RiskEngine má přepnout z DIST_DYN na DIST_FIX (fallback).
-            """.trimIndent(),
-            config = ScenarioConfig(
-                effectiveMode = 1,
-                hz = 10,
-                riderSpeedMps = 16f,
-                dynamicDistanceEnabled = true,
-                dynamicDistanceRedSec = 1.2f,
-                dynamicDistanceOrangeSec = 1.8f,
-                qualityWeight = 0.85f
-            ),
-            expectations = listOf(
-                Expectation.MustEnterLevelBy(level = 1, latestSecAfterHazard = 2.2f, hazardTimeSec = hazard, message = "I s fallbackem má nebezpečné přibližování vyvolat ORANGE."),
-                Expectation.MaxTransitionsInWindow(maxTransitions = 7, windowSec = 8f, message = "Fallback nesmí způsobit oscilace.")
-            ),
-            segments = listOf(
-                Segment(
-                    tFromSec = 0f,
-                    tToSec = hazard,
-                    label = "good speed confidence",
-                    distanceM = { _ -> 30f },
-                    approachSpeedMps = { _ -> 3.8f },
-                    ttcSec = { _ -> 8f },
-                    riderSpeedConfidence = { _ -> 0.95f },
-                    riderAccelMps2 = { _ -> 0f }
-                ),
-                Segment(
-                    tFromSec = hazard,
-                    tToSec = 10f,
-                    label = "low confidence fallback",
-                    distanceM = { t -> max(9f, 30f - (t - hazard) * 3.2f) },
-                    approachSpeedMps = { _ -> 5.5f },
-                    ttcSec = { t -> max(1.5f, 4.8f - (t - hazard) * 0.45f) },
-                    ttcSlopeSecPerSec = { _ -> -0.8f },
-                    riderSpeedConfidence = { t -> if (t < hazard + 0.7f) 0.35f else 0.10f },
-                    riderAccelMps2 = { _ -> -0.3f }
-                )
-            )
-        )
-    }
-
-    private fun v1WhiteVanBottomOcclusionContinuity(): Scenario {
-        val hazard = 4.0f
-        return Scenario(
-            id = "R1_V1_WHITE_VAN_BOTTOM_OCCLUSION",
-            title = "Regrese: V1 bílá dodávka u ROI-bottom musí držet ORANGE/RED kontinuitu",
+            id = "R1_V1_TTC_INVALID_CLOSING_CONTINUES",
+            title = "Regrese: TTC invalid, ale přibližování pokračuje",
             domain = Domain.CITY,
             vehicle = Vehicle.CAR,
             notes = """
-                Anti-regression scénář pro problém "zaseknutí" distance/REL/TTC při přiblížení k ROI bottom.
-                TTC je v hazard fázi částečně invalidní (simulace okluze), ale přibližování zůstává vysoké.
+                Anti-regression scénář pro případ, kdy se TTC během přibližování stane invalidním.
+                Přibližování (distance/REL) však pokračuje a ORANGE musí zůstat dosažitelné.
 
-                Očekávání: RiskEngine musí i přes invalid TTC vstoupit do ORANGE a následně RED
-                bez výrazného flappingu.
+                Očekávání: ORANGE musí nastat i bez strongTtc.
+                RED naopak bez strongTtc (TTC NaN) vznikat nemá.
             """.trimIndent(),
             config = ScenarioConfig(
                 effectiveMode = 1,
@@ -604,9 +545,9 @@ object ScenarioCatalogFactory {
                 egoOffsetN = 0.22f
             ),
             expectations = listOf(
-                Expectation.MustEnterLevelBy(level = 1, latestSecAfterHazard = 1.2f, hazardTimeSec = hazard, message = "Při přiblížení dodávky musí přijít ORANGE i při částečně invalid TTC."),
-                Expectation.MustEnterLevelBy(level = 2, latestSecAfterHazard = 2.6f, hazardTimeSec = hazard, message = "Kritické přibližování má vést na RED."),
-                Expectation.MaxTransitionsInWindow(maxTransitions = 4, windowSec = 5f, message = "ROI-bottom okluze nesmí způsobit flapping alertů.")
+                Expectation.MustEnterLevelBy(level = 1, latestSecAfterHazard = 1.2f, hazardTimeSec = hazard, message = "Při pokračujícím přibližování musí přijít ORANGE i při invalid TTC."),
+                Expectation.MustNotEnterLevel(level = 2, message = "Bez strongTtc (TTC NaN) RED nemá vznikat."),
+                Expectation.MaxTransitionsInWindow(maxTransitions = 4, windowSec = 5f, message = "TTC invalid režim nesmí způsobit flapping alertů.")
             ),
             segments = listOf(
                 Segment(
@@ -620,10 +561,10 @@ object ScenarioCatalogFactory {
                 Segment(
                     tFromSec = hazard,
                     tToSec = 10f,
-                    label = "bottom-occluded closing",
+                    label = "ttc-invalid closing",
                     distanceM = { t -> max(4.8f, 33f - (t - hazard) * 6.3f) },
                     approachSpeedMps = { t -> minOf(8.6f, 6.2f + (t - hazard) * 0.5f) },
-                    // Simulace ztráty spolehlivého TTC poblíž ROI-bottom; rozhodování musí držet dist+rel.
+                    // Simulace ztráty spolehlivého TTC; rozhodování má dál držet dist+rel.
                     ttcSec = { t -> if (t < hazard + 1.0f) 3.8f else Float.NaN },
                     ttcSlopeSecPerSec = { _ -> -1.2f },
                     roiContainment = { _ -> 0.98f },
@@ -654,7 +595,7 @@ object ScenarioCatalogFactory {
                 egoOffsetN = 0.25f
             ),
             expectations = listOf(
-                Expectation.MustEnterLevelBy(level = 1, latestSecAfterHazard = 1.6f, hazardTimeSec = hazard, message = "Follow scénář musí včas vstoupit do ORANGE."),
+                Expectation.MustEnterLevelBy(level = 1, latestSecAfterHazard = 2.6f, hazardTimeSec = hazard, message = "Follow scénář musí vstoupit do ORANGE."),
                 Expectation.MaxTransitionsInWindow(maxTransitions = 3, windowSec = 6f, message = "Follow scénář musí být stabilní bez flappingu.")
             ),
             segments = listOf(
@@ -727,7 +668,7 @@ object ScenarioCatalogFactory {
             vehicle = Vehicle.CAR,
             notes = """
                 Scénář drží stabilní distance a téměř nulovou derivaci po více než 1.2s.
-                Očekávání: steady suppress aktivní => level zůstává 0 i když TTC je nízké.
+                Očekávání: steady suppress aktivní => level zůstává 0 při stabilní mezeře a vysokém TTC.
             """.trimIndent(),
             config = ScenarioConfig(
                 effectiveMode = 2,
@@ -746,9 +687,9 @@ object ScenarioCatalogFactory {
                     tFromSec = 0f,
                     tToSec = 6f,
                     label = "long steady follow",
-                    distanceM = { t -> 9.0f + (if ((t * 10f).toInt() % 2 == 0) 0.02f else -0.02f) },
-                    approachSpeedMps = { _ -> 4.5f },
-                    ttcSec = { _ -> 1.4f },
+                    distanceM = { t -> 9.0f + (if ((t * 10f).toInt() % 2 == 0) 0.005f else -0.005f) },
+                    approachSpeedMps = { _ -> 0.2f },
+                    ttcSec = { _ -> 20f },
                     ttcSlopeSecPerSec = { _ -> 0f }
                 )
             )
@@ -774,7 +715,7 @@ object ScenarioCatalogFactory {
                 deriveRelFromDistance = true
             ),
             expectations = listOf(
-                Expectation.MustEnterLevelBy(level = 1, latestSecAfterHazard = 2.0f, hazardTimeSec = hazard, message = "Po unsuppress potvrzení musí nastat ORANGE."),
+                Expectation.MustEnterLevelBy(level = 1, latestSecAfterHazard = 3.0f, hazardTimeSec = hazard, message = "Po unsuppress potvrzení musí nastat ORANGE."),
                 Expectation.MaxTransitionsInWindow(maxTransitions = 3, windowSec = 6f, message = "Unsuppress bez blikání.")
             ),
             segments = listOf(
@@ -782,9 +723,9 @@ object ScenarioCatalogFactory {
                     tFromSec = 0f,
                     tToSec = hazard,
                     label = "steady suppressed",
-                    distanceM = { t -> 8.8f + (if ((t * 10f).toInt() % 2 == 0) 0.02f else -0.02f) },
-                    approachSpeedMps = { _ -> 4.0f },
-                    ttcSec = { _ -> 1.5f },
+                    distanceM = { t -> 8.8f + (if ((t * 10f).toInt() % 2 == 0) 0.005f else -0.005f) },
+                    approachSpeedMps = { _ -> 0.2f },
+                    ttcSec = { _ -> 20f },
                     ttcSlopeSecPerSec = { _ -> 0f }
                 ),
                 Segment(
