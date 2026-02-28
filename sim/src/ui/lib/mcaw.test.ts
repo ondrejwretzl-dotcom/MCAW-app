@@ -47,6 +47,8 @@ test('golden C2_CITY_JAM_APPROACH_CUSTOM transformation', () => {
 });
 
 import { RelStabilityState, K_INVALID_DERIV_FRAMES } from './relStability';
+import { RiskEngineRef } from '../../engine/RiskEngine';
+import { fuseTtc } from '../../engine/ttcFusion';
 
 test('rel stability invalidates on occlusion exit jump', () => {
   const st = new RelStabilityState();
@@ -77,4 +79,89 @@ test('rel stability invalidates on distance glitch without mode change', () => {
   const out = st.step({ tsMs: 700, distanceM: 10.5, hasBest: true, bestId: 1, bottomOccluded: false, riderSpeedKnown: true });
   assert.equal(out.relDerivValid, false);
   assert.ok(Math.abs(st.relSignedEmaMps - before) <= 0.5);
+});
+
+
+test('EARLY_CLOSING_TTC_MISMATCH reaches caution early with fusion', () => {
+  const eng = new RiskEngineRef();
+  let cautionAt = Number.POSITIVE_INFINITY;
+  for (let i = 0; i < 40; i++) {
+    const t = i * 0.1;
+    const dist = 20 - i * 0.35;
+    const approach = 1.2;
+    const fused = fuseTtc(10, 4.2, dist, approach, false, false, 1);
+    const out = eng.evaluate({
+      tsMs: Math.round(t * 1000),
+      effectiveMode: 1,
+      distanceM: dist,
+      approachSpeedMps: approach,
+      ttcSec: fused.ttcFused,
+      roiContainment: 1,
+      egoOffsetN: 0,
+      cutInActive: false,
+      brakeCueActive: false,
+      brakeCueStrength: 0,
+      riderSpeedMps: 12,
+      riderSpeedConfidence: 1,
+      egoBrakingConfidence: 0,
+      leanDeg: Number.NaN,
+    });
+    if (out.level >= 1) { cautionAt = t; break; }
+  }
+  assert.ok(cautionAt <= 4.0);
+});
+
+test('LATE_CLOSING_TTC_MISMATCH can escalate to red when dist ttc urgent', () => {
+  const eng = new RiskEngineRef();
+  let maxLevel = 0;
+  for (let i = 0; i < 30; i++) {
+    const t = i * 0.1;
+    const dist = Math.max(1.0, 2.0 - i * 0.03);
+    const approach = 1.4;
+    const fused = fuseTtc(9.5, 1.6, dist, approach, true, false, 1);
+    const out = eng.evaluate({
+      tsMs: Math.round(t * 1000),
+      effectiveMode: 1,
+      distanceM: dist,
+      approachSpeedMps: approach,
+      ttcSec: fused.ttcFused,
+      roiContainment: 1,
+      egoOffsetN: 0,
+      cutInActive: false,
+      brakeCueActive: false,
+      brakeCueStrength: 0,
+      riderSpeedMps: 10,
+      riderSpeedConfidence: 1,
+      egoBrakingConfidence: 0,
+      leanDeg: Number.NaN,
+    });
+    maxLevel = Math.max(maxLevel, out.level);
+  }
+  assert.ok(maxLevel >= 1);
+});
+
+test('steady headway mismatch does not force caution', () => {
+  const eng = new RiskEngineRef();
+  let maxLevel = 0;
+  for (let i = 0; i < 40; i++) {
+    const fused = fuseTtc(10, 2.5, 8, 0.15, false, false, 1);
+    const out = eng.evaluate({
+      tsMs: i * 100,
+      effectiveMode: 1,
+      distanceM: 8,
+      approachSpeedMps: 0.15,
+      ttcSec: fused.ttcFused,
+      roiContainment: 1,
+      egoOffsetN: 0,
+      cutInActive: false,
+      brakeCueActive: false,
+      brakeCueStrength: 0,
+      riderSpeedMps: 5,
+      riderSpeedConfidence: 1,
+      egoBrakingConfidence: 0,
+      leanDeg: Number.NaN,
+    });
+    maxLevel = Math.max(maxLevel, out.level);
+  }
+  assert.equal(maxLevel, 0);
 });

@@ -43,4 +43,76 @@ class DetectionPhysicsTest {
         assertEquals(null, dist)
     }
 
+
+
+    @Test
+    fun fuseTtc_sanityActivatesOnStrongMismatch() {
+        val out = FloatArray(3)
+        val fused = DetectionPhysics.fuseTtc(
+            ttcHeightSec = 10f,
+            ttcDistSec = 4f,
+            distanceM = 15f,
+            approachMps = 1.2f,
+            bottomOccluded = false,
+            occlusionConfirmed = false,
+            qualityWeight = 1f,
+            out3 = out
+        )
+
+        assertTrue(out[2] > 0.5f)
+        assertTrue(out[0] > 0.15f)
+        assertTrue(fused < 7f)
+    }
+
+    @Test
+    fun fuseTtc_keepsBaseWeightInJamLikeClosing() {
+        val out = FloatArray(3)
+        val fused = DetectionPhysics.fuseTtc(
+            ttcHeightSec = 10f,
+            ttcDistSec = 2f,
+            distanceM = 6f,
+            approachMps = 0.2f,
+            bottomOccluded = false,
+            occlusionConfirmed = false,
+            qualityWeight = 1f,
+            out3 = out
+        )
+
+        assertTrue(out[2] < 0.5f)
+        assertEquals(0.15f, out[0], 0.0001f)
+        assertTrue(fused > 8f)
+    }
+
+    @Test
+    fun fuseTtc_occlusionForcesSanityBias() {
+        val out = FloatArray(3)
+        DetectionPhysics.fuseTtc(
+            ttcHeightSec = 10f,
+            ttcDistSec = 8f,
+            distanceM = 20f,
+            approachMps = 0.5f,
+            bottomOccluded = false,
+            occlusionConfirmed = true,
+            qualityWeight = 1f,
+            out3 = out
+        )
+
+        assertTrue(out[2] > 0.5f)
+        assertTrue(out[0] >= 0.25f)
+    }
+
+    @Test
+    fun fuseTtc_returnsDistWhenOnlyDistFinite() {
+        val out = FloatArray(3)
+        val fused = DetectionPhysics.fuseTtc(null, 3f, 10f, 1f, false, false, 1f, out)
+        assertEquals(3f, fused, 0.0001f)
+    }
+
+    @Test
+    fun fuseTtc_returnsHeightWhenOnlyHeightFinite() {
+        val out = FloatArray(3)
+        val fused = DetectionPhysics.fuseTtc(5f, Float.POSITIVE_INFINITY, 10f, 1f, false, false, 1f, out)
+        assertEquals(5f, fused, 0.0001f)
+    }
+
 }

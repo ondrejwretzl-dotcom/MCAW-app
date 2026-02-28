@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { parseJsonl } from '../io/jsonl';
 import { RiskEngineRef } from '../engine/RiskEngine';
+import { fuseTtc } from '../engine/ttcFusion';
 
 import { UploadPanel } from './components/UploadPanel';
 import { BuilderPanel } from './components/BuilderPanel';
@@ -172,10 +173,26 @@ export function App() {
       relDerivedMps.push(Number(relFrame.relSignedEmaMps));
       relDerivedValid.push(Boolean(relFrame.relDerivValid));
 
+      const approachForRisk = Number(relFrame.relDerivValid ? Math.abs(relFrame.relSignedEmaMps) : Number(input.approachSpeedMps ?? 0));
+      const ttcHeightSec = Number(input.ttcHeightSec ?? input.ttcSec);
+      const ttcDistSec = Number(input.ttcDistSec ?? input.ttcSec);
+      const ttcFusion = fuseTtc(
+        ttcHeightSec,
+        ttcDistSec,
+        Number(relFrame.distanceStableM),
+        approachForRisk,
+        Boolean(input.bottomOccluded),
+        false,
+        Number(input.qualityWeight ?? 1),
+      );
+
       const evalInput: FrameIn = {
         ...input,
         distanceM: Number(relFrame.distanceStableM),
-        approachSpeedMps: Number(relFrame.relDerivValid ? Math.abs(relFrame.relSignedEmaMps) : Number(input.approachSpeedMps ?? 0)),
+        approachSpeedMps: approachForRisk,
+        ttcSec: ttcFusion.ttcFused,
+        ttcHeightSec,
+        ttcDistSec,
         suppressRecedingHard: relFrame.trendState === 2,
         suppressSteadyGapHard: relFrame.steadySuppressActive,
         effectiveMode: Number(input.effectiveMode ?? 1),

@@ -136,6 +136,8 @@ export function generateFrames(draft: ScenarioDraft): FrameRow[] {
       distanceM: distM,
       approachSpeedMps: relMps,
       ttcSec,
+      ttcHeightSec: ttcSec,
+      ttcDistSec: ttcSec,
       roiContainment: roi,
       egoOffsetN,
       cutInActive: seg.cutIn,

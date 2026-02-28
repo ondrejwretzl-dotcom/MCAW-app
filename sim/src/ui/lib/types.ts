@@ -3,6 +3,8 @@ export type FrameIn = {
   distanceM: number;
   approachSpeedMps: number; // relative closing speed (m/s), higher = more danger
   ttcSec: number;
+  ttcHeightSec?: number;
+  ttcDistSec?: number;
   ttcSlopeSecPerSec?: number;
   roiContainment?: number;
   egoOffsetN?: number;

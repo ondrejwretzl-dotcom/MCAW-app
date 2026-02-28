@@ -9,6 +9,7 @@ import type {
   StandingSuppressorResult,
   SwitchBeneficialEvent,
   SwitchBeneficialResult,
+  TtcMismatchResult,
 } from '../types';
 
 export function relQuality(data: ParsedLogData): RelQualityResult {
@@ -141,4 +142,35 @@ function inferAutoSplitTs(ts: number): number {
   // fallback heuristika: 2026-02-25 12:00:00 UTC
   const defaultSplit = Date.UTC(2026, 1, 25, 12, 0, 0);
   return defaultSplit;
+}
+
+
+export function ttcMismatchKpi(data: ParsedLogData): TtcMismatchResult {
+  const rows = [...data.riskRows].sort((a, b) => a.ts - b.ts);
+  const hits = rows.filter((r) => {
+    const sanity = (r.ttcSanity ?? 0) >= 1;
+    const d = r.ttcD;
+    const t = r.ttc;
+    const rel = r.relV ?? 0;
+    const dist = r.dist ?? Number.POSITIVE_INFINITY;
+    const mismatch = Number.isFinite(d) && Number.isFinite(t) && (d as number) < (t as number) * 0.7 && rel > 0.8 && dist < 25;
+    return sanity || mismatch;
+  });
+
+  const windows: Array<{ tsStart: number; tsEnd: number; count: number; minRatio: number }> = [];
+  const gapMs = 400;
+  for (const r of hits) {
+    const ratio = Number.isFinite(r.ttcMr) ? Number(r.ttcMr) : Number.POSITIVE_INFINITY;
+    const last = windows[windows.length - 1];
+    if (!last || r.ts - last.tsEnd > gapMs) {
+      windows.push({ tsStart: r.ts, tsEnd: r.ts, count: 1, minRatio: ratio });
+    } else {
+      last.tsEnd = r.ts;
+      last.count += 1;
+      last.minRatio = Math.min(last.minRatio, ratio);
+    }
+  }
+
+  windows.sort((a, b) => a.minRatio - b.minRatio || b.count - a.count);
+  return { events: hits.length, windows: windows.slice(0, 10) };
 }
