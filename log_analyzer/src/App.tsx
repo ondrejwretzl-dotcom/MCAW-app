@@ -3,7 +3,7 @@ import { summarizeSchema } from './parser/schema';
 import { loadFiles, parseLoadedLogs } from './parser/parseLogs';
 import type { EventGroup, ParsedLogData, ScenarioTag, Severity, SplitMode } from './types';
 import { buildEventGroups } from './kpi/events';
-import { falseRedBottomTouch, parseScenarioTags, relQuality, standingSuppressorKpi, switchBeneficialRate } from './kpi/metrics';
+import { falseRedBottomTouch, parseScenarioTags, relQuality, standingSuppressorKpi, switchBeneficialRate, ttcMismatchKpi } from './kpi/metrics';
 import { buildObjectSegments } from './kpi/segments';
 import { DataQualityPanel } from './ui/components/DataQualityPanel';
 import { KpiDashboard } from './ui/components/KpiDashboard';
@@ -50,6 +50,7 @@ export function App() {
   );
   const switches = useMemo(() => (parsed ? switchBeneficialRate(parsed) : { total: 0, beneficial: 0, nonBeneficial: 0, rate: 0, events: [] }), [parsed]);
   const standing = useMemo(() => (parsed ? standingSuppressorKpi(parsed, tags) : { taggedNearStopCritical: 0, missedCriticalNearStop: 0, rate: 0, events: [] }), [parsed, tags]);
+  const ttcMismatch = useMemo(() => (parsed ? ttcMismatchKpi(parsed) : { events: 0, windows: [] }), [parsed]);
   const segments = useMemo(() => (parsed ? buildObjectSegments(parsed) : []), [parsed]);
 
   return (
@@ -130,7 +131,7 @@ export function App() {
       </section>
 
       <DataQualityPanel data={parsed} />
-      <KpiDashboard rel={rel} falseRed={falseRed} switches={switches} standing={standing} />
+      <KpiDashboard rel={rel} falseRed={falseRed} switches={switches} standing={standing} ttcMismatch={ttcMismatch} />
 
       <section className="grid">
         <div className="card">
@@ -223,11 +224,17 @@ export function App() {
                 <h4>MCAW výpočty (sample)</h4>
                 <ul>
                   {selectedGroup.riskRows.slice(0, 8).map((r) => (
-                    <li key={r.ts}>{fmt(r.ts)} | risk={r.risk ?? 'n/a'} level={r.level ?? 'n/a'} ttc={r.ttc ?? 'n/a'} dist={r.dist ?? 'n/a'} rel={r.relV ?? 'n/a'} lock={r.lockId ?? '-'} final={r.finalTargetId ?? '-'}</li>
+                    <li key={r.ts}>{fmt(r.ts)} | risk={r.risk ?? 'n/a'} level={r.level ?? 'n/a'} ttc={r.ttc ?? 'n/a'} dist={r.dist ?? 'n/a'} rel={r.relV ?? 'n/a'} ttcH={r.ttcH ?? 'n/a'} ttcD={r.ttcD ?? 'n/a'} wd={r.ttcWd ?? 'n/a'} mr={r.ttcMr ?? 'n/a'} sanity={r.ttcSanity ?? 'n/a'} lock={r.lockId ?? '-'} final={r.finalTargetId ?? '-'}</li>
                   ))}
                 </ul>
                 <h4>Extra fields</h4>
                 <pre>{JSON.stringify(selectedGroup.riskRows.slice(0, 3).map((r) => r.extraFields), null, 2)}</pre>
+                <h4>TTC mismatch windows (top 10)</h4>
+                <ul>
+                  {ttcMismatch.windows.map((w, i) => (
+                    <li key={`${w.tsStart}-${i}`}>{fmt(w.tsStart)} → {fmt(w.tsEnd)} | frames={w.count} | min ratio={Number.isFinite(w.minRatio) ? w.minRatio.toFixed(3) : 'n/a'}</li>
+                  ))}
+                </ul>
               </>
             )}
           </aside>

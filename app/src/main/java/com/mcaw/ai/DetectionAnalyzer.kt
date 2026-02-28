@@ -245,6 +245,7 @@ class DetectionAnalyzer(
 
     private var lastTtcHeight: Float = Float.POSITIVE_INFINITY
     private var lastTtcHeightTsMs: Long = -1L
+    private val ttcFusionOut: FloatArray = FloatArray(3)
 
     // TTC slope (sec/sec) for trend detection (negative = TTC decreasing)
     private var lastTtcForSlope: Float = Float.NaN
@@ -834,17 +835,19 @@ if (AppPreferences.debugOverlay) {
                 Float.POSITIVE_INFINITY
             }
 
-            // Blend sources instead of hard switching (prevents sudden TTC jumps)
-            val ttcRaw = when {
-                ttcFromHeightsHeld != null && ttcFromHeightsHeld.isFinite() && ttcFromDist.isFinite() -> {
-                    // Prefer bbox TTC, but keep a bit of dist TTC as sanity
-                    (ttcFromHeightsHeld * 0.85f) + (ttcFromDist * 0.15f)
-                }
-                ttcFromHeightsHeld != null && ttcFromHeightsHeld.isFinite() -> ttcFromHeightsHeld
-                else -> ttcFromDist
-            }
+            val ttcRaw = DetectionPhysics.fuseTtc(
+                ttcHeightSec = ttcFromHeightsHeld,
+                ttcDistSec = ttcFromDist,
+                distanceM = distanceM,
+                approachMps = approachSpeedFromDist,
+                bottomOccluded = bottomOccluded,
+                occlusionConfirmed = occlusionConfirmed,
+                qualityWeight = qualityWeight,
+                out3 = ttcFusionOut
+            )
 
-            val ttc = smoothTtc(ttcRaw, tsMs)
+            val recedingStableForRelease = relSignedEmaMps < 0f && approachEmaMps < 0.4f && !ttcFromDist.isFinite()
+            val ttc = smoothTtc(ttcRaw, tsMs, recedingStableForRelease)
 
             // TTC slope (sec/sec). Robust + EMA to avoid noise.
             val ttcSlopeSecPerSec: Float = run {
@@ -1036,7 +1039,7 @@ if (AppPreferences.debugOverlay) {
             if (AppPreferences.debugOverlay && (frameIndex % logEveryNFrames == 0L)) {
                 val payload = RiskEngine.stripReasonVersion(risk.reasonBits)
                 traceLogger?.logLine(
-                    "M,$tsMs,METRICS2,${bestTrack.id},${bestTrack.consecutiveDetections},$zoomFactor,${cropBottomPx.toInt()},${roiBottomPxF.toInt()},${bestBox.y2.toInt()},${bottomOcclEpsPx.toInt()},${if (bottomOccluded) 1 else 0},${if (idSwitchedThisFrame) 1 else 0},${if (relDerivValid) 1 else 0},$relInvalidReasonMask,${distFromHeight ?: Float.NaN},${distFromGround ?: Float.NaN},${distGroundPred ?: Float.NaN},${distCropBound ?: Float.NaN},${distanceInputRaw},$distanceInput,$distanceM,${distSlopeEmaMps},${relSignedMps},${relAbsMps},$approachSpeedMps,$ttcFromDist,$ttc,${String.format(java.util.Locale.US, "%.3f", risk.riskScore)},${risk.level},$payload,${RiskEngine.reasonId(risk.reasonBits)},$trendState,$steadyMs,$approachMs,${if (steadySuppressActive) 1 else 0},$reenterCooldownMs,$distSource,$distConf,$riderSpeedRawMps,$riderSpeedMps,$riderSpeedConfidence,$riderSpeedSourceOrdinal,$riderSpeedAgeMs,$riderSpeedMethod"
+                    "M,$tsMs,METRICS2,${bestTrack.id},${bestTrack.consecutiveDetections},$zoomFactor,${cropBottomPx.toInt()},${roiBottomPxF.toInt()},${bestBox.y2.toInt()},${bottomOcclEpsPx.toInt()},${if (bottomOccluded) 1 else 0},${if (idSwitchedThisFrame) 1 else 0},${if (relDerivValid) 1 else 0},$relInvalidReasonMask,${distFromHeight ?: Float.NaN},${distFromGround ?: Float.NaN},${distGroundPred ?: Float.NaN},${distCropBound ?: Float.NaN},${distanceInputRaw},$distanceInput,$distanceM,${distSlopeEmaMps},${relSignedMps},${relAbsMps},$approachSpeedMps,$ttcFromDist,$ttc,${String.format(java.util.Locale.US, "%.3f", risk.riskScore)},${risk.level},$payload,${RiskEngine.reasonId(risk.reasonBits)},$trendState,$steadyMs,$approachMs,${if (steadySuppressActive) 1 else 0},$reenterCooldownMs,$distSource,$distConf,$riderSpeedRawMps,$riderSpeedMps,$riderSpeedConfidence,$riderSpeedSourceOrdinal,$riderSpeedAgeMs,$riderSpeedMethod,${ttcFromHeightsHeld ?: Float.NaN},$ttcFromDist,${ttcFusionOut[0]},${ttcFusionOut[1]},${if (ttcFusionOut[2] > 0.5f) 1 else 0}"
                 )
             }
 
@@ -1080,7 +1083,12 @@ if (level != prevLevel || frameIndex % eventEveryNFrames == 0L) {
         riderSpeedConfidence = riderSpeedConfidence,
         riderSpeedSourceOrdinal = riderSpeedSourceOrdinal,
         riderSpeedAgeMs = riderSpeedAgeMs,
-        riderSpeedMethod = riderSpeedMethod
+        riderSpeedMethod = riderSpeedMethod,
+        ttcH = ttcFromHeightsHeld ?: Float.NaN,
+        ttcD = ttcFromDist,
+        ttcWd = ttcFusionOut[0],
+        ttcMr = ttcFusionOut[1],
+        ttcSanity = (ttcFusionOut[2] > 0.5f)
     )
 }
 
@@ -1145,7 +1153,7 @@ sendOverlayUpdate(
                     "distRaw=${distanceRaw ?: Float.NaN} distStable=$distanceInput dist=$distanceM " +
                     "bestId=${bestTrack.id} relValid=$relDerivValid relMask=$relInvalidReasonMask relEma=$relSignedEmaMps relApp=$approachSpeedFromDist " +
                     "riderRaw=$riderSpeedRawMps rider=$riderSpeedMps src=${speedReading.source} conf=${speedReading.confidence} obj=$objectSpeedMps " +
-                    "ttcH=${ttcFromHeightsHeld ?: Float.NaN} ttcD=$ttcFromDist ttc=$ttc"
+                    "ttcH=${ttcFromHeightsHeld ?: Float.NaN} ttcD=$ttcFromDist ttc=$ttc wd=${ttcFusionOut[0]} mr=${ttcFusionOut[1]} sanity=${if (ttcFusionOut[2] > 0.5f) 1 else 0}"
             )
 
             sendMetricsUpdate(
@@ -1772,12 +1780,13 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
      * - clamps unrealistic jumps based on dt
      * - asymmetric EMA (faster when TTC decreases)
      */
-    private fun smoothTtc(ttcRaw: Float, tsMs: Long): Float {
+    private fun smoothTtc(ttcRaw: Float, tsMs: Long, recedingStable: Boolean = false): Float {
         val raw = if (ttcRaw.isFinite() && ttcRaw > 0f) ttcRaw.coerceIn(0.05f, 120f) else Float.POSITIVE_INFINITY
 
         // If TTC becomes invalid, hold the last finite value briefly to avoid UI blinking.
         if (!raw.isFinite()) {
-            if (ttcEmaValid && ttcEma.isFinite() && lastTtcFiniteTsMs > 0L && (tsMs - lastTtcFiniteTsMs) <= ttcInvalidHoldMs) {
+            val holdMs = if (recedingStable) 300L else ttcInvalidHoldMs
+            if (ttcEmaValid && ttcEma.isFinite() && lastTtcFiniteTsMs > 0L && (tsMs - lastTtcFiniteTsMs) <= holdMs) {
                 return ttcEma
             }
             ttcEmaValid = false

@@ -43,6 +43,11 @@ object LogContract {
     const val COL_RIDER_SPEED_SRC = "rider_speed_src"
     const val COL_RIDER_SPEED_AGE_MS = "rider_speed_age_ms"
     const val COL_RIDER_SPEED_METHOD = "rider_speed_method"
+    const val COL_TTC_H = "ttc_h"
+    const val COL_TTC_D = "ttc_d"
+    const val COL_TTC_WD = "ttc_wd"
+    const val COL_TTC_MR = "ttc_mr"
+    const val COL_TTC_SANITY = "ttc_sanity"
 
     // Optional but very useful for audit & sync with video: what object was actually used for risk.
     // Kept at the end to keep backward CSV compatibility for existing parsers.
@@ -79,7 +84,12 @@ object LogContract {
         append(COL_RIDER_SPEED_CONF).append(',')
         append(COL_RIDER_SPEED_SRC).append(',')
         append(COL_RIDER_SPEED_AGE_MS).append(',')
-        append(COL_RIDER_SPEED_METHOD)
+        append(COL_RIDER_SPEED_METHOD).append(',')
+        append(COL_TTC_H).append(',')
+        append(COL_TTC_D).append(',')
+        append(COL_TTC_WD).append(',')
+        append(COL_TTC_MR).append(',')
+        append(COL_TTC_SANITY)
         append('\n')
     }
 
@@ -116,7 +126,12 @@ object LogContract {
         riderSpeedConf: Float,
         riderSpeedSrc: Int,
         riderSpeedAgeMs: Long,
-        riderSpeedMethod: Int
+        riderSpeedMethod: Int,
+        ttcH: Float,
+        ttcD: Float,
+        ttcWd: Float,
+        ttcMr: Float,
+        ttcSanity: Boolean
     ) {
         sb.append(tsMs).append(',')
         appendFloat(sb, risk, 3); sb.append(',')
@@ -144,7 +159,12 @@ object LogContract {
         appendFloat(sb, riderSpeedConf, 3); sb.append(',')
         sb.append(riderSpeedSrc).append(',')
         sb.append(riderSpeedAgeMs).append(',')
-        sb.append(riderSpeedMethod)
+        sb.append(riderSpeedMethod).append(',')
+        appendFloat(sb, ttcH, 3); sb.append(',')
+        appendFloat(sb, ttcD, 3); sb.append(',')
+        appendFloat(sb, ttcWd, 3); sb.append(',')
+        appendFloat(sb, ttcMr, 3); sb.append(',')
+        sb.append(if (ttcSanity) 1 else 0)
 
         sb.append('\n')
     }

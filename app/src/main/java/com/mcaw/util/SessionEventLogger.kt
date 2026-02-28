@@ -45,6 +45,11 @@ class SessionEventLogger(
         var riderSpeedSourceOrdinal: Int = 0
         var riderSpeedAgeMs: Long = 0L
         var riderSpeedMethod: Int = 0
+        var ttcH: Float = Float.NaN
+        var ttcD: Float = Float.NaN
+        var ttcWd: Float = Float.NaN
+        var ttcMr: Float = Float.NaN
+        var ttcSanity: Boolean = false
     }
 
     @Volatile
@@ -115,7 +120,12 @@ class SessionEventLogger(
         riderSpeedConfidence: Float,
         riderSpeedSourceOrdinal: Int,
         riderSpeedAgeMs: Long,
-        riderSpeedMethod: Int
+        riderSpeedMethod: Int,
+        ttcH: Float,
+        ttcD: Float,
+        ttcWd: Float,
+        ttcMr: Float,
+        ttcSanity: Boolean
     ) {
         if (!started) return
 
@@ -147,6 +157,11 @@ class SessionEventLogger(
         ev.riderSpeedSourceOrdinal = riderSpeedSourceOrdinal
         ev.riderSpeedAgeMs = riderSpeedAgeMs
         ev.riderSpeedMethod = riderSpeedMethod
+        ev.ttcH = ttcH
+        ev.ttcD = ttcD
+        ev.ttcWd = ttcWd
+        ev.ttcMr = ttcMr
+        ev.ttcSanity = ttcSanity
 
         val shouldPostDrain: Boolean = synchronized(lock) {
             val wasEmpty = queue.isEmpty()
@@ -192,7 +207,12 @@ class SessionEventLogger(
                 riderSpeedConf = ev.riderSpeedConfidence,
                 riderSpeedSrc = ev.riderSpeedSourceOrdinal,
                 riderSpeedAgeMs = ev.riderSpeedAgeMs,
-                riderSpeedMethod = ev.riderSpeedMethod
+                riderSpeedMethod = ev.riderSpeedMethod,
+                ttcH = ev.ttcH,
+                ttcD = ev.ttcD,
+                ttcWd = ev.ttcWd,
+                ttcMr = ev.ttcMr,
+                ttcSanity = ev.ttcSanity
             )
             PublicLogWriter.appendLogLine(context, fileName, sb.toString().trimEnd())
 
