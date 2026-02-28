@@ -33,6 +33,11 @@ export type RiskRow = {
   riderSpeedSource?: number;
   riderSpeedAgeMs?: number;
   riderSpeedMethod?: number;
+  ttcH?: number;
+  ttcD?: number;
+  ttcWd?: number;
+  ttcMr?: number;
+  ttcSanity?: number;
   rawColumns: string[];
   extraFields: Record<string, string>;
   source: string;
@@ -75,6 +80,11 @@ export type MetricsRow = {
   riderSpeedSource?: number;
   riderSpeedAgeMs?: number;
   riderSpeedMethod?: number;
+  ttcH?: number;
+  ttcD?: number;
+  ttcWd?: number;
+  ttcMr?: number;
+  ttcSanity?: number;
   rawColumns: string[];
   extraFields: Record<string, string>;
   source: string;
@@ -164,6 +174,18 @@ export type SwitchBeneficialResult = {
   nonBeneficial: number;
   rate: number;
   events: SwitchBeneficialEvent[];
+};
+
+export type TtcMismatchWindow = {
+  tsStart: number;
+  tsEnd: number;
+  count: number;
+  minRatio: number;
+};
+
+export type TtcMismatchResult = {
+  events: number;
+  windows: TtcMismatchWindow[];
 };
 
 export type StandingSuppressorResult = {

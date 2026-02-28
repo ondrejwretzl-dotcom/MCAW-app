@@ -2,8 +2,69 @@ package com.mcaw.ai
 
 import com.mcaw.model.Box
 import kotlin.math.ln
+import kotlin.math.max
+import kotlin.math.min
 
 object DetectionPhysics {
+
+    private fun clamp(v: Float, lo: Float, hi: Float): Float = min(hi, max(lo, v))
+
+    fun fuseTtc(
+        ttcHeightSec: Float?,
+        ttcDistSec: Float,
+        distanceM: Float,
+        approachMps: Float,
+        bottomOccluded: Boolean,
+        occlusionConfirmed: Boolean,
+        qualityWeight: Float,
+        out3: FloatArray
+    ): Float {
+        val wDistBase = 0.15f
+        val ttcH = ttcHeightSec?.takeIf { it.isFinite() && it > 0f }
+        val ttcD = ttcDistSec.takeIf { it.isFinite() && it > 0f }
+
+        out3[0] = wDistBase
+        out3[1] = Float.NaN
+        out3[2] = 0f
+
+        if (ttcH == null && ttcD == null) return Float.POSITIVE_INFINITY
+        if (ttcH == null) return ttcD ?: Float.POSITIVE_INFINITY
+        if (ttcD == null) return ttcH
+
+        val mismatchRatio = ttcD / ttcH
+        out3[1] = mismatchRatio
+
+        val protectSteady = approachMps <= 0.30f
+        val closeEnough = distanceM.isFinite() && distanceM <= 25f
+        val mismatchClosing = ttcD < (ttcH * 0.70f)
+        val strongClosing = approachMps >= 0.80f
+        val bottomTouchRisk = bottomOccluded && distanceM.isFinite() && distanceM <= 12f
+        val sanityActive = !protectSteady && (
+            (strongClosing && closeEnough && mismatchClosing) ||
+                occlusionConfirmed ||
+                bottomTouchRisk
+            )
+
+        var wDist = wDistBase
+        if (sanityActive) {
+            val ratio = ttcH / max(ttcD, 0.05f)
+            val severity = clamp(((ratio - 1f) / 1.5f), 0f, 1f)
+            wDist = clamp(wDistBase + severity * 0.60f, 0.15f, 0.75f)
+            if (occlusionConfirmed) {
+                wDist = clamp(wDist + 0.10f, 0.15f, 0.80f)
+            }
+        }
+
+        val wHeight = 1f - wDist
+        var ttcRaw = (wHeight * ttcH) + (wDist * ttcD)
+        if (sanityActive) {
+            ttcRaw = min(ttcRaw, max(ttcD, 0.05f))
+            out3[2] = 1f
+        }
+
+        out3[0] = wDist
+        return if (ttcRaw.isFinite() && ttcRaw > 0f) ttcRaw else Float.POSITIVE_INFINITY
+    }
 
     fun minFinite(a: Float?, b: Float?): Float? {
         val af = a?.takeIf { it.isFinite() }

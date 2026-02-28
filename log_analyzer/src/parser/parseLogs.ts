@@ -66,7 +66,7 @@ export function parseLoadedLogs(loaded: LoadedFile[]): ParsedLogData {
               reasonPayload: 29, reasonId: 30, trendState: 31, steadyMs: 32, approachMs: 33,
               steadySuppressActive: 34, reenterCooldownMs: 35, distSource: 36, distConf: 37,
               riderSpeedRawMps: 38, riderSpeedMps: 39, riderSpeedConfidence: 40, riderSpeedSource: 41,
-              riderSpeedAgeMs: 42, riderSpeedMethod: 43,
+              riderSpeedAgeMs: 42, riderSpeedMethod: 43, ttcH: 44, ttcD: 45, ttcWd: 46, ttcMr: 47, ttcSanity: 48,
             }
           : {
               lockId: 3, consecutiveDetections: 4, roiBottomPx: 7, boxBottomPx: 8, bottomTouch: 9,
@@ -113,6 +113,11 @@ export function parseLoadedLogs(loaded: LoadedFile[]): ParsedLogData {
           riderSpeedSource: toNum(cols[idx.riderSpeedSource]),
           riderSpeedAgeMs: toNum(cols[idx.riderSpeedAgeMs]),
           riderSpeedMethod: toNum(cols[idx.riderSpeedMethod]),
+          ttcH: isV2 ? toNum(cols[idx.ttcH]) : undefined,
+          ttcD: isV2 ? toNum(cols[idx.ttcD]) : undefined,
+          ttcWd: isV2 ? toNum(cols[idx.ttcWd]) : undefined,
+          ttcMr: isV2 ? toNum(cols[idx.ttcMr]) : undefined,
+          ttcSanity: isV2 ? toNum(cols[idx.ttcSanity]) : undefined,
           rawColumns: cols, extraFields, source: file.fileName,
         });
         validRows += 1;
@@ -147,6 +152,11 @@ export function parseLoadedLogs(loaded: LoadedFile[]): ParsedLogData {
           riderSpeedSource: 21,
           riderSpeedAgeMs: 22,
           riderSpeedMethod: 23,
+          ttcH: 24,
+          ttcD: 25,
+          ttcWd: 26,
+          ttcMr: 27,
+          ttcSanity: 28,
         });
         const risk = toNum(cols[1]);
         const row: RiskRow = {
@@ -175,6 +185,11 @@ export function parseLoadedLogs(loaded: LoadedFile[]): ParsedLogData {
           riderSpeedSource: toNum(cols[21]),
           riderSpeedAgeMs: toNum(cols[22]),
           riderSpeedMethod: toNum(cols[23]),
+          ttcH: toNum(cols[24]),
+          ttcD: toNum(cols[25]),
+          ttcWd: toNum(cols[26]),
+          ttcMr: toNum(cols[27]),
+          ttcSanity: toNum(cols[28]),
           rawColumns: cols,
           extraFields,
           source: file.fileName,

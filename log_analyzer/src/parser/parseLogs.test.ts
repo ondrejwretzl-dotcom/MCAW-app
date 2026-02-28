@@ -19,7 +19,7 @@ describe('parseLoadedLogs', () => {
       '7', '3', '1.0', '400', '390', '388', '12', '1', '0', '1', '5',
       '10.0', '9.8', '9.7', '9.6', '9.6', '9.5', '9.4', '-0.05', '0.30', '0.30', '0.30',
       '31.2', '31.0', '0.500', '0', '0', '0', '0', '1300', '0', '1', '0', '4', '0.90',
-      '8.0', '8.0', '1.0', '1', '20', '1'
+      '8.0', '8.0', '1.0', '1', '20', '1', '9.5', '3.8', '0.55', '0.40', '1'
     ];
     const text = cols.join(',');
     const data = parseLoadedLogs([{ fileName: 'm2.log', text }]);
@@ -33,5 +33,8 @@ describe('parseLoadedLogs', () => {
     expect(m.trendState).toBe(0);
     expect(m.steadySuppressActive).toBe(1);
     expect(m.relSignedEma).toBeCloseTo(0.3);
+    expect(m.ttcH).toBeCloseTo(9.5);
+    expect(m.ttcD).toBeCloseTo(3.8);
+    expect(m.ttcSanity).toBe(1);
   });
 });

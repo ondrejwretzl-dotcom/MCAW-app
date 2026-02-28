@@ -1,17 +1,19 @@
 import React from 'react';
 import { REL_INVALID_REASON_BITS } from '../../parser/schema';
-import type { FalseRedResult, RelQualityResult, StandingSuppressorResult, SwitchBeneficialResult } from '../../types';
+import type { FalseRedResult, RelQualityResult, StandingSuppressorResult, SwitchBeneficialResult, TtcMismatchResult } from '../../types';
 
 export function KpiDashboard({
   rel,
   falseRed,
   switches,
   standing,
+  ttcMismatch,
 }: {
   rel: RelQualityResult;
   falseRed: FalseRedResult;
   switches: SwitchBeneficialResult;
   standing: StandingSuppressorResult;
+  ttcMismatch: TtcMismatchResult;
 }) {
   return (
     <section className="card">
@@ -47,6 +49,13 @@ export function KpiDashboard({
           <p>missed-critical near stop: {standing.missedCriticalNearStop}/{standing.taggedNearStopCritical} ({(standing.rate * 100).toFixed(1)}%)</p>
           <small>based on imported manual scene tags</small>
         </div>
+
+        <div>
+          <h3>TTC mismatch</h3>
+          <p>events: {ttcMismatch.events}</p>
+          <small>top windows: {ttcMismatch.windows.slice(0, 3).map((w) => `${new Date(w.tsStart).toLocaleTimeString('cs-CZ', { hour12: false })}(${w.count})`).join(', ') || '-'}</small>
+        </div>
+
       </div>
     </section>
   );
