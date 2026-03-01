@@ -48,7 +48,7 @@ class ScenarioSimulationReportTest {
 
         for (s in engineCatalog.scenarios) {
             val run = ScenarioRunner.runScenario(s)
-            ScenarioRunner.writeReports(run, outDir)
+            ScenarioRunner.writeReports(run, outDir, "engine_only")
             engineRuns.add(run)
 
             val pass = run.verdicts.all { it.ok }
@@ -63,7 +63,7 @@ class ScenarioSimulationReportTest {
                 .append(s.vehicle).append("|")
                 .append(if (pass) "✅ PROŠEL" else "❌ NEPROŠEL").append("|")
                 .append(shortWhy.replace("|", "/")).append("|")
-                .append("[").append(s.id).append(".md](").append(s.id).append(".md)").append("|")
+                .append("[").append(s.id).append(".md](engine_only/").append(s.id).append(".md)").append("|")
                 .append("\n")
         }
 
@@ -78,7 +78,7 @@ class ScenarioSimulationReportTest {
 
         for (s in e2eCatalog.scenarios) {
             val run = com.mcaw.risk.scenario.E2eScenarioRunner.runScenario(s)
-            ScenarioRunner.writeReports(run, outDir)
+            ScenarioRunner.writeReports(run, outDir, "e2e")
             e2eRuns.add(run)
 
             val pass = run.verdicts.all { it.ok }
@@ -173,7 +173,7 @@ class ScenarioSimulationReportTest {
             val decision = ScenarioComparisonReport.decideBaselineUpdate(
                 hasBaseline = baselineEngineSummary.isNotEmpty() || baselineE2eSummary.isNotEmpty(),
                 allScenariosPass = allOk,
-                diff = engineDiff ?: e2eDiff,
+                diff = ScenarioComparisonReport.mergeDiffs(engineDiff, e2eDiff),
                 requireAllPass = baselineRequireAllPass,
                 maxSoftRegressions = baselineMaxSoftRegressions,
                 minImproved = baselineMinImproved

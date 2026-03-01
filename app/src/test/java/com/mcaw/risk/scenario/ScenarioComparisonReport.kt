@@ -430,6 +430,26 @@ object ScenarioComparisonReport {
         }
     }
 
+    fun mergeDiffs(engineDiff: DiffResult?, e2eDiff: DiffResult?): DiffResult? {
+        if (engineDiff == null && e2eDiff == null) return null
+        val entries = ArrayList<DiffEntry>()
+        if (engineDiff != null) {
+            entries += engineDiff.entries.map { it.copy(scenarioId = "ENGINE_ONLY:${it.scenarioId}") }
+        }
+        if (e2eDiff != null) {
+            entries += e2eDiff.entries.map { it.copy(scenarioId = "E2E:${it.scenarioId}") }
+        }
+        return DiffResult(
+            baselinePath = listOfNotNull(engineDiff?.baselinePath, e2eDiff?.baselinePath).joinToString(";"),
+            currentPath = listOfNotNull(engineDiff?.currentPath, e2eDiff?.currentPath).joinToString(";"),
+            hardRegressionCount = (engineDiff?.hardRegressionCount ?: 0) + (e2eDiff?.hardRegressionCount ?: 0),
+            softRegressionCount = (engineDiff?.softRegressionCount ?: 0) + (e2eDiff?.softRegressionCount ?: 0),
+            improvedCount = (engineDiff?.improvedCount ?: 0) + (e2eDiff?.improvedCount ?: 0),
+            unchangedCount = (engineDiff?.unchangedCount ?: 0) + (e2eDiff?.unchangedCount ?: 0),
+            entries = entries
+        )
+    }
+
     private fun firstTimeAtOrAbove(run: ScenarioRun, level: Int): Float? {
         val idx = run.levels.indexOfFirst { it >= level }
         return if (idx >= 0 && idx < run.frames.size) run.frames[idx].tSec else null

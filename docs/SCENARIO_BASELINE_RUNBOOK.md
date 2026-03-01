@@ -14,8 +14,10 @@ Každý běh scénářů generuje do `build/reports/mcaw_scenarios/<timestamp>/`
 - `summary_e2e.json` – snapshot E2E suite
 - `diff_summary_engine_only.json` – diff proti ENGINE_ONLY baseline
 - `diff_summary_e2e.json` – diff proti E2E baseline
-- `<SCENARIO_ID>.md` – detail scénáře
-- `<SCENARIO_ID>.jsonl` – strukturované eventy
+- `engine_only/<SCENARIO_ID>.md` – detail scénáře ENGINE_ONLY (oddělené namespace)
+- `engine_only/<SCENARIO_ID>.jsonl` – strukturované eventy ENGINE_ONLY
+- `e2e/<SCENARIO_ID>.md` – detail scénáře E2E (oddělené namespace)
+- `e2e/<SCENARIO_ID>.jsonl` – strukturované eventy E2E
 - `baseline_update_decision.txt` – rozhodnutí quality gate (pokud je update baseline zapnutý)
 - `RUNBOOK.md` – kopie tohoto návodu pro pohodlné čtení v artefaktu
 
