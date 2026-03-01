@@ -119,28 +119,28 @@ object ScenarioReportWriter {
             sb.append("{")
             sb.append("\"scenario\":\"").append(run.scenario.id).append("\"")
             sb.append(",\"type\":\"").append(e.type).append("\"")
-            sb.append(",\"tSec\":").append(fmt(e.tSec))
+            sb.append(",\"tSec\":").append(fmtJson(e.tSec))
 
             sb.append(",\"in\":{")
             sb.append("\"effectiveMode\":").append(e.input.effectiveMode)
-            sb.append(",\"distanceM\":").append(fmt(e.input.distanceM))
-            sb.append(",\"distanceConfidence\":").append(fmt(e.input.distanceConfidence))
-            sb.append(",\"approachSpeedMps\":").append(fmt(e.input.approachSpeedMps))
-            sb.append(",\"ttcSec\":").append(fmt(e.input.ttcSec))
-            sb.append(",\"ttcSlopeSecPerSec\":").append(fmt(e.input.ttcSlopeSecPerSec))
-            sb.append(",\"roiContainment\":").append(fmt(e.input.roiContainment))
-            sb.append(",\"egoOffsetN\":").append(fmt(e.input.egoOffsetN))
+            sb.append(",\"distanceM\":").append(fmtJson(e.input.distanceM))
+            sb.append(",\"distanceConfidence\":").append(fmtJson(e.input.distanceConfidence))
+            sb.append(",\"approachSpeedMps\":").append(fmtJson(e.input.approachSpeedMps))
+            sb.append(",\"ttcSec\":").append(fmtJson(e.input.ttcSec))
+            sb.append(",\"ttcSlopeSecPerSec\":").append(fmtJson(e.input.ttcSlopeSecPerSec))
+            sb.append(",\"roiContainment\":").append(fmtJson(e.input.roiContainment))
+            sb.append(",\"egoOffsetN\":").append(fmtJson(e.input.egoOffsetN))
             sb.append(",\"cutInActive\":").append(if (e.input.cutInActive) "true" else "false")
             sb.append(",\"brakeCueActive\":").append(if (e.input.brakeCueActive) "true" else "false")
-            sb.append(",\"brakeCueStrength\":").append(fmt(e.input.brakeCueStrength))
-            sb.append(",\"occlusionCloseFactor\":").append(fmt(e.input.occlusionCloseFactor))
+            sb.append(",\"brakeCueStrength\":").append(fmtJson(e.input.brakeCueStrength))
+            sb.append(",\"occlusionCloseFactor\":").append(fmtJson(e.input.occlusionCloseFactor))
             sb.append(",\"occlusionCloseEligible\":").append(if (e.input.occlusionCloseEligible) "true" else "false")
-            sb.append(",\"qualityWeight\":").append(fmt(e.input.qualityWeight))
-            sb.append(",\"riderSpeedMps\":").append(fmt(e.input.riderSpeedMps))
-            sb.append(",\"riderSpeedConfidence\":").append(fmt(e.input.riderSpeedConfidence))
-            sb.append(",\"egoBrakingConfidence\":").append(fmt(e.input.egoBrakingConfidence))
+            sb.append(",\"qualityWeight\":").append(fmtJson(e.input.qualityWeight))
+            sb.append(",\"riderSpeedMps\":").append(fmtJson(e.input.riderSpeedMps))
+            sb.append(",\"riderSpeedConfidence\":").append(fmtJson(e.input.riderSpeedConfidence))
+            sb.append(",\"egoBrakingConfidence\":").append(fmtJson(e.input.egoBrakingConfidence))
             if (e.input.leanDeg.isFinite()) {
-                sb.append(",\"leanDeg\":").append(fmt(e.input.leanDeg))
+                sb.append(",\"leanDeg\":").append(fmtJson(e.input.leanDeg))
             } else {
                 sb.append(",\"leanDeg\":null")
             }
@@ -148,7 +148,7 @@ object ScenarioReportWriter {
 
             sb.append(",\"out\":{")
             sb.append("\"level\":").append(e.output.level)
-            sb.append(",\"riskScore\":").append(fmt(e.output.riskScore))
+            sb.append(",\"riskScore\":").append(fmtJson(e.output.riskScore))
             sb.append(",\"reasonBits\":").append(e.output.reasonBits)
             sb.append("}")
 
@@ -156,15 +156,15 @@ object ScenarioReportWriter {
             if (d != null) {
                 sb.append(",\"derived\":{")
                 sb.append("\"mode\":").append(d.mode)
-                sb.append(",\"qW\":").append(fmt(d.qualityWeight))
-                sb.append(",\"conserv\":").append(fmt(d.conserv))
-                sb.append(",\"orangeOn\":").append(fmt(d.orangeOn))
-                sb.append(",\"orangeOff\":").append(fmt(d.orangeOff))
-                sb.append(",\"redOn\":").append(fmt(d.redOn))
-                sb.append(",\"redOff\":").append(fmt(d.redOff))
-                sb.append(",\"slopeThr\":").append(fmt(d.slopeThr))
-                sb.append(",\"strongK\":").append(fmt(d.strongK))
-                sb.append(",\"midK\":").append(fmt(d.midK))
+                sb.append(",\"qW\":").append(fmtJson(d.qualityWeight))
+                sb.append(",\"conserv\":").append(fmtJson(d.conserv))
+                sb.append(",\"orangeOn\":").append(fmtJson(d.orangeOn))
+                sb.append(",\"orangeOff\":").append(fmtJson(d.orangeOff))
+                sb.append(",\"redOn\":").append(fmtJson(d.redOn))
+                sb.append(",\"redOff\":").append(fmtJson(d.redOff))
+                sb.append(",\"slopeThr\":").append(fmtJson(d.slopeThr))
+                sb.append(",\"strongK\":").append(fmtJson(d.strongK))
+                sb.append(",\"midK\":").append(fmtJson(d.midK))
                 sb.append("}")
             }
 
@@ -179,9 +179,9 @@ object ScenarioReportWriter {
             sb.append("{")
             sb.append("\"scenario\":\"").append(run.scenario.id).append("\"")
             sb.append(",\"type\":\"").append(e.type).append("\"")
-            sb.append(",\"tSec\":").append(fmt(e.tSec))
+            sb.append(",\"tSec\":").append(fmtJson(e.tSec))
             sb.append(",\"level\":").append(e.level)
-            sb.append(",\"risk\":").append(fmt(e.risk))
+            sb.append(",\"risk\":").append(fmtJson(e.risk))
             sb.append(",\"reasonBits\":").append(e.reasonBits)
             sb.append(",\"reasonId\":").append(e.reasonId)
             sb.append(",\"reasonShort\":\"").append(escape(RiskEngine.formatReasonShort(e.reasonBits))).append("\"")
@@ -189,15 +189,15 @@ object ScenarioReportWriter {
             val d = e.derived
             sb.append(",\"derived\":{")
             sb.append("\"mode\":").append(d.mode)
-            sb.append(",\"qW\":").append(fmt(d.qualityWeight))
-            sb.append(",\"conserv\":").append(fmt(d.conserv))
-            sb.append(",\"orangeOn\":").append(fmt(d.orangeOn))
-            sb.append(",\"orangeOff\":").append(fmt(d.orangeOff))
-            sb.append(",\"redOn\":").append(fmt(d.redOn))
-            sb.append(",\"redOff\":").append(fmt(d.redOff))
-            sb.append(",\"slopeThr\":").append(fmt(d.slopeThr))
-            sb.append(",\"strongK\":").append(fmt(d.strongK))
-            sb.append(",\"midK\":").append(fmt(d.midK))
+            sb.append(",\"qW\":").append(fmtJson(d.qualityWeight))
+            sb.append(",\"conserv\":").append(fmtJson(d.conserv))
+            sb.append(",\"orangeOn\":").append(fmtJson(d.orangeOn))
+            sb.append(",\"orangeOff\":").append(fmtJson(d.orangeOff))
+            sb.append(",\"redOn\":").append(fmtJson(d.redOn))
+            sb.append(",\"redOff\":").append(fmtJson(d.redOff))
+            sb.append(",\"slopeThr\":").append(fmtJson(d.slopeThr))
+            sb.append(",\"strongK\":").append(fmtJson(d.strongK))
+            sb.append(",\"midK\":").append(fmtJson(d.midK))
             sb.append("}")
 
             if (e.extra.isNotEmpty()) {
@@ -225,6 +225,16 @@ object ScenarioReportWriter {
     private fun fmt(v: Float?): String = when {
         v == null -> ""
         !v.isFinite() -> "NaN"
+        else -> String.format("%.3f", v)
+    }
+
+    /**
+     * Strict JSON numeric formatting: null for null/NaN/Inf.
+     * We keep fmt() for markdown readability.
+     */
+    private fun fmtJson(v: Float?): String = when {
+        v == null -> "null"
+        !v.isFinite() -> "null"
         else -> String.format("%.3f", v)
     }
 
