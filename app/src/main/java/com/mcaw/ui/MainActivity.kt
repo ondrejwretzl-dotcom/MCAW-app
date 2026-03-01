@@ -313,9 +313,9 @@ class MainActivity : ComponentActivity() {
             logActivity("open_settings")
             startActivity(Intent(this, SettingsActivity::class.java))
         }
-        findViewById<MaterialButton>(R.id.btnCamera).setOnClickListener {
-            ensurePermissions(PendingAction.OPEN_CAMERA)
-        }
+        //findViewById<MaterialButton>(R.id.btnCamera).setOnClickListener {
+        //    ensurePermissions(PendingAction.OPEN_CAMERA)
+        //}
 
         btnHelp.setOnClickListener {
             logActivity("open_help")
