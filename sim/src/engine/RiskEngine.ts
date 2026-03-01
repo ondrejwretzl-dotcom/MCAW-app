@@ -39,6 +39,11 @@ export interface EvaluateOptions {
   dynamicDistanceEnabled?: boolean;
   dynamicDistanceRedSec?: number;
   dynamicDistanceOrangeSec?: number;
+  plateauBase?: number;
+  plateauMax?: number;
+  approachGateMin?: number;
+  approachLow?: number;
+  approachHigh?: number;
 }
 
 export interface EvaluateInput {
@@ -243,7 +248,8 @@ export class RiskEngineRef {
       }
     }
 
-    const distScore = this.scoreLowIsBad(input.distanceM, distRedThr, distOrangeThr);
+    const distPlateau = this.distancePlateauForClosing(input.approachSpeedMps, input, options);
+    const distScore = this.scoreLowIsBad(input.distanceM, distRedThr, distOrangeThr, distPlateau);
     const relScore = input.disableTtcApproachWeight ? 0 : this.scoreHighIsBad(input.approachSpeedMps, thr.relOrange, thr.relRed);
 
     const roiC = clamp(roiContainment, 0, 1);
@@ -407,15 +413,32 @@ export class RiskEngineRef {
     return { ttcOrange: 3.0, ttcRed: 2.0, distOrange: 15, distRed: 8, relOrange: 3, relRed: 5 };
   }
 
-  private scoreLowIsBad(value: number, redThr: number, orangeThr: number): number {
+  private scoreLowIsBad(value: number, redThr: number, orangeThr: number, orangePlateau = 0.45): number {
     if (!isFiniteNumber(value) || value <= 0) return 0;
     if (value <= redThr) return 1;
     if (value <= orangeThr) {
       const t = clamp((value - redThr) / Math.max(0.001, (orangeThr - redThr)), 0, 1);
-      return 1 - t * 0.55;
+      return 1 - t * (1 - clamp(orangePlateau, 0, 1));
     }
     const t = clamp((value - orangeThr) / Math.max(0.001, orangeThr), 0, 1);
-    return clamp(0.45 * (1 - t), 0, 0.45);
+    const p = clamp(orangePlateau, 0, 1);
+    return clamp(p * (1 - t), 0, p);
+  }
+
+
+  private distancePlateauForClosing(inputApproachSpeedMps: number, input: EvaluateInput, options?: EvaluateOptions): number {
+    const plateauBase = options?.plateauBase ?? 0.45;
+    if (input.suppressRecedingHard || input.suppressSteadyGapHard || input.suppressStanding) return plateauBase;
+    if (!isFiniteNumber(inputApproachSpeedMps)) return plateauBase;
+
+    const approachGateMin = options?.approachGateMin ?? 0.8;
+    if (inputApproachSpeedMps < approachGateMin) return plateauBase;
+
+    const approachLow = options?.approachLow ?? 1.5;
+    const approachHigh = options?.approachHigh ?? 4.5;
+    const clos01 = clamp((inputApproachSpeedMps - approachLow) / Math.max(0.001, (approachHigh - approachLow)), 0, 1);
+    const plateauMax = options?.plateauMax ?? 0.65;
+    return plateauBase + (plateauMax - plateauBase) * clos01;
   }
 
   private scoreHighIsBad(value: number, orangeThr: number, redThr: number): number {

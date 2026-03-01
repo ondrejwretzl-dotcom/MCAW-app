@@ -401,4 +401,38 @@ class RiskEngineScenarioTest {
         assertTrue((payload and RiskEngine.BIT_DIST_FIXED_FALLBACK) != 0)
     }
 
+
+    @Test
+    fun distancePlateau_closingGateAndSuppressions() {
+        val engine = RiskEngine()
+        val method = RiskEngine::class.java.getDeclaredMethod(
+            "distancePlateauForClosing",
+            Float::class.javaPrimitiveType,
+            Boolean::class.javaPrimitiveType,
+            Boolean::class.javaPrimitiveType,
+            Boolean::class.javaPrimitiveType
+        )
+        method.isAccessible = true
+
+        val low = method.invoke(engine, 0.2f, false, false, false) as Float
+        val high = method.invoke(engine, 5.0f, false, false, false) as Float
+        val suppressed = method.invoke(engine, 5.0f, true, false, false) as Float
+
+        assertEquals(0.45f, low, 1e-4f)
+        assertEquals(0.65f, high, 1e-4f)
+        assertEquals(0.45f, suppressed, 1e-4f)
+
+        val scoreMethod = RiskEngine::class.java.getDeclaredMethod(
+            "scoreLowIsBad",
+            Float::class.javaPrimitiveType,
+            Float::class.javaPrimitiveType,
+            Float::class.javaPrimitiveType,
+            Float::class.javaPrimitiveType
+        )
+        scoreMethod.isAccessible = true
+        val orangeThr = 15f
+        val scoreAtOrange = scoreMethod.invoke(engine, orangeThr, 8f, orangeThr, 0.62f) as Float
+        assertEquals(0.62f, scoreAtOrange, 1e-4f)
+    }
+
 }

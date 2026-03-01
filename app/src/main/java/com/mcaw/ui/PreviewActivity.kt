@@ -42,6 +42,7 @@ import com.mcaw.util.SessionLogFile
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import kotlin.math.roundToInt
 
 /**
  * PreviewActivity = runtime-only live preview.
@@ -73,6 +74,66 @@ class PreviewActivity : ComponentActivity() {
     private var isCameraBound: Boolean = false
     private var boundCamera: androidx.camera.core.Camera? = null
 
+
+
+    private fun format3(value: Float): String {
+        if (!value.isFinite()) return "—"
+        val rounded = (value * 1000f).roundToInt() / 1000f
+        val sign = if (rounded < 0f) "-" else ""
+        val absV = kotlin.math.abs(rounded)
+        val intPart = absV.toInt()
+        val frac = ((absV - intPart) * 1000f).roundToInt().coerceIn(0, 999)
+        val fracTxt = when {
+            frac < 10 -> "00$frac"
+            frac < 100 -> "0$frac"
+            else -> frac.toString()
+        }
+        return "$sign$intPart.$fracTxt"
+    }
+
+    private fun clearTrackedHudValues(keepRider: Boolean) {
+        val riderSpeed = overlay.riderSpeed
+        val riderSrc = overlay.riderSpeedSourceOrdinal
+        val riderConf = overlay.riderSpeedConfidence
+        val riderAge = overlay.riderSpeedAgeMs
+
+        overlay.box = null
+        overlay.distance = Float.NaN
+        overlay.roiMinDistM = Float.NaN
+        overlay.roiBottomTouch = false
+        overlay.speed = Float.NaN
+        overlay.relSignedMps = Float.NaN
+        overlay.relDerivValid = false
+        overlay.relInvalidReasonMask = 0
+        overlay.trendState = DetectionAnalyzer.TREND_STEADY
+        overlay.steadyMs = 0L
+        overlay.approachMs = 0L
+        overlay.steadySuppressActive = false
+        overlay.reenterCooldownMs = 0L
+        overlay.distSlopeEmaMps = Float.NaN
+        overlay.distSource = DetectionAnalyzer.DIST_SOURCE_BOTTOM
+        overlay.distConf = 0f
+        overlay.objectSpeed = Float.NaN
+        overlay.ttc = Float.NaN
+        overlay.label = ""
+        overlay.targetPresent = false
+        overlay.targetTrackId = -1L
+        overlay.targetGroupLabel = "Unknown"
+        overlay.targetRawLabel = null
+        overlay.targetDetScore = Float.NaN
+        overlay.alertLevel = 0
+        overlay.brakeCueActive = false
+        overlay.alertReason = ""
+        overlay.riskScore = Float.NaN
+
+        if (keepRider) {
+            overlay.riderSpeed = riderSpeed
+            overlay.riderSpeedSourceOrdinal = riderSrc
+            overlay.riderSpeedConfidence = riderConf
+            overlay.riderSpeedAgeMs = riderAge
+        }
+    }
+
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(ctx: Context?, i: Intent?) {
             if (i == null) return
@@ -87,38 +148,11 @@ class PreviewActivity : ComponentActivity() {
             }
 
             if (i.getBooleanExtra("clear", false)) {
-                overlay.box = null
-                overlay.distance = -1f
-                overlay.roiMinDistM = Float.NaN
-                overlay.roiBottomTouch = false
-                overlay.speed = -1f
-                overlay.relSignedMps = Float.NaN
-                overlay.relDerivValid = false
-                overlay.relInvalidReasonMask = 0
-                overlay.trendState = DetectionAnalyzer.TREND_STEADY
-                overlay.steadyMs = 0L
-                overlay.approachMs = 0L
-                overlay.steadySuppressActive = false
-                overlay.reenterCooldownMs = 0L
-                overlay.distSlopeEmaMps = Float.NaN
-                overlay.distSource = DetectionAnalyzer.DIST_SOURCE_BOTTOM
-                overlay.distConf = 0f
-                overlay.objectSpeed = -1f
-                overlay.riderSpeed = -1f
-                overlay.riderSpeedSourceOrdinal = 0
-                overlay.riderSpeedConfidence = 0f
-                overlay.riderSpeedAgeMs = 0L
-                overlay.ttc = -1f
-                overlay.label = ""
-                overlay.targetPresent = false
-                overlay.targetTrackId = -1L
-                overlay.targetGroupLabel = "Unknown"
-                overlay.targetRawLabel = null
-                overlay.targetDetScore = Float.NaN
-                overlay.alertLevel = 0
-                overlay.brakeCueActive = false
-                overlay.alertReason = ""
-                overlay.riskScore = Float.NaN
+                overlay.riderSpeed = i.getFloatExtra("rider_speed", overlay.riderSpeed)
+                overlay.riderSpeedSourceOrdinal = i.getIntExtra("rider_speed_src", overlay.riderSpeedSourceOrdinal)
+                overlay.riderSpeedConfidence = i.getFloatExtra("rider_speed_conf", overlay.riderSpeedConfidence)
+                overlay.riderSpeedAgeMs = i.getLongExtra("rider_speed_age_ms", overlay.riderSpeedAgeMs)
+                clearTrackedHudValues(keepRider = true)
                 searching = true
                 updateSearchingLabel()
                 logActivity("detection_clear")
@@ -172,6 +206,13 @@ class PreviewActivity : ComponentActivity() {
             val targetDetScore = i.getFloatExtra("target_det_score", Float.NaN)
 
             overlay.targetPresent = i.getBooleanExtra("target_present", true)
+            if (!overlay.targetPresent || targetTrackId < 0L) {
+                clearTrackedHudValues(keepRider = true)
+                searching = true
+                updateSearchingLabel()
+                logActivity("detection_clear")
+                return
+            }
             overlay.targetTrackId = targetTrackId
             overlay.targetGroupLabel = targetGroupLabel
             overlay.targetRawLabel = targetRawLabel
@@ -183,12 +224,19 @@ class PreviewActivity : ComponentActivity() {
             txtHudPrimary.text = "Stav: ${if (searching) "Hledám" else "Sledování"} · Kalibrace: $cal · Detekce: $mapped"
             if (AppPreferences.debugOverlay) {
                 txtHudMetrics.visibility = View.VISIBLE
-                txtHudMetrics.text = "ID=$targetTrackId raw=${targetRawLabel ?: "-"} map=$targetGroupLabel\nDist=${overlay.distance} RELs=${overlay.relSignedMps} RELa=${overlay.speed} TTC=${overlay.ttc} deriv=${overlay.relDerivValid}\ntrend=${overlay.trendState} steady=${overlay.steadyMs}ms approach=${overlay.approachMs}ms sup=${overlay.steadySuppressActive}\ndistSrc=${overlay.distSource} conf=${overlay.distConf} slope=${overlay.distSlopeEmaMps}"
+                txtHudMetrics.text = listOf(
+                    "RID: ${format3(overlay.riderSpeed)}",
+                    "TTC: ${format3(overlay.ttc)}",
+                    "Distance: ${format3(overlay.distance)}",
+                    "RelSpeed: ${format3(overlay.speed)}",
+                    "ObjSpeed: ${format3(overlay.objectSpeed)}",
+                    "Label: ${targetGroupLabel.ifBlank { "—" }}"
+                ).joinToString("\n")
             } else {
                 txtHudMetrics.visibility = View.GONE
                 txtHudMetrics.text = ""
             }
-            val riskText = if (overlay.riskScore.isFinite()) String.format("Risk: %.2f L%d · %s", overlay.riskScore, overlay.alertLevel, overlay.alertReason) else "Risk: --"
+            val riskText = if (overlay.riskScore.isFinite()) "Risk: ${format3(overlay.riskScore)} L${overlay.alertLevel} · ${overlay.alertReason}" else "Risk: —"
             txtHudRisk.text = riskText
             logActivity("detection_found group=$targetGroupLabel raw=${targetRawLabel ?: ""} id=$targetTrackId")
         }

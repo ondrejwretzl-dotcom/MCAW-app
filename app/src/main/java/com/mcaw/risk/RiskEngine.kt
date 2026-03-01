@@ -335,7 +335,13 @@ class RiskEngine {
             thr.distOrange
         }
 
-        val distScore = scoreLowIsBad(distanceM, distRedThr, distOrangeThr)
+        val distPlateau = distancePlateauForClosing(
+            approachSpeedMps = approachSpeedMps,
+            suppressRecedingHard = suppressRecedingHard,
+            suppressSteadyGapHard = suppressSteadyGapHard,
+            suppressStanding = suppressStanding
+        )
+        val distScore = scoreLowIsBad(distanceM, distRedThr, distOrangeThr, orangePlateau = distPlateau)
         val relScore = if (disableTtcApproachWeight) 0f else scoreHighIsBad(approachSpeedMps, thr.relOrange, thr.relRed)
 
         // ROI weight: containment favors objects in ROI; egoOffset penalizes off-center targets.
@@ -535,15 +541,37 @@ class RiskEngine {
         }
     }
 
-    private fun scoreLowIsBad(value: Float, redThr: Float, orangeThr: Float): Float {
+    private fun scoreLowIsBad(value: Float, redThr: Float, orangeThr: Float, orangePlateau: Float = 0.45f): Float {
         if (!value.isFinite() || value <= 0f) return 0f
         if (value <= redThr) return 1f
         if (value <= orangeThr) {
             val t = ((value - redThr) / max(0.001f, (orangeThr - redThr))).coerceIn(0f, 1f)
-            return 1f - t * 0.55f
+            return 1f - t * (1f - orangePlateau.coerceIn(0f, 1f))
         }
         val t = ((value - orangeThr) / max(0.001f, orangeThr)).coerceIn(0f, 1f)
-        return (0.45f * (1f - t)).coerceIn(0f, 0.45f)
+        val p = orangePlateau.coerceIn(0f, 1f)
+        return (p * (1f - t)).coerceIn(0f, p)
+    }
+
+
+    private fun distancePlateauForClosing(
+        approachSpeedMps: Float,
+        suppressRecedingHard: Boolean,
+        suppressSteadyGapHard: Boolean,
+        suppressStanding: Boolean
+    ): Float {
+        val plateauBase = 0.45f
+        if (suppressRecedingHard || suppressSteadyGapHard || suppressStanding) return plateauBase
+        if (!approachSpeedMps.isFinite()) return plateauBase
+
+        val approachGateMin = 0.8f
+        if (approachSpeedMps < approachGateMin) return plateauBase
+
+        val approachLow = 1.5f
+        val approachHigh = 4.5f
+        val clos01 = ((approachSpeedMps - approachLow) / (approachHigh - approachLow)).coerceIn(0f, 1f)
+        val plateauMax = 0.65f
+        return plateauBase + (plateauMax - plateauBase) * clos01
     }
 
     private fun scoreHighIsBad(value: Float, orangeThr: Float, redThr: Float): Float {

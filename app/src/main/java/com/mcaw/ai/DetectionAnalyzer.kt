@@ -252,7 +252,7 @@ class DetectionAnalyzer(
     private var lastTtcForSlopeTsMs: Long = -1L
     private var ttcSlopeEma: Float = 0f
     private var ttcSlopeEmaValid: Boolean = false
-    private val ttcHeightHoldMs: Long = 1200L
+    private val ttcHeightHoldMs: Long = 500L
 
     private var distEma: Float = Float.NaN
     private var distEmaValid: Boolean = false
@@ -385,7 +385,7 @@ private fun updateCutInState(tsMs: Long, box: Box, frameW: Float, frameH: Float)
 
     // TTC hold: keep last finite TTC briefly when raw becomes invalid (prevents blinking)
     private var lastTtcFiniteTsMs: Long = -1L
-    private val ttcInvalidHoldMs: Long = 900L
+    private val ttcInvalidHoldMs: Long = 400L
 
 
     private fun flog(msg: String, force: Boolean = false) {
@@ -829,7 +829,7 @@ if (AppPreferences.debugOverlay) {
                 else -> null
             }
 
-            val ttcFromDist = if (distanceM.isFinite() && approachSpeedFromDist > 0.30f) {
+            val ttcFromDist = if (distanceM.isFinite() && approachSpeedFromDist > 0.20f) {
                 (distanceM / approachSpeedFromDist).coerceIn(0.05f, 120f)
             } else {
                 Float.POSITIVE_INFINITY
@@ -1815,7 +1815,7 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
         lastTtcUpdateTsMs = tsMs
 
         // Limit TTC change rate (seconds per second). Allow faster drops than rises.
-        val maxDropRate = 6.0f   // TTC can drop by up to 6s per 1s
+        val maxDropRate = 12.0f  // TTC can drop by up to 12s per 1s
         val maxRiseRate = 3.0f   // TTC can rise by up to 3s per 1s
         val maxDrop = maxDropRate * dtSec
         val maxRise = maxRiseRate * dtSec
@@ -1826,7 +1826,7 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
             else -> raw.coerceAtMost(prev + maxRise)
         }
 
-        val alpha = if (clamped < prev) 0.45f else 0.20f
+        val alpha = if (clamped < prev) 0.65f else 0.20f
         ttcEma = prev + alpha * (clamped - prev)
         return ttcEma
     }
@@ -1860,8 +1860,8 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
             currH = currHPx,
             dtSec = dtSec,
             minDtSec = 0.05f,
-            minGrowthRatio = 1.02f,
-            minDeltaHPx = 1.0f,
+            minGrowthRatio = 1.01f,
+            minDeltaHPx = 0.7f,
             maxTtcSec = 120f
         )
 
