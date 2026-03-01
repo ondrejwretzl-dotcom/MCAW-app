@@ -27,6 +27,7 @@ class DetectionCorePipeline(
         val relSignedEmaMps: Float,
         val approachEmaMps: Float,
         val relDerivValid: Boolean,
+        val recedingImmediateActive: Boolean,
         val suppressRecedingHard: Boolean,
         val suppressSteadyGapHard: Boolean,
         val occlusionCandidate: Boolean,
@@ -58,6 +59,7 @@ class DetectionCorePipeline(
     private var reenterCooldownMs = 0L
     private var recedingStableCount = 0
     private var recedingDistanceTrendCount = 0
+    private var suppressRecedingImmediateActive = false
     private val fusionTmp = FloatArray(3)
 
     fun reset() {
@@ -83,7 +85,34 @@ class DetectionCorePipeline(
         reenterCooldownMs = 0L
         recedingStableCount = 0
         recedingDistanceTrendCount = 0
+        suppressRecedingImmediateActive = false
     }
+
+    fun update(
+        tsMs: Long,
+        distanceM: Float,
+        boxHeightPx: Float,
+        trackedPresent: Boolean,
+        bottomOccluded: Boolean,
+        occlusionConfirmed: Boolean,
+        qualityWeight: Float,
+        roiContainment: Float,
+        riderSpeedMps: Float,
+        relSignedSampleMps: Float
+    ): Output = update(
+        Input(
+            tsMs = tsMs,
+            distanceM = distanceM,
+            boxHeightPx = boxHeightPx,
+            trackedPresent = trackedPresent,
+            bottomOccluded = bottomOccluded,
+            occlusionConfirmed = occlusionConfirmed,
+            qualityWeight = qualityWeight,
+            roiContainment = roiContainment,
+            riderSpeedMps = riderSpeedMps,
+            relSignedSampleMps = relSignedSampleMps
+        )
+    )
 
     fun update(input: Input): Output {
         val dtMs = if (prevTsMs > 0L) (input.tsMs - prevTsMs).coerceAtLeast(0L) else 0L
@@ -150,7 +179,16 @@ class DetectionCorePipeline(
         recedingStableCount = if (recedingNow) recedingStableCount + 1 else 0
         val distGrowing = derivValid && input.distanceM > prevDistanceM + 0.05f
         recedingDistanceTrendCount = if (distGrowing) recedingDistanceTrendCount + 1 else 0
-        val suppressRecedingHard = recedingStableCount >= RiskEngine.K_STABLE && recedingDistanceTrendCount >= RiskEngine.K_STABLE
+        val existingRecedingStable = recedingStableCount >= RiskEngine.K_STABLE && recedingDistanceTrendCount >= RiskEngine.K_STABLE
+
+        val recedingImmediateActive = when {
+            approachEmaMps >= 0.60f -> false
+            !distSlopeValid || !distSlopeEmaMps.isFinite() -> false
+            suppressRecedingImmediateActive -> distSlopeEmaMps > 0.10f
+            else -> distSlopeEmaMps > 0.15f
+        }
+        suppressRecedingImmediateActive = recedingImmediateActive
+        val suppressRecedingHard = recedingImmediateActive || existingRecedingStable
 
         prevDistanceM = input.distanceM
         prevTsMs = input.tsMs
@@ -162,6 +200,7 @@ class DetectionCorePipeline(
             relSignedEmaMps = relSignedEmaMps,
             approachEmaMps = approachEmaMps,
             relDerivValid = derivValid,
+            recedingImmediateActive = recedingImmediateActive,
             suppressRecedingHard = suppressRecedingHard,
             suppressSteadyGapHard = steadySuppressActive,
             occlusionCandidate = input.bottomOccluded && input.roiContainment < 0.5f,
