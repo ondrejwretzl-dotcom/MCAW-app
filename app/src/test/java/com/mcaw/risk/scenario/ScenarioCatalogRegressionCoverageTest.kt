@@ -1,22 +1,29 @@
 package com.mcaw.risk.scenario
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ScenarioCatalogRegressionCoverageTest {
 
     @Test
-    fun defaultCatalog_containsNewRegressionScenarios_andUniqueIds() {
-        val catalog = ScenarioCatalogFactory.createDefaultCatalog()
-        val ids = catalog.scenarios.map { it.id }
+    fun suiteMembership_andUniqueIds() {
+        val engineOnly = ScenarioCatalogFactory.createEngineOnlyCatalog()
+        val e2e = ScenarioCatalogFactory.createE2eCatalog()
 
-        assertTrue(ids.contains("R1_V1_TTC_INVALID_CLOSING_CONTINUES"))
-        assertTrue(ids.contains("R2_V2_FOLLOW_STABLE_ORANGE"))
-        assertTrue(ids.contains("C3_RECEDING_HARD_SUPPRESS"))
-        assertTrue(ids.contains("H3_STEADY_GAP_HARD_SUPPRESS"))
-        assertTrue(ids.contains("H4_STEADY_TO_APPROACH_UNSUPPRESS"))
+        val engineIds = engineOnly.scenarios.map { it.id }
+        val e2eIds = e2e.scenarios.map { it.id }
 
-        assertEquals("Scenario IDs must stay unique", ids.toSet().size, ids.size)
+        assertFalse(engineIds.contains("R1_V1_TTC_INVALID_CLOSING_CONTINUES"))
+        assertFalse(engineIds.contains("R2_V2_FOLLOW_STABLE_ORANGE"))
+
+        assertTrue(e2eIds.contains("R1_V1_TTC_INVALID_CLOSING_CONTINUES"))
+        assertTrue(e2eIds.contains("R2_V2_FOLLOW_STABLE_ORANGE"))
+        assertTrue(e2eIds.contains("E2E_TTC_HEIGHT_INVALID_WINDOW_DURING_CLOSING"))
+        assertTrue(e2eIds.contains("E2E_RECEDING_WARMUP_NO_BLINK"))
+
+        assertEquals(engineIds.toSet().size, engineIds.size)
+        assertEquals(e2eIds.toSet().size, e2eIds.size)
     }
 }

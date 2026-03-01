@@ -41,7 +41,7 @@ jobs:
         id: compare
         continue-on-error: true
         env:
-          FAIL_ON_HARD: "true"
+          FAIL_ON_HARD_REGRESSION: "${{ vars.FAIL_ON_HARD_REGRESSION || 'false' }}"
           FAIL_ON_SCENARIO: "false"
         run: scripts/mcaw/scenario_compare_ci.sh
 

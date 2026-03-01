@@ -20,6 +20,7 @@ data class ScenarioCatalog(
 
 data class Scenario(
     val id: String,
+    val suite: ScenarioSuite = ScenarioSuite.ENGINE_ONLY,
     val title: String,
     val domain: Domain,
     val vehicle: Vehicle,
@@ -30,6 +31,7 @@ data class Scenario(
 )
 
 enum class Domain { CITY, TUNNEL, HIGHWAY, RURAL }
+enum class ScenarioSuite { ENGINE_ONLY, E2E }
 enum class Vehicle { CAR, MOTO }
 
 data class ScenarioConfig(
@@ -84,7 +86,11 @@ data class Segment(
     val roiContainment: (t: Float) -> Float? = { null },
     val egoOffsetN: (t: Float) -> Float? = { null },
     val qualityWeight: (t: Float) -> Float? = { null },
-    val leanDeg: (t: Float) -> Float? = { null }
+    val leanDeg: (t: Float) -> Float? = { null },
+    val boxHeightPx: (t: Float) -> Float? = { null },
+    val trackedPresent: (t: Float) -> Boolean? = { null },
+    val bottomOccluded: (t: Float) -> Boolean? = { null },
+    val occlConfirmed: (t: Float) -> Boolean? = { null }
 )
 
 sealed class Expectation {
@@ -127,6 +133,10 @@ data class SimFrame(
     val brakeCueActive: Boolean,
     val brakeCueStrength: Float,
     val qualityWeight: Float,
+    val boxHeightPx: Float,
+    val trackedPresent: Boolean,
+    val bottomOccluded: Boolean,
+    val occlConfirmed: Boolean,
     val riderSpeedMps: Float,
     val riderSpeedConfidence: Float,
     val egoBrakingConfidence: Float,
@@ -241,6 +251,10 @@ fun buildFrames(s: Scenario): List<SimFrame> {
                     brakeCueActive = seg.brakeCueActive(t),
                     brakeCueStrength = seg.brakeCueStrength(t),
                     qualityWeight = qW,
+                    boxHeightPx = seg.boxHeightPx(t) ?: (1200f / dist.coerceAtLeast(1f)),
+                    trackedPresent = seg.trackedPresent(t) ?: true,
+                    bottomOccluded = seg.bottomOccluded(t) ?: false,
+                    occlConfirmed = seg.occlConfirmed(t) ?: false,
                     riderSpeedMps = simRiderSpeedMps,
                     riderSpeedConfidence = riderSpeedConf,
                     egoBrakingConfidence = seg.egoBrakingConfidence(t),
