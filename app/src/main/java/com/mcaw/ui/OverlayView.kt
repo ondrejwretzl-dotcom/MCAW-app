@@ -191,6 +191,13 @@ class OverlayView @JvmOverloads constructor(
             invalidate()
         }
 
+    /** REL abs (raw) as provided by analyzer. */
+    var relAbsMps: Float = Float.NaN
+        set(value) {
+            field = value
+            invalidate()
+        }
+
     /** OBJ speed estimate (m/s). */
     var objectSpeed: Float = -1f
         set(value) {
@@ -328,6 +335,20 @@ class OverlayView @JvmOverloads constructor(
         }
 
     var ttc: Float = -1f
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    /** TTC from box height growth (may be NaN/Inf). */
+    var ttcHeight: Float = Float.NaN
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    /** TTC from distance/approach (may be NaN/Inf). */
+    var ttcDist: Float = Float.NaN
         set(value) {
             field = value
             invalidate()

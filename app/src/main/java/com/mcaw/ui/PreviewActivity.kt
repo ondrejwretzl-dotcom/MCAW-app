@@ -91,6 +91,37 @@ class PreviewActivity : ComponentActivity() {
         return "$sign$intPart.$fracTxt"
     }
 
+    private fun speedSourceLabel(): String {
+        return runCatching {
+            val values = com.mcaw.ai.SpeedProvider.Source.values()
+            values.getOrNull(overlay.riderSpeedSourceOrdinal)?.name ?: "UNK"
+        }.getOrDefault("UNK")
+    }
+
+    private fun format3WithUnit(value: Float, unit: String): String = "${format3(value)} $unit"
+
+    private fun renderHudMetrics() {
+        // Fixed line order to avoid jumping.
+        val trackId = if (overlay.targetPresent && overlay.targetTrackId >= 0L) overlay.targetTrackId.toString() else "—"
+        val ridMps = overlay.riderSpeed
+        val ridKmh = if (ridMps.isFinite()) ridMps * 3.6f else Float.NaN
+        val ridSrc = speedSourceLabel()
+        val ridConf = overlay.riderSpeedConfidence
+        val ridAge = overlay.riderSpeedAgeMs
+
+        txtHudMetrics.visibility = View.VISIBLE
+        txtHudMetrics.text = listOf(
+            "Track ID: $trackId",
+            "TTC(fused): ${format3WithUnit(overlay.ttc, "s")}",
+            "TTC(H):    ${format3WithUnit(overlay.ttcHeight, "s")}",
+            "TTC(D):    ${format3WithUnit(overlay.ttcDist, "s")}",
+            "REL(signed): ${format3WithUnit(overlay.relSignedMps, "m/s")}",
+            "REL(abs):    ${format3WithUnit(overlay.relAbsMps, "m/s")}",
+            "DIST:      ${format3WithUnit(overlay.distance, "m")}",
+            "RIDER:     ${format3WithUnit(ridMps, "m/s")} (${format3WithUnit(ridKmh, "km/h")}) src=$ridSrc conf=${format3(ridConf)} age=${ridAge}ms"
+        ).joinToString("\n")
+    }
+
     private fun clearTrackedHudValues(keepRider: Boolean) {
         val riderSpeed = overlay.riderSpeed
         val riderSrc = overlay.riderSpeedSourceOrdinal
@@ -102,6 +133,7 @@ class PreviewActivity : ComponentActivity() {
         overlay.roiMinDistM = Float.NaN
         overlay.roiBottomTouch = false
         overlay.speed = Float.NaN
+        overlay.relAbsMps = Float.NaN
         overlay.relSignedMps = Float.NaN
         overlay.relDerivValid = false
         overlay.relInvalidReasonMask = 0
@@ -115,6 +147,8 @@ class PreviewActivity : ComponentActivity() {
         overlay.distConf = 0f
         overlay.objectSpeed = Float.NaN
         overlay.ttc = Float.NaN
+        overlay.ttcHeight = Float.NaN
+        overlay.ttcDist = Float.NaN
         overlay.label = ""
         overlay.targetPresent = false
         overlay.targetTrackId = -1L
@@ -132,6 +166,9 @@ class PreviewActivity : ComponentActivity() {
             overlay.riderSpeedConfidence = riderConf
             overlay.riderSpeedAgeMs = riderAge
         }
+
+        renderHudMetrics()
+        txtHudRisk.text = "Risk: —"
     }
 
     private val receiver = object : BroadcastReceiver() {
@@ -175,6 +212,7 @@ class PreviewActivity : ComponentActivity() {
             overlay.roiBottomTouch = i.getBooleanExtra("roi_bottom_touch", false)
             overlay.speed = i.getFloatExtra("speed", -1f) // REL abs
             overlay.relSignedMps = i.getFloatExtra("rel_signed_mps", Float.NaN)
+            overlay.relAbsMps = i.getFloatExtra("rel_abs_mps", Float.NaN)
             overlay.relDerivValid = i.getBooleanExtra(com.mcaw.ai.DetectionAnalyzer.EXTRA_REL_DERIV_VALID, true)
             overlay.relInvalidReasonMask = i.getIntExtra(com.mcaw.ai.DetectionAnalyzer.EXTRA_REL_INVALID_REASON_MASK, 0)
             overlay.trendState = i.getIntExtra("trend_state", DetectionAnalyzer.TREND_STEADY)
@@ -190,7 +228,9 @@ class PreviewActivity : ComponentActivity() {
             overlay.riderSpeedSourceOrdinal = i.getIntExtra("rider_speed_src", 0)
             overlay.riderSpeedConfidence = i.getFloatExtra("rider_speed_conf", 0f)
             overlay.riderSpeedAgeMs = i.getLongExtra("rider_speed_age_ms", 0L)
-            overlay.ttc = i.getFloatExtra("ttc", -1f)
+            overlay.ttc = i.getFloatExtra("ttc", Float.NaN)
+            overlay.ttcHeight = i.getFloatExtra("ttc_h", Float.NaN)
+            overlay.ttcDist = i.getFloatExtra("ttc_d", Float.NaN)
             overlay.alertLevel = i.getIntExtra("alert_level", 0)
 
             val legacyReason = i.getStringExtra("alert_reason") ?: ""
@@ -222,20 +262,7 @@ class PreviewActivity : ComponentActivity() {
             val mapped = if (AppPreferences.debugOverlay) LabelMapper.mapLabel(targetGroupLabel) else "Vehicle"
             val cal = CalibrationHealth.evaluate().state.name
             txtHudPrimary.text = "Stav: ${if (searching) "Hledám" else "Sledování"} · Kalibrace: $cal · Detekce: $mapped"
-            if (AppPreferences.debugOverlay) {
-                txtHudMetrics.visibility = View.VISIBLE
-                txtHudMetrics.text = listOf(
-                    "RID: ${format3(overlay.riderSpeed)}",
-                    "TTC: ${format3(overlay.ttc)}",
-                    "Distance: ${format3(overlay.distance)}",
-                    "RelSpeed: ${format3(overlay.speed)}",
-                    "ObjSpeed: ${format3(overlay.objectSpeed)}",
-                    "Label: ${targetGroupLabel.ifBlank { "—" }}"
-                ).joinToString("\n")
-            } else {
-                txtHudMetrics.visibility = View.GONE
-                txtHudMetrics.text = ""
-            }
+            renderHudMetrics()
             val riskText = if (overlay.riskScore.isFinite()) "Risk: ${format3(overlay.riskScore)} L${overlay.alertLevel} · ${overlay.alertReason}" else "Risk: —"
             txtHudRisk.text = riskText
             logActivity("detection_found group=$targetGroupLabel raw=${targetRawLabel ?: ""} id=$targetTrackId")

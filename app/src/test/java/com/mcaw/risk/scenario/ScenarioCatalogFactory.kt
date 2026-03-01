@@ -1,6 +1,7 @@
 package com.mcaw.risk.scenario
 
 import kotlin.math.max
+import kotlin.math.pow
 
 /**
  * Curated scenario catalog based on the CURRENT RiskEngine logic.
@@ -37,6 +38,7 @@ object ScenarioCatalogFactory {
 
     fun createE2eCatalog(): ScenarioCatalogE2e {
         val e2eScenarios = listOf(
+            e2eSensitivityHoldInvalidWindow(),
             e2eR1TtcInvalidClosingContinues(),
             e2eR2FollowStableOrange(),
             e2eC3RecedingHardSuppress(),
@@ -47,6 +49,61 @@ object ScenarioCatalogFactory {
             title = "MCAW 2.0 – E2E katalog simulací",
             version = CATALOG_VERSION,
             scenarios = e2eScenarios
+        )
+    }
+
+    /**
+     * Dedicated sensitivity scenario:
+     * - ttcFromDist is disabled by keeping approach < ttcFromDistApproachGateMps (slow closing)
+     * - TTC comes from boxHeight growth, then becomes invalid for a short window
+     * This makes tuning.ttcInvalidHoldMs observable.
+     *
+     * Not a product regression gate; used only by E2ePipelineSensitivityTest.
+     */
+    private fun e2eSensitivityHoldInvalidWindow(): E2eScenario {
+        val hz = 10
+        fun expHeight(t: Float): Float {
+            // ~4% growth per frame => TTC ~ 0.1 / ln(1.04) ≈ 2.55s
+            val frames = (t * hz).coerceAtLeast(0f)
+            return (80f * (1.04f).pow(frames)).coerceAtMost(240f)
+        }
+        return E2eScenario(
+            id = "E2E_SENS_HOLD_INVALID_TTC_WINDOW",
+            title = "E2E sensitivity: ttcInvalidHoldMs observable",
+            domain = Domain.CITY,
+            vehicle = Vehicle.CAR,
+            notes = "Only for sensitivity tests. Slow closing disables ttcFromDist; TTC invalid window should be bridged by ttcInvalidHoldMs.",
+            config = ScenarioConfig(effectiveMode = 1, hz = hz, riderSpeedMps = 10f, qualityWeight = 0.95f),
+            expectations = emptyList(),
+            segments = listOf(
+                E2eSegment(
+                    0f,
+                    2.0f,
+                    "height-ttc",
+                    distM = { t -> 12.5f - 0.10f * t },
+                    boxHeightPx = { t -> expHeight(t) },
+                    bottomOccluded = { false },
+                    occlusionConfirmed = { false }
+                ),
+                E2eSegment(
+                    2.0f,
+                    4.0f,
+                    "ttc-invalid",
+                    distM = { t -> 12.3f - 0.10f * (t - 2.0f) },
+                    boxHeightPx = { _ -> 0f },
+                    bottomOccluded = { true },
+                    occlusionConfirmed = { true }
+                ),
+                E2eSegment(
+                    4.0f,
+                    6.0f,
+                    "recover",
+                    distM = { t -> 12.1f - 0.10f * (t - 4.0f) },
+                    boxHeightPx = { t -> expHeight(t) },
+                    bottomOccluded = { false },
+                    occlusionConfirmed = { false }
+                )
+            )
         )
     }
 

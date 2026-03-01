@@ -11,8 +11,7 @@ class E2ePipelineSensitivityTest {
     fun holdSensitivityTest_ttcInvalidHold_changesAtLeastOneScenario() {
         val byId = ScenarioCatalogFactory.createE2eCatalog().scenarios.associateBy { it.id }
         val scenarios = listOf(
-            byId.getValue("R1_V1_TTC_INVALID_CLOSING_CONTINUES"),
-            byId.getValue("E2E_TTC_HEIGHT_INVALID_WINDOW_DURING_CLOSING")
+            byId.getValue("E2E_SENS_HOLD_INVALID_TTC_WINDOW")
         )
         val changed = runSensitivity(scenarios, DetectionTuning.DEFAULT.copy(ttcInvalidHoldMs = DetectionTuning.DEFAULT.ttcInvalidHoldMs + 300L))
         assertTrue("Expected >=1 changed scenario for hold sensitivity.\n$changed", changed.lines().count { it.contains("changed=true") } >= 1)

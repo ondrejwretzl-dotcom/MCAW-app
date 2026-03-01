@@ -1144,6 +1144,8 @@ sendOverlayUpdate(
                 riderSpeedAgeMs = riderSpeedAgeMs,
                 riderSpeedMethod = riderSpeedMethod,
                 ttc = ttc,
+                ttcHeightSec = ttcFromHeightsHeld ?: Float.NaN,
+                ttcDistSec = ttcFromDist,
                 label = label,
                 targetPresent = true,
                 targetTrackId = bestTrack.id,
@@ -1379,6 +1381,8 @@ if (AppPreferences.debugOverlay) {
         riderSpeedAgeMs: Long = 0L,
         riderSpeedMethod: Int = RIDER_SPEED_METHOD_UNKNOWN,
         ttc: Float,
+        ttcHeightSec: Float = Float.NaN,
+        ttcDistSec: Float = Float.NaN,
         label: String,
         targetPresent: Boolean,
         targetTrackId: Long,
@@ -1406,7 +1410,9 @@ if (AppPreferences.debugOverlay) {
         distGroundPredM: Float = Float.NaN,
         force: Boolean = false
     ) {
-        if (!AppPreferences.debugOverlay) return
+        // We send overlay updates when either debug overlay is enabled OR the Preview screen is active.
+        // This keeps runtime overhead low (sampled) while allowing the user to see key HUD values.
+        if (!AppPreferences.debugOverlay && !AppPreferences.previewActive) return
 
         val now = SystemClock.elapsedRealtime()
         val shouldSend = force || (now - lastOverlaySentElapsedMs >= overlayIntervalMs) || (alertLevel != lastOverlaySentAlertLevel)
@@ -1434,6 +1440,8 @@ if (AppPreferences.debugOverlay) {
         i.putExtra("rider_speed_age_ms", riderSpeedAgeMs)
         i.putExtra("rider_speed_method", riderSpeedMethod)
         i.putExtra("ttc", ttc)
+        i.putExtra("ttc_h", ttcHeightSec)
+        i.putExtra("ttc_d", ttcDistSec)
         i.putExtra("label", label)
         i.putExtra("target_present", targetPresent)
         i.putExtra("target_track_id", targetTrackId)
@@ -1474,7 +1482,7 @@ if (AppPreferences.debugOverlay) {
 
     private fun sendOverlayClear() {
         lastTtcLevel = 0
-        if (!AppPreferences.debugOverlay) return
+        if (!AppPreferences.debugOverlay && !AppPreferences.previewActive) return
         val roiN = AppPreferences.getRoiTrapezoidNormalized()
         val i = Intent("MCAW_DEBUG_UPDATE").setPackage(ctx.packageName)
         i.putExtra("clear", true)
@@ -1493,6 +1501,9 @@ if (AppPreferences.debugOverlay) {
         i.putExtra("roi_bottom_touch", false)
         i.putExtra("rel_signed_mps", Float.NaN)
         i.putExtra("rel_abs_mps", Float.NaN)
+        i.putExtra("ttc", Float.NaN)
+        i.putExtra("ttc_h", Float.NaN)
+        i.putExtra("ttc_d", Float.NaN)
         i.putExtra(EXTRA_REL_DERIV_VALID, false)
         i.putExtra(EXTRA_REL_INVALID_REASON_MASK, 0)
         i.putExtra("trend_state", TREND_STEADY)
