@@ -21,9 +21,9 @@ object ScenarioCatalogFactory {
 
     const val CATALOG_VERSION = "2026-02-28"
 
-    fun createDefaultCatalog(): ScenarioCatalog = createEngineOnlyCatalog()
+    fun createDefaultCatalog(): ScenarioCatalogEngineOnly = createEngineOnlyCatalog()
 
-    fun createEngineOnlyCatalog(): ScenarioCatalog {
+    fun createEngineOnlyCatalog(): ScenarioCatalogEngineOnly {
         val full = createFullCatalog()
         val excluded = setOf(
             "R1_V1_TTC_INVALID_CLOSING_CONTINUES",
@@ -31,28 +31,27 @@ object ScenarioCatalogFactory {
         )
         return full.copy(
             title = "MCAW 2.0 – EngineOnly katalog simulací",
-            scenarios = full.scenarios.filterNot { it.id in excluded }.map { it.copy(suite = ScenarioSuite.ENGINE_ONLY) }
+            scenarios = full.scenarios.filterNot { it.id in excluded }.map { it }
         )
     }
 
-    fun createE2eCatalog(): ScenarioCatalog {
-        val fullById = createFullCatalog().scenarios.associateBy { it.id }
-        val e2eScenarios = listOfNotNull(
-            fullById["R1_V1_TTC_INVALID_CLOSING_CONTINUES"]?.copy(suite = ScenarioSuite.E2E),
-            fullById["R2_V2_FOLLOW_STABLE_ORANGE"]?.copy(suite = ScenarioSuite.E2E),
-            fullById["C3_RECEDING_HARD_SUPPRESS"]?.copy(suite = ScenarioSuite.E2E),
+    fun createE2eCatalog(): ScenarioCatalogE2e {
+        val e2eScenarios = listOf(
+            e2eR1TtcInvalidClosingContinues(),
+            e2eR2FollowStableOrange(),
+            e2eC3RecedingHardSuppress(),
             e2eTtcHeightInvalidWindowDuringClosing(),
             e2eRecedingWarmupNoBlink()
         )
-        return ScenarioCatalog(
+        return ScenarioCatalogE2e(
             title = "MCAW 2.0 – E2E katalog simulací",
             version = CATALOG_VERSION,
             scenarios = e2eScenarios
         )
     }
 
-    private fun createFullCatalog(): ScenarioCatalog {
-        val list = ArrayList<Scenario>()
+    private fun createFullCatalog(): ScenarioCatalogEngineOnly {
+        val list = ArrayList<EngineOnlyScenario>()
 
         list += cityParkedPassBy()
         list += cityJamApproach()
@@ -74,17 +73,17 @@ object ScenarioCatalogFactory {
         list += dynSpeedDecelMaintainsStability()
         list += dynSpeedAccelBringsEarlierWarning()
 
-        return ScenarioCatalog(
+        return ScenarioCatalogEngineOnly(
             title = "MCAW 2.0 – Katalog simulací scénářů",
             version = CATALOG_VERSION,
             scenarios = list
         )
     }
 
-    private fun cityParkedPassBy(): Scenario {
+    private fun cityParkedPassBy(): EngineOnlyScenario {
         // Goal: parked vehicles at edge ROI must NOT cause alert.
         val hazard = 4.0f
-        return Scenario(
+        return EngineOnlyScenario(
             id = "C1_CITY_PARKED_PASS_BY",
             title = "Město: průjezd kolem zaparkovaných aut na okraji ROI",
             domain = Domain.CITY,
@@ -110,7 +109,7 @@ object ScenarioCatalogFactory {
                 Expectation.MustNotAlertWhenTtcInvalidAndRelLow(relMpsMax = 0.8f, message = "Invalid TTC + nízké přibližování nesmí varovat.")
             ),
             segments = listOf(
-                Segment(
+                EngineOnlySegment(
                     tFromSec = 0f,
                     tToSec = 8f,
                     label = "parked pass-by",
@@ -125,10 +124,10 @@ object ScenarioCatalogFactory {
         )
     }
 
-    private fun cityJamApproach(): Scenario {
+    private fun cityJamApproach(): EngineOnlyScenario {
         // Goal: in a fast closing jam approach, engine should reach RED.
         val hazard = 5.0f
-        return Scenario(
+        return EngineOnlyScenario(
             id = "C2_CITY_JAM_APPROACH",
             title = "Město: dojezd do kolony (rychlé přibližování)",
             domain = Domain.CITY,
@@ -151,7 +150,7 @@ object ScenarioCatalogFactory {
                 Expectation.MaxTransitionsInWindow(maxTransitions = 4, windowSec = 5f, message = "Bez nadměrného blikání."),
             ),
             segments = listOf(
-                Segment(
+                EngineOnlySegment(
                     tFromSec = 0f,
                     tToSec = hazard,
                     label = "steady follow",
@@ -160,7 +159,7 @@ object ScenarioCatalogFactory {
                     ttcSec = { _ -> 10f },
                     ttcSlopeSecPerSec = { _ -> 0f }
                 ),
-                Segment(
+                EngineOnlySegment(
                     tFromSec = hazard,
                     tToSec = 10f,
                     label = "closing",
@@ -175,10 +174,10 @@ object ScenarioCatalogFactory {
         )
     }
 
-    private fun tunnelExposureDrop(): Scenario {
+    private fun tunnelExposureDrop(): EngineOnlyScenario {
         // Goal: quality drops shouldn't cause spikes; still should warn if kinematics are dangerous.
         val hazard = 6.0f
-        return Scenario(
+        return EngineOnlyScenario(
             id = "T1_TUNNEL_EXPOSURE_DROP",
             title = "Tunel: pokles kvality obrazu + pokračující přibližování",
             domain = Domain.TUNNEL,
@@ -201,7 +200,7 @@ object ScenarioCatalogFactory {
                 Expectation.MaxTransitionsInWindow(maxTransitions = 5, windowSec = 6f, message = "Změna kvality nesmí způsobit nadměrné cvakání."),
             ),
             segments = listOf(
-                Segment(
+                EngineOnlySegment(
                     tFromSec = 0f,
                     tToSec = hazard,
                     label = "before tunnel",
@@ -211,7 +210,7 @@ object ScenarioCatalogFactory {
                     ttcSlopeSecPerSec = { _ -> 0f },
                     qualityWeight = { _ -> 1.0f }
                 ),
-                Segment(
+                EngineOnlySegment(
                     tFromSec = hazard,
                     tToSec = 12f,
                     label = "in tunnel",
@@ -225,8 +224,8 @@ object ScenarioCatalogFactory {
         )
     }
 
-    private fun highwaySteadyFollowing(): Scenario {
-        return Scenario(
+    private fun highwaySteadyFollowing(): EngineOnlyScenario {
+        return EngineOnlyScenario(
             id = "H1_HIGHWAY_STEADY_FOLLOW",
             title = "Dálnice: stabilní odstup (bez alertů)",
             domain = Domain.HIGHWAY,
@@ -246,7 +245,7 @@ object ScenarioCatalogFactory {
                 Expectation.MaxTransitionsInWindow(maxTransitions = 2, windowSec = 8f, message = "Bez náhodných přechodů."),
             ),
             segments = listOf(
-                Segment(
+                EngineOnlySegment(
                     tFromSec = 0f,
                     tToSec = 12f,
                     label = "steady",
@@ -259,10 +258,10 @@ object ScenarioCatalogFactory {
         )
     }
 
-    private fun highwaySuddenBrake(): Scenario {
+    private fun highwaySuddenBrake(): EngineOnlyScenario {
         // Goal: sudden brake ahead on highway should go ORANGE then RED.
         val hazard = 3.0f
-        return Scenario(
+        return EngineOnlyScenario(
             id = "H2_HIGHWAY_SUDDEN_BRAKE",
             title = "Dálnice: náhlé brzdění vozidla vpředu",
             domain = Domain.HIGHWAY,
@@ -285,7 +284,7 @@ object ScenarioCatalogFactory {
                 Expectation.MaxTransitionsInWindow(maxTransitions = 5, windowSec = 6f, message = "Bez blikání/přepínání alertů."),
             ),
             segments = listOf(
-                Segment(
+                EngineOnlySegment(
                     tFromSec = 0f,
                     tToSec = hazard,
                     label = "jízda",
@@ -295,7 +294,7 @@ object ScenarioCatalogFactory {
                     ttcSlopeSecPerSec = { _ -> 0f },
                     brakeCueActive = { _ -> false }
                 ),
-                Segment(
+                EngineOnlySegment(
                     tFromSec = hazard,
                     tToSec = 8f,
                     label = "brzdění vpředu",
@@ -313,9 +312,9 @@ object ScenarioCatalogFactory {
         )
     }
 
-    private fun ruralCurveOncomingIgnored(): Scenario {
+    private fun ruralCurveOncomingIgnored(): EngineOnlyScenario {
         // Goal: oncoming in a curve (outside ROI corridor) must not produce alerts.
-        return Scenario(
+        return EngineOnlyScenario(
             id = "R1_RURAL_CURVE_ONCOMING",
             title = "Okreska: zatáčka + protijedoucí mimo ROI",
             domain = Domain.RURAL,
@@ -337,7 +336,7 @@ object ScenarioCatalogFactory {
                 Expectation.MaxTransitionsInWindow(maxTransitions = 2, windowSec = 10f, message = "Bez náhodných přechodů."),
             ),
             segments = listOf(
-                Segment(
+                EngineOnlySegment(
                     tFromSec = 0f,
                     tToSec = 12f,
                     label = "curve",
@@ -352,10 +351,10 @@ object ScenarioCatalogFactory {
         )
     }
 
-    private fun motoFollowInCurve(): Scenario {
+    private fun motoFollowInCurve(): EngineOnlyScenario {
         // Goal: moto follow in a curve: lean reduces sensitivity; must remain stable but still warn when truly closing.
         val hazard = 4.0f
-        return Scenario(
+        return EngineOnlyScenario(
             id = "M1_MOTO_FOLLOW_CURVE",
             title = "Motorka: motorka před motorkou v zatáčce",
             domain = Domain.RURAL,
@@ -380,7 +379,7 @@ object ScenarioCatalogFactory {
                 Expectation.MaxTransitionsInWindow(maxTransitions = 5, windowSec = 8f, message = "V zatáčce bez nadměrného cvakání."),
             ),
             segments = listOf(
-                Segment(
+                EngineOnlySegment(
                     tFromSec = 0f,
                     tToSec = hazard,
                     label = "stabilní jízda",
@@ -390,7 +389,7 @@ object ScenarioCatalogFactory {
                     ttcSlopeSecPerSec = { _ -> 0f },
                     leanDeg = { _ -> 28f }
                 ),
-                Segment(
+                EngineOnlySegment(
                     tFromSec = hazard,
                     tToSec = 10f,
                     label = "přibližování v zatáčce",
@@ -405,9 +404,9 @@ object ScenarioCatalogFactory {
         )
     }
 
-    private fun motoJamSuddenBrake(): Scenario {
+    private fun motoJamSuddenBrake(): EngineOnlyScenario {
         val hazard = 3.5f
-        return Scenario(
+        return EngineOnlyScenario(
             id = "M2_MOTO_JAM_SUDDEN_BRAKE",
             title = "Motorka: náhlé brzdění vpředu",
             domain = Domain.CITY,
@@ -431,7 +430,7 @@ object ScenarioCatalogFactory {
                 Expectation.MaxTransitionsInWindow(maxTransitions = 6, windowSec = 8f, message = "Bez nadměrného cvakání."),
             ),
             segments = listOf(
-                Segment(
+                EngineOnlySegment(
                     tFromSec = 0f,
                     tToSec = hazard,
                     label = "dojezd",
@@ -441,7 +440,7 @@ object ScenarioCatalogFactory {
                     ttcSlopeSecPerSec = { _ -> 0f },
                     leanDeg = { _ -> 10f }
                 ),
-                Segment(
+                EngineOnlySegment(
                     tFromSec = hazard,
                     tToSec = 9f,
                     label = "kritické přibližování",
@@ -458,9 +457,9 @@ object ScenarioCatalogFactory {
         )
     }
 
-    private fun dynSpeedDecelMaintainsStability(): Scenario {
+    private fun dynSpeedDecelMaintainsStability(): EngineOnlyScenario {
         val hazard = 4.0f
-        return Scenario(
+        return EngineOnlyScenario(
             id = "DYN1_DECEL_STABILITY",
             title = "Dynamická distance: zpomalování jezdce stabilizuje riziko",
             domain = Domain.CITY,
@@ -485,7 +484,7 @@ object ScenarioCatalogFactory {
                 Expectation.MaxTransitionsInWindow(maxTransitions = 5, windowSec = 8f, message = "Bez nadměrného cvakání i při změně rychlosti.")
             ),
             segments = listOf(
-                Segment(
+                EngineOnlySegment(
                     tFromSec = 0f,
                     tToSec = hazard,
                     label = "steady",
@@ -494,7 +493,7 @@ object ScenarioCatalogFactory {
                     ttcSec = { _ -> 8.5f },
                     riderAccelMps2 = { _ -> 0f }
                 ),
-                Segment(
+                EngineOnlySegment(
                     tFromSec = hazard,
                     tToSec = 11f,
                     label = "rider decel",
@@ -509,9 +508,9 @@ object ScenarioCatalogFactory {
         )
     }
 
-    private fun dynSpeedAccelBringsEarlierWarning(): Scenario {
+    private fun dynSpeedAccelBringsEarlierWarning(): EngineOnlyScenario {
         val hazard = 3.5f
-        return Scenario(
+        return EngineOnlyScenario(
             id = "DYN2_ACCEL_EARLIER_ORANGE",
             title = "Dynamická distance: akcelerace jezdce přinese dřívější ORANGE",
             domain = Domain.HIGHWAY,
@@ -535,7 +534,7 @@ object ScenarioCatalogFactory {
                 Expectation.MaxTransitionsInWindow(maxTransitions = 6, windowSec = 8f, message = "Změna rychlosti nesmí rozbít stabilitu.")
             ),
             segments = listOf(
-                Segment(
+                EngineOnlySegment(
                     tFromSec = 0f,
                     tToSec = hazard,
                     label = "before accel",
@@ -544,7 +543,7 @@ object ScenarioCatalogFactory {
                     ttcSec = { _ -> 13f },
                     riderAccelMps2 = { _ -> 0f }
                 ),
-                Segment(
+                EngineOnlySegment(
                     tFromSec = hazard,
                     tToSec = 9f,
                     label = "rider accel",
@@ -558,9 +557,9 @@ object ScenarioCatalogFactory {
         )
     }
 
-    private fun v1TtcInvalidClosingContinues(): Scenario {
+    private fun v1TtcInvalidClosingContinues(): EngineOnlyScenario {
         val hazard = 4.0f
-        return Scenario(
+        return EngineOnlyScenario(
             id = "R1_V1_TTC_INVALID_CLOSING_CONTINUES",
             title = "Regrese: TTC invalid, ale přibližování pokračuje",
             domain = Domain.CITY,
@@ -587,7 +586,7 @@ object ScenarioCatalogFactory {
                 Expectation.MaxTransitionsInWindow(maxTransitions = 4, windowSec = 5f, message = "TTC invalid režim nesmí způsobit flapping alertů.")
             ),
             segments = listOf(
-                Segment(
+                EngineOnlySegment(
                     tFromSec = 0f,
                     tToSec = hazard,
                     label = "stable follow",
@@ -595,7 +594,7 @@ object ScenarioCatalogFactory {
                     approachSpeedMps = { _ -> 1.2f },
                     ttcSec = { _ -> 9.5f }
                 ),
-                Segment(
+                EngineOnlySegment(
                     tFromSec = hazard,
                     tToSec = 10f,
                     label = "ttc-invalid closing",
@@ -611,9 +610,9 @@ object ScenarioCatalogFactory {
         )
     }
 
-    private fun v2FollowNoFlap(): Scenario {
+    private fun v2FollowNoFlap(): EngineOnlyScenario {
         val hazard = 3.5f
-        return Scenario(
+        return EngineOnlyScenario(
             id = "R2_V2_FOLLOW_STABLE_ORANGE",
             title = "Regrese: V2 follow musí vstoupit do ORANGE bez flappingu",
             domain = Domain.HIGHWAY,
@@ -636,7 +635,7 @@ object ScenarioCatalogFactory {
                 Expectation.MaxTransitionsInWindow(maxTransitions = 3, windowSec = 6f, message = "Follow scénář musí být stabilní bez flappingu.")
             ),
             segments = listOf(
-                Segment(
+                EngineOnlySegment(
                     tFromSec = 0f,
                     tToSec = hazard,
                     label = "safe follow",
@@ -644,7 +643,7 @@ object ScenarioCatalogFactory {
                     approachSpeedMps = { _ -> 1.0f },
                     ttcSec = { _ -> 12f }
                 ),
-                Segment(
+                EngineOnlySegment(
                     tFromSec = hazard,
                     tToSec = 10f,
                     label = "controlled close-in",
@@ -659,9 +658,9 @@ object ScenarioCatalogFactory {
         )
     }
 
-    private fun cityRecedingHardSuppress(): Scenario {
+    private fun cityRecedingHardSuppress(): EngineOnlyScenario {
         val hazard = 1.0f
-        return Scenario(
+        return EngineOnlyScenario(
             id = "C3_RECEDING_HARD_SUPPRESS",
             title = "Město: receding target musí být hard-suppressed",
             domain = Domain.CITY,
@@ -683,7 +682,7 @@ object ScenarioCatalogFactory {
                 Expectation.MaxTransitionsInWindow(maxTransitions = 1, windowSec = 6f, message = "Bez blikání při receding supresi.")
             ),
             segments = listOf(
-                Segment(
+                EngineOnlySegment(
                     tFromSec = 0f,
                     tToSec = 7f,
                     label = "receding despite close distance",
@@ -696,9 +695,9 @@ object ScenarioCatalogFactory {
         )
     }
 
-    private fun highwaySteadyGapHardSuppress(): Scenario {
+    private fun highwaySteadyGapHardSuppress(): EngineOnlyScenario {
         val hazard = 1.2f
-        return Scenario(
+        return EngineOnlyScenario(
             id = "H3_STEADY_GAP_HARD_SUPPRESS",
             title = "Dálnice: steady gap hard suppress po 1.2s stability",
             domain = Domain.HIGHWAY,
@@ -720,7 +719,7 @@ object ScenarioCatalogFactory {
                 Expectation.MaxTransitionsInWindow(maxTransitions = 1, windowSec = 8f, message = "Bez flappingu během steady suprese.")
             ),
             segments = listOf(
-                Segment(
+                EngineOnlySegment(
                     tFromSec = 0f,
                     tToSec = 6f,
                     label = "long steady follow",
@@ -733,9 +732,9 @@ object ScenarioCatalogFactory {
         )
     }
 
-    private fun highwaySteadyToApproachUnsuppress(): Scenario {
+    private fun highwaySteadyToApproachUnsuppress(): EngineOnlyScenario {
         val hazard = 2.0f
-        return Scenario(
+        return EngineOnlyScenario(
             id = "H4_STEADY_TO_APPROACH_UNSUPPRESS",
             title = "Dálnice: steady suppress -> approach unsuppress po 300ms",
             domain = Domain.HIGHWAY,
@@ -756,7 +755,7 @@ object ScenarioCatalogFactory {
                 Expectation.MaxTransitionsInWindow(maxTransitions = 3, windowSec = 6f, message = "Unsuppress bez blikání.")
             ),
             segments = listOf(
-                Segment(
+                EngineOnlySegment(
                     tFromSec = 0f,
                     tToSec = hazard,
                     label = "steady suppressed",
@@ -765,7 +764,7 @@ object ScenarioCatalogFactory {
                     ttcSec = { _ -> 20f },
                     ttcSlopeSecPerSec = { _ -> 0f }
                 ),
-                Segment(
+                EngineOnlySegment(
                     tFromSec = hazard,
                     tToSec = 6f,
                     label = "confirmed approach",
@@ -780,12 +779,11 @@ object ScenarioCatalogFactory {
         )
     }
 
-    private fun e2eTtcHeightInvalidWindowDuringClosing(): Scenario {
+    private fun e2eTtcHeightInvalidWindowDuringClosing(): E2eScenario {
         val hazard = 3.0f
-        return Scenario(
+        return E2eScenario(
             id = "E2E_TTC_HEIGHT_INVALID_WINDOW_DURING_CLOSING",
-            suite = ScenarioSuite.E2E,
-            title = "E2E: TTC height invalid window during closing",
+                        title = "E2E: TTC height invalid window during closing",
             domain = Domain.CITY,
             vehicle = Vehicle.CAR,
             notes = "Height TTC invalid krátce během přibližování nesmí oddálit ORANGE.",
@@ -796,24 +794,24 @@ object ScenarioCatalogFactory {
                 Expectation.MaxTransitionsInWindow(3, 5f, "Stable")
             ),
             segments = listOf(
-                Segment(0f, hazard, "follow", { 34f }, { 1.2f }, { 10f }),
-                Segment(
-                    hazard,
-                    9f,
-                    "closing",
-                    { t -> max(7f, 34f - (t - hazard) * 5.4f) },
-                    { 5.5f },
-                    { t -> if (t in (hazard + 0.7f)..(hazard + 1.2f)) Float.NaN else max(1.8f, 6.0f - (t - hazard) * 0.7f) }
+                E2eSegment(0f, hazard, "follow", distM = { 34f }, boxHeightPx = { 80f }),
+                E2eSegment(
+                    tFromSec = hazard,
+                    tToSec = 9f,
+                    label = "closing",
+                    distM = { t -> max(7f, 34f - (t - hazard) * 5.4f) },
+                    boxHeightPx = { t -> if (t in (hazard + 0.7f)..(hazard + 1.2f)) 0f else 80f + (t - hazard) * 15f },
+                    bottomOccluded = { t -> t in (hazard + 0.7f)..(hazard + 1.2f) },
+                    occlusionConfirmed = { t -> t in (hazard + 0.7f)..(hazard + 1.2f) }
                 )
             )
         )
     }
 
-    private fun e2eRecedingWarmupNoBlink(): Scenario {
-        return Scenario(
+    private fun e2eRecedingWarmupNoBlink(): E2eScenario {
+        return E2eScenario(
             id = "E2E_RECEDING_WARMUP_NO_BLINK",
-            suite = ScenarioSuite.E2E,
-            title = "E2E: receding warmup no blink",
+                        title = "E2E: receding warmup no blink",
             domain = Domain.CITY,
             vehicle = Vehicle.CAR,
             notes = "Receding od t=0 nesmí zablikat ORANGE.",
@@ -823,9 +821,45 @@ object ScenarioCatalogFactory {
                 Expectation.MaxTransitionsInWindow(1, 6f, "No transitions")
             ),
             segments = listOf(
-                Segment(0f, 7f, "receding", { t -> 4.3f + t * 0.9f }, { 6f }, { 1.1f }, { 0.2f })
+                E2eSegment(0f, 7f, "receding", distM = { t -> 4.3f + t * 0.9f }, boxHeightPx = { t -> (170f - t * 9f).coerceAtLeast(40f) })
             )
         )
     }
 
+
+    private fun e2eR1TtcInvalidClosingContinues(): E2eScenario = E2eScenario(
+        id = "R1_V1_TTC_INVALID_CLOSING_CONTINUES",
+        title = "E2E R1 TTC invalid during closing",
+        domain = Domain.CITY,
+        vehicle = Vehicle.CAR,
+        notes = "E2E raw inputs for invalid TTC hold while closing.",
+        config = ScenarioConfig(effectiveMode = 1, hz = 10, riderSpeedMps = 14f, qualityWeight = 1.0f),
+        expectations = listOf(Expectation.MustEnterLevelBy(level = 1, latestSecAfterHazard = 2.5f, hazardTimeSec = 2f, message = "Closing should continue through TTC invalid windows.")),
+        segments = listOf(
+            E2eSegment(0f, 2f, "approach", distM = { t -> 32f - 3.2f * t }, boxHeightPx = { t -> 80f + 8f * t }),
+            E2eSegment(2f, 6f, "ttc invalid", distM = { t -> 25.6f - 4.0f * (t - 2f) }, boxHeightPx = { _ -> 0f }, bottomOccluded = { true }, occlusionConfirmed = { true })
+        )
+    )
+
+    private fun e2eR2FollowStableOrange(): E2eScenario = E2eScenario(
+        id = "R2_V2_FOLLOW_STABLE_ORANGE",
+        title = "E2E stable following orange",
+        domain = Domain.HIGHWAY,
+        vehicle = Vehicle.CAR,
+        notes = "E2E stable following with persistent approach.",
+        config = ScenarioConfig(effectiveMode = 2, hz = 10, riderSpeedMps = 24f, qualityWeight = 0.95f),
+        expectations = listOf(Expectation.MustEnterLevelBy(level = 1, latestSecAfterHazard = 3.0f, hazardTimeSec = 2f, message = "Should reach ORANGE.")),
+        segments = listOf(E2eSegment(0f, 10f, "follow", distM = { t -> 34f - 2.8f * t }, boxHeightPx = { t -> 65f + 6.5f * t }))
+    )
+
+    private fun e2eC3RecedingHardSuppress(): E2eScenario = E2eScenario(
+        id = "C3_RECEDING_HARD_SUPPRESS",
+        title = "E2E receding must suppress immediately",
+        domain = Domain.CITY,
+        vehicle = Vehicle.CAR,
+        notes = "Distance grows from frame zero; no ORANGE blink expected.",
+        config = ScenarioConfig(effectiveMode = 1, hz = 10, riderSpeedMps = 10f, qualityWeight = 1.0f),
+        expectations = listOf(Expectation.MustNotEnterLevel(level = 1, message = "Receding should be hard-suppressed immediately.")),
+        segments = listOf(E2eSegment(0f, 7f, "receding", distM = { t -> 4.0f + 1.1f * t }, boxHeightPx = { t -> (180f - 12f * t).coerceAtLeast(30f) }))
+    )
 }

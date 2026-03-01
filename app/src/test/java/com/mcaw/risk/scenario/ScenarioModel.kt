@@ -3,85 +3,82 @@ package com.mcaw.risk.scenario
 import com.mcaw.risk.RiskEngine
 import kotlin.math.max
 
-/**
- * Scenario DSL for MCAW 2.0 offline simulations.
- *
- * Goals:
- * - Human readable scenario "story".
- * - Deterministic inputs (no video dependency).
- * - Machine-usable output for regression + tuning.
- */
+interface ScenarioMeta {
+    val id: String
+    val title: String
+    val domain: Domain
+    val vehicle: Vehicle
+    val notes: String
+    val config: ScenarioConfig
+    val expectations: List<Expectation>
+}
 
-data class ScenarioCatalog(
+data class ScenarioCatalogEngineOnly(
     val title: String,
     val version: String,
-    val scenarios: List<Scenario>
+    val scenarios: List<EngineOnlyScenario>
 )
 
-data class Scenario(
-    val id: String,
-    val suite: ScenarioSuite = ScenarioSuite.ENGINE_ONLY,
+data class ScenarioCatalogE2e(
     val title: String,
-    val domain: Domain,
-    val vehicle: Vehicle,
-    val notes: String,
-    val config: ScenarioConfig,
-    val expectations: List<Expectation>,
-    val segments: List<Segment>
+    val version: String,
+    val scenarios: List<E2eScenario>
 )
+
+data class EngineOnlyScenario(
+    override val id: String,
+    override val title: String,
+    override val domain: Domain,
+    override val vehicle: Vehicle,
+    override val notes: String,
+    override val config: ScenarioConfig,
+    override val expectations: List<Expectation>,
+    val segments: List<EngineOnlySegment>
+) : ScenarioMeta
+
+data class E2eScenario(
+    override val id: String,
+    override val title: String,
+    override val domain: Domain,
+    override val vehicle: Vehicle,
+    override val notes: String,
+    override val config: ScenarioConfig,
+    override val expectations: List<Expectation>,
+    val segments: List<E2eSegment>
+) : ScenarioMeta
 
 enum class Domain { CITY, TUNNEL, HIGHWAY, RURAL }
-enum class ScenarioSuite { ENGINE_ONLY, E2E }
 enum class Vehicle { CAR, MOTO }
 
 data class ScenarioConfig(
-    /** effectiveMode passed into RiskEngine (1 city/default, 2 sport, 3 user) */
     val effectiveMode: Int = 1,
-    /** simulation rate in Hz (10Hz recommended for risk stability tests) */
     val hz: Int = 10,
-    /** rider speed in m/s (used by engine + brake cue gating in real pipeline) */
     val riderSpeedMps: Float = 12f,
-    /** rider speed confidence 0..1 */
     val riderSpeedConfidence: Float = 1.0f,
-    /** optional dynamic-distance mode override (null = engine default) */
     val dynamicDistanceEnabled: Boolean? = null,
-    /** optional dynamic-distance RED headway sec override */
     val dynamicDistanceRedSec: Float? = null,
-    /** optional dynamic-distance ORANGE headway sec override */
     val dynamicDistanceOrangeSec: Float? = null,
-    /** qualityWeight 0.6..1.0 */
     val qualityWeight: Float = 1.0f,
-    /** default ROI containment 0..1 */
     val roiContainment: Float = 1.0f,
-    /** ego offset normalized 0..2 */
     val egoOffsetN: Float = 0.0f,
-    /** lean angle deg (NaN if unknown / car) */
     val leanDeg: Float = Float.NaN,
-    /** derive REL from distance derivative EMA in runner (default MCAW 2.0 contract) */
     val deriveRelFromDistance: Boolean = true
 )
 
-data class Segment(
+data class EngineOnlySegment(
     val tFromSec: Float,
     val tToSec: Float,
     val label: String,
-    /** meters */
     val distanceM: (t: Float) -> Float,
-    /** m/s (closing speed; negative means pulling away, but engine clamps <0 to 0) */
     val approachSpeedMps: (t: Float) -> Float,
-    /** seconds; may be NaN/Inf in special tests */
     val ttcSec: (t: Float) -> Float,
-    /** sec/sec; negative = closing faster */
     val ttcSlopeSecPerSec: (t: Float) -> Float = { 0f },
     val cutInActive: (t: Float) -> Boolean = { false },
     val brakeCueActive: (t: Float) -> Boolean = { false },
     val brakeCueStrength: (t: Float) -> Float = { 0f },
     val egoBrakingConfidence: (t: Float) -> Float = { 0f },
-    /** optional rider acceleration profile (m/s^2). If speed override is missing, integrated over dt. */
     val riderAccelMps2: (t: Float) -> Float? = { null },
-    /** optional explicit rider speed profile (m/s), takes precedence over acceleration integration. */
     val riderSpeedMps: (t: Float) -> Float? = { null },
-    /** optional rider speed confidence profile 0..1 */
     val riderSpeedConfidence: (t: Float) -> Float? = { null },
     val roiContainment: (t: Float) -> Float? = { null },
     val egoOffsetN: (t: Float) -> Float? = { null },
@@ -93,30 +90,25 @@ data class Segment(
     val occlConfirmed: (t: Float) -> Boolean? = { null }
 )
 
+data class E2eSegment(
+    val tFromSec: Float,
+    val tToSec: Float,
+    val label: String,
+    val distM: (t: Float) -> Float,
+    val boxHeightPx: (t: Float) -> Float,
+    val trackedPresent: (t: Float) -> Boolean = { true },
+    val bottomOccluded: (t: Float) -> Boolean = { false },
+    val occlusionConfirmed: (t: Float) -> Boolean = { false },
+    val roiContainment: (t: Float) -> Float? = { null },
+    val qualityWeight: (t: Float) -> Float? = { null },
+    val riderSpeedMps: (t: Float) -> Float? = { null }
+)
+
 sealed class Expectation {
-    data class MustEnterLevelBy(
-        val level: Int,
-        /** relative to hazardTimeSec */
-        val latestSecAfterHazard: Float,
-        val hazardTimeSec: Float,
-        val message: String
-    ) : Expectation()
-
-    data class MustNotEnterLevel(
-        val level: Int,
-        val message: String
-    ) : Expectation()
-
-    data class MaxTransitionsInWindow(
-        val maxTransitions: Int,
-        val windowSec: Float,
-        val message: String
-    ) : Expectation()
-
-    data class MustNotAlertWhenTtcInvalidAndRelLow(
-        val relMpsMax: Float,
-        val message: String
-    ) : Expectation()
+    data class MustEnterLevelBy(val level: Int, val latestSecAfterHazard: Float, val hazardTimeSec: Float, val message: String) : Expectation()
+    data class MustNotEnterLevel(val level: Int, val message: String) : Expectation()
+    data class MaxTransitionsInWindow(val maxTransitions: Int, val windowSec: Float, val message: String) : Expectation()
+    data class MustNotAlertWhenTtcInvalidAndRelLow(val relMpsMax: Float, val message: String) : Expectation()
 }
 
 data class SimFrame(
@@ -151,12 +143,9 @@ data class SimEvent(
     val risk: Float,
     val reasonBits: Int,
     val reasonId: Int,
-    val allowRed: Boolean?,
-    val preGuardLevel: Int?,
     val derived: RiskEngine.DerivedThresholds,
     val extra: Map<String, Any?> = emptyMap()
 )
-
 
 data class FrameTraceInput(
     val effectiveMode: Int,
@@ -178,11 +167,7 @@ data class FrameTraceInput(
     val leanDeg: Float
 )
 
-data class FrameTraceOutput(
-    val level: Int,
-    val riskScore: Float,
-    val reasonBits: Int
-)
+data class FrameTraceOutput(val level: Int, val riskScore: Float, val reasonBits: Int)
 
 data class FrameTraceEvent(
     val type: String = "FRAME",
@@ -193,7 +178,7 @@ data class FrameTraceEvent(
 )
 
 data class ScenarioRun(
-    val scenario: Scenario,
+    val scenario: ScenarioMeta,
     val derived: RiskEngine.DerivedThresholds,
     val frames: List<SimFrame>,
     val levels: List<Int>,
@@ -202,63 +187,86 @@ data class ScenarioRun(
     val verdicts: List<Verdict>
 )
 
-data class Verdict(
-    val ok: Boolean,
-    val rule: String,
-    val details: String
-)
+data class Verdict(val ok: Boolean, val rule: String, val details: String)
 
-fun buildFrames(s: Scenario): List<SimFrame> {
+fun buildFrames(s: EngineOnlyScenario): List<SimFrame> {
     val hz = max(1, s.config.hz)
     val dt = 1f / hz.toFloat()
     val frames = ArrayList<SimFrame>(hz * 20)
     var tsMs = 0L
-    val segments = s.segments.sortedBy { it.tFromSec }
     var simRiderSpeedMps = s.config.riderSpeedMps.coerceAtLeast(0f)
 
-    for (seg in segments) {
+    for (seg in s.segments.sortedBy { it.tFromSec }) {
         var t = seg.tFromSec
         while (t <= seg.tToSec + 1e-6f) {
             val dist = seg.distanceM(t)
-            val relRaw = seg.approachSpeedMps(t)
-            val ttc = seg.ttcSec(t)
-            val slope = seg.ttcSlopeSecPerSec(t)
-            val roi = seg.roiContainment(t) ?: s.config.roiContainment
-            val egoOff = seg.egoOffsetN(t) ?: s.config.egoOffsetN
-            val qW = seg.qualityWeight(t) ?: s.config.qualityWeight
-            val lean = seg.leanDeg(t) ?: s.config.leanDeg
             val explicitSpeed = seg.riderSpeedMps(t)
-            simRiderSpeedMps = if (explicitSpeed != null) {
-                explicitSpeed.coerceAtLeast(0f)
-            } else {
-                val a = seg.riderAccelMps2(t) ?: 0f
-                (simRiderSpeedMps + a * dt).coerceAtLeast(0f)
-            }
-            val riderSpeedConf = (seg.riderSpeedConfidence(t) ?: s.config.riderSpeedConfidence).coerceIn(0f, 1f)
-
+            simRiderSpeedMps = if (explicitSpeed != null) explicitSpeed.coerceAtLeast(0f) else (simRiderSpeedMps + (seg.riderAccelMps2(t) ?: 0f) * dt).coerceAtLeast(0f)
             frames.add(
                 SimFrame(
                     tSec = t,
                     tsMs = tsMs,
                     distM = dist,
-                    relMpsRaw = relRaw,
+                    relMpsRaw = seg.approachSpeedMps(t),
                     relDerivValid = true,
-                    ttcSec = ttc,
-                    ttcSlope = slope,
-                    roiContainment = roi,
-                    egoOffsetN = egoOff,
+                    ttcSec = seg.ttcSec(t),
+                    ttcSlope = seg.ttcSlopeSecPerSec(t),
+                    roiContainment = seg.roiContainment(t) ?: s.config.roiContainment,
+                    egoOffsetN = seg.egoOffsetN(t) ?: s.config.egoOffsetN,
                     cutInActive = seg.cutInActive(t),
                     brakeCueActive = seg.brakeCueActive(t),
                     brakeCueStrength = seg.brakeCueStrength(t),
-                    qualityWeight = qW,
+                    qualityWeight = seg.qualityWeight(t) ?: s.config.qualityWeight,
                     boxHeightPx = seg.boxHeightPx(t) ?: (1200f / dist.coerceAtLeast(1f)),
                     trackedPresent = seg.trackedPresent(t) ?: true,
                     bottomOccluded = seg.bottomOccluded(t) ?: false,
                     occlConfirmed = seg.occlConfirmed(t) ?: false,
                     riderSpeedMps = simRiderSpeedMps,
-                    riderSpeedConfidence = riderSpeedConf,
+                    riderSpeedConfidence = (seg.riderSpeedConfidence(t) ?: s.config.riderSpeedConfidence).coerceIn(0f, 1f),
                     egoBrakingConfidence = seg.egoBrakingConfidence(t),
-                    leanDeg = lean,
+                    leanDeg = seg.leanDeg(t) ?: s.config.leanDeg,
+                    segLabel = seg.label
+                )
+            )
+            tsMs += (dt * 1000f).toLong()
+            t += dt
+        }
+    }
+    return frames
+}
+
+fun buildFrames(s: E2eScenario): List<SimFrame> {
+    val hz = max(1, s.config.hz)
+    val dt = 1f / hz.toFloat()
+    val frames = ArrayList<SimFrame>(hz * 20)
+    var tsMs = 0L
+    for (seg in s.segments.sortedBy { it.tFromSec }) {
+        var t = seg.tFromSec
+        while (t <= seg.tToSec + 1e-6f) {
+            val dist = seg.distM(t)
+            frames.add(
+                SimFrame(
+                    tSec = t,
+                    tsMs = tsMs,
+                    distM = dist,
+                    relMpsRaw = 0f,
+                    relDerivValid = false,
+                    ttcSec = Float.NaN,
+                    ttcSlope = Float.NaN,
+                    roiContainment = seg.roiContainment(t) ?: s.config.roiContainment,
+                    egoOffsetN = s.config.egoOffsetN,
+                    cutInActive = false,
+                    brakeCueActive = false,
+                    brakeCueStrength = 0f,
+                    qualityWeight = seg.qualityWeight(t) ?: s.config.qualityWeight,
+                    boxHeightPx = seg.boxHeightPx(t),
+                    trackedPresent = seg.trackedPresent(t),
+                    bottomOccluded = seg.bottomOccluded(t),
+                    occlConfirmed = seg.occlusionConfirmed(t),
+                    riderSpeedMps = seg.riderSpeedMps(t) ?: s.config.riderSpeedMps,
+                    riderSpeedConfidence = s.config.riderSpeedConfidence,
+                    egoBrakingConfidence = 0f,
+                    leanDeg = s.config.leanDeg,
                     segLabel = seg.label
                 )
             )

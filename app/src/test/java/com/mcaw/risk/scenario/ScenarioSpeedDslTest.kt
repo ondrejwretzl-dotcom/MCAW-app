@@ -8,7 +8,7 @@ class ScenarioSpeedDslTest {
 
     @Test
     fun buildFrames_integratesRiderAcceleration_whenNoExplicitSpeedProfile() {
-        val scenario = Scenario(
+        val scenario = EngineOnlyScenario(
             id = "T_DSL_ACCEL",
             title = "dsl accel",
             domain = Domain.CITY,
@@ -17,7 +17,7 @@ class ScenarioSpeedDslTest {
             config = ScenarioConfig(hz = 10, riderSpeedMps = 10f),
             expectations = emptyList(),
             segments = listOf(
-                Segment(
+                EngineOnlySegment(
                     tFromSec = 0f,
                     tToSec = 1f,
                     label = "accel",
@@ -38,7 +38,7 @@ class ScenarioSpeedDslTest {
 
     @Test
     fun buildFrames_explicitRiderSpeedProfile_hasPriorityOverAcceleration() {
-        val scenario = Scenario(
+        val scenario = EngineOnlyScenario(
             id = "T_DSL_EXPLICIT",
             title = "dsl explicit",
             domain = Domain.CITY,
@@ -47,7 +47,7 @@ class ScenarioSpeedDslTest {
             config = ScenarioConfig(hz = 10, riderSpeedMps = 10f, riderSpeedConfidence = 0.9f),
             expectations = emptyList(),
             segments = listOf(
-                Segment(
+                EngineOnlySegment(
                     tFromSec = 0f,
                     tToSec = 1f,
                     label = "explicit",

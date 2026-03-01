@@ -35,7 +35,7 @@ object ScenarioRunner {
         var recedingDistanceTrendCount: Int = 0
     )
 
-    fun runScenario(s: Scenario): ScenarioRun {
+    fun runScenario(s: EngineOnlyScenario): ScenarioRun {
         val engine = RiskEngine()
         val baseFrames = buildFrames(s)
 
@@ -141,9 +141,7 @@ object ScenarioRunner {
                         risk = r.riskScore,
                         reasonBits = r.reasonBits,
                         reasonId = RiskEngine.reasonId(r.reasonBits),
-                        allowRed = null,
-                        preGuardLevel = null,
-                        derived = engine.debugDerivedThresholds(
+                                                derived = engine.debugDerivedThresholds(
                             s.config.effectiveMode,
                             f.qualityWeight,
                             dynamicDistanceEnabled = dynEnabled,
@@ -177,9 +175,7 @@ object ScenarioRunner {
                 risk = 0f,
                 reasonBits = 0,
                 reasonId = 0,
-                allowRed = null,
-                preGuardLevel = null,
-                derived = derived,
+                                derived = derived,
                 extra = mapOf(
                     "frames" to frames.size,
                     "transitions" to transitions,
@@ -290,7 +286,7 @@ object ScenarioRunner {
         )
     }
 
-    private fun evaluateExpectations(s: Scenario, frames: List<SimFrame>, levels: List<Int>): List<Verdict> {
+    private fun evaluateExpectations(s: EngineOnlyScenario, frames: List<SimFrame>, levels: List<Int>): List<Verdict> {
         val out = ArrayList<Verdict>(s.expectations.size)
 
         fun firstTimeAtOrAbove(level: Int): Float? {
