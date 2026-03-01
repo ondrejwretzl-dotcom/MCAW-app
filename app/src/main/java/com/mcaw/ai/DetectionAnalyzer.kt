@@ -1043,8 +1043,10 @@ if (AppPreferences.debugOverlay) {
             // a reasonable bound/approximation that indicates we might be close.
             var closeDistM = Float.POSITIVE_INFINITY
             if (distCropBound.isFinite()) closeDistM = min(closeDistM, distCropBound)
-            if (distGroundPred != null && distGroundPred.isFinite()) closeDistM = min(closeDistM, distGroundPred)
-            if (distanceCandidate != null && distanceCandidate.isFinite()) closeDistM = min(closeDistM, distanceCandidate)
+            val dg = distGroundPred
+            if (dg != null && dg.isFinite()) closeDistM = min(closeDistM, dg)
+            val dc = distanceCandidate
+            if (dc != null && dc.isFinite()) closeDistM = min(closeDistM, dc)
             val occlClose = if (closeDistM.isFinite() && closeDistM > 0f) {
                 // Map: <=2m => 1.0 ; >=DIST_CLOSE_M => 0.0
                 val nearM = 2.0f
