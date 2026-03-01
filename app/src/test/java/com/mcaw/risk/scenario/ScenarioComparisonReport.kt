@@ -471,25 +471,208 @@ object ScenarioComparisonReport {
         reportsRelativePath: String = "."
     ) {
         val combinedHard = (engineDiff?.hardRegressionCount ?: 0) + (e2eDiff?.hardRegressionCount ?: 0)
-        val badge = if (combinedHard == 0) "PASS" else "FAIL"
-        val html = buildString {
+        val combinedSoft = (engineDiff?.softRegressionCount ?: 0) + (e2eDiff?.softRegressionCount ?: 0)
+        val combinedFail = engineSummary.count { !it.pass } + e2eSummary.count { !it.pass }
+        val combinedPass = engineSummary.count { it.pass } + e2eSummary.count { it.pass }
+        val gateBadge = if (combinedHard == 0) "PASS" else "FAIL"
+
+        val html = buildString(96_000) {
             append("""
-            <!doctype html><html><head><meta charset="utf-8"/><title>MCAW Scenario Report</title></head><body>
-            <h1>MCAW Scenario Report</h1>
-            <p><b>Combined status:</b> $badge</p>
-            <h2>EngineOnly Summary</h2>
-            <ul><li>Scenarios: ${engineSummary.size}</li><li>Hard regressions: ${engineDiff?.hardRegressionCount ?: 0}</li></ul>
-            <a href="summary_engine_only.json">summary_engine_only.json</a><br/>
-            <a href="diff_summary_engine_only.json">diff_summary_engine_only.json</a>
-            <h2>E2E Summary</h2>
-            <ul><li>Scenarios: ${e2eSummary.size}</li><li>Hard regressions: ${e2eDiff?.hardRegressionCount ?: 0}</li></ul>
-            <a href="summary_e2e.json">summary_e2e.json</a><br/>
-            <a href="diff_summary_e2e.json">diff_summary_e2e.json</a>
-            </body></html>
-            """)
+            <!doctype html>
+            <html lang="cs">
+            <head>
+              <meta charset="utf-8" />
+              <meta name="viewport" content="width=device-width, initial-scale=1" />
+              <title>MCAW scénářové reporty</title>
+              <style>
+                :root {
+                  --bg: #f8fafc;
+                  --ink: #0f172a;
+                  --muted: #475569;
+                  --line: #e2e8f0;
+                  --pass-bg: #dcfce7;
+                  --fail-bg: #fee2e2;
+                  --hard-bg: #fecaca;
+                  --soft-bg: #fef9c3;
+                  --improved-bg: #ccfbf1;
+                  --unchanged-bg: #e2e8f0;
+                }
+                * { box-sizing: border-box; }
+                body { font-family: Inter, system-ui, Arial, sans-serif; margin: 0; background: var(--bg); color: var(--ink); }
+                .container { max-width: 1300px; margin: 0 auto; padding: 24px 16px 40px; }
+                h1 { margin: 0 0 8px; font-size: 44px; letter-spacing: -0.02em; }
+                h2 { margin: 8px 0 12px; font-size: 22px; }
+                p { margin: 8px 0; }
+                .top-meta { color: var(--muted); margin-bottom: 14px; }
+                .actions { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 18px; }
+                .actions a { color: #0b4fd8; text-decoration: none; font-weight: 600; }
+                .actions a:hover { text-decoration: underline; }
+                .global-kpis, .suite-kpis { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(148px, 1fr)); margin: 12px 0 18px; }
+                .card { border-radius: 12px; padding: 12px 14px; border: 1px solid var(--line); background: #fff; }
+                .card .label { font-size: 12px; font-weight: 700; letter-spacing: 0.03em; }
+                .card .value { font-size: 28px; font-weight: 800; margin-top: 4px; }
+                .pass { background: var(--pass-bg); }
+                .fail { background: var(--fail-bg); }
+                .hard { background: var(--hard-bg); }
+                .soft { background: var(--soft-bg); }
+                .improved { background: var(--improved-bg); }
+                .unchanged { background: var(--unchanged-bg); }
+                .chip { display: inline-block; border-radius: 999px; padding: 3px 10px; font-size: 12px; font-weight: 700; border: 1px solid #cbd5e1; background: #fff; }
+                .chip.pass { border-color: #86efac; background: var(--pass-bg); }
+                .chip.fail { border-color: #fca5a5; background: var(--fail-bg); }
+                .chip.hard { border-color: #f87171; background: var(--hard-bg); }
+                .chip.soft { border-color: #facc15; background: var(--soft-bg); }
+                .chip.improved { border-color: #5eead4; background: var(--improved-bg); }
+                .chip.unchanged { border-color: #94a3b8; background: var(--unchanged-bg); }
+                .suite { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 14px; margin: 18px 0 22px; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04); }
+                .suite-header { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+                .suite-header small { color: var(--muted); }
+                .dataset-links { margin: 8px 0 14px; display: flex; gap: 10px; flex-wrap: wrap; }
+                .dataset-links a { color: #0b4fd8; font-weight: 600; text-decoration: none; }
+                .dataset-links a:hover { text-decoration: underline; }
+                .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; }
+                table { border-collapse: collapse; width: 100%; min-width: 1040px; }
+                th, td { border-bottom: 1px solid var(--line); text-align: left; padding: 8px 10px; font-size: 14px; vertical-align: top; }
+                th { background: #f1f5f9; position: sticky; top: 0; z-index: 1; }
+                tbody tr:nth-child(even) { background: #fcfdff; }
+                tbody tr:hover { background: #f8fafc; }
+                .scenario { font-weight: 700; letter-spacing: 0.01em; }
+                .links a { color: #0b4fd8; text-decoration: none; font-weight: 600; }
+                .links a:hover { text-decoration: underline; }
+                .muted { color: var(--muted); }
+                @media (max-width: 900px) {
+                  h1 { font-size: 34px; }
+                }
+              </style>
+            </head>
+            <body>
+              <div class="container">
+                <h1>MCAW scénářové reporty</h1>
+                <p class="top-meta">Lidsky čitelný přehled regresních testů rozdělený na ENGINE_ONLY a E2E_PIPELINE.</p>
+                <div class="actions">
+                  <a href="RUNBOOK.md">📘 Baseline runbook</a>
+                  <a href="summary_engine_only.json">📦 summary_engine_only.json</a>
+                  <a href="summary_e2e.json">📦 summary_e2e.json</a>
+                  <a href="diff_summary_engine_only.json">🧪 diff_summary_engine_only.json</a>
+                  <a href="diff_summary_e2e.json">🧪 diff_summary_e2e.json</a>
+                </div>
+
+                <div class="global-kpis">
+                  <div class="card ${if (gateBadge == "PASS") "pass" else "fail"}"><div class="label">COMBINED GATE</div><div class="value">$gateBadge</div></div>
+                  <div class="card pass"><div class="label">PASS</div><div class="value">$combinedPass</div></div>
+                  <div class="card fail"><div class="label">FAIL</div><div class="value">$combinedFail</div></div>
+                  <div class="card hard"><div class="label">REGRESSED_HARD</div><div class="value">$combinedHard</div></div>
+                  <div class="card soft"><div class="label">REGRESSED_SOFT</div><div class="value">$combinedSoft</div></div>
+                </div>
+
+            """.trimIndent())
+
+            append(renderSuiteSection(
+                suiteTitle = "ENGINE_ONLY",
+                summary = engineSummary,
+                diff = engineDiff,
+                reportsRelativePath = reportsRelativePath,
+                reportSubDir = "engine_only",
+                summaryJson = "summary_engine_only.json",
+                diffJson = "diff_summary_engine_only.json"
+            ))
+
+            append(renderSuiteSection(
+                suiteTitle = "E2E_PIPELINE",
+                summary = e2eSummary,
+                diff = e2eDiff,
+                reportsRelativePath = reportsRelativePath,
+                reportSubDir = "e2e",
+                summaryJson = "summary_e2e.json",
+                diffJson = "diff_summary_e2e.json"
+            ))
+
+            append("""
+              </div>
+            </body>
+            </html>
+            """.trimIndent())
         }
         outFile.parentFile?.mkdirs()
         outFile.writeText(html)
+    }
+
+    private fun renderSuiteSection(
+        suiteTitle: String,
+        summary: List<ScenarioSummary>,
+        diff: DiffResult?,
+        reportsRelativePath: String,
+        reportSubDir: String,
+        summaryJson: String,
+        diffJson: String
+    ): String {
+        val diffById = diff?.entries?.associateBy { it.scenarioId }.orEmpty()
+        val pass = summary.count { it.pass }
+        val fail = summary.size - pass
+        val hard = diff?.hardRegressionCount ?: 0
+        val soft = diff?.softRegressionCount ?: 0
+        val improved = diff?.improvedCount ?: 0
+        val unchanged = diff?.unchangedCount ?: summary.size
+
+        val sb = StringBuilder(48_000)
+        sb.append("<section class=\"suite\">")
+        sb.append("<div class=\"suite-header\"><h2>").append(suiteTitle).append("</h2><small>")
+            .append("Scénářů: ").append(summary.size).append(" · Hard regressions: ").append(hard)
+            .append("</small></div>")
+        sb.append("<div class=\"dataset-links\">")
+        sb.append("<a href=\"").append(escapeHtml(summaryJson)).append("\">📄 ").append(escapeHtml(summaryJson)).append("</a>")
+        if (diff != null) {
+            sb.append("<a href=\"").append(escapeHtml(diffJson)).append("\">📄 ").append(escapeHtml(diffJson)).append("</a>")
+        } else {
+            sb.append("<span class=\"muted\">📄 ").append(escapeHtml(diffJson)).append(" (není dostupné bez baseline)</span>")
+        }
+        sb.append("</div>")
+
+        sb.append("<div class=\"suite-kpis\">")
+        sb.append("<div class=\"card pass\"><div class=\"label\">PASS</div><div class=\"value\">$pass</div></div>")
+        sb.append("<div class=\"card fail\"><div class=\"label\">FAIL</div><div class=\"value\">$fail</div></div>")
+        sb.append("<div class=\"card hard\"><div class=\"label\">REGRESSED_HARD</div><div class=\"value\">$hard</div></div>")
+        sb.append("<div class=\"card soft\"><div class=\"label\">REGRESSED_SOFT</div><div class=\"value\">$soft</div></div>")
+        sb.append("<div class=\"card improved\"><div class=\"label\">IMPROVED</div><div class=\"value\">$improved</div></div>")
+        sb.append("<div class=\"card unchanged\"><div class=\"label\">UNCHANGED</div><div class=\"value\">$unchanged</div></div>")
+        sb.append("</div>")
+
+        sb.append("<div class=\"table-wrap\"><table><thead><tr>")
+        sb.append("<th>Scénář</th><th>Doména</th><th>Vozidlo</th><th>Result</th><th>Diff</th><th>Δ ORANGE</th><th>Δ RED</th><th>Δ TRANS</th><th>Artefakty</th>")
+        sb.append("</tr></thead><tbody>")
+
+        for (s in summary.sortedBy { it.scenarioId }) {
+            val d = diffById[s.scenarioId]
+            val resultClass = if (s.pass) "pass" else "fail"
+            val resultText = if (s.pass) "PASS" else "FAIL"
+            val diffStatus = d?.status ?: if (diff == null) "N/A" else "UNCHANGED"
+            val diffClass = when (diffStatus) {
+                "REGRESSED_HARD" -> "hard"
+                "REGRESSED_SOFT" -> "soft"
+                "IMPROVED" -> "improved"
+                else -> "unchanged"
+            }
+
+            sb.append("<tr>")
+            sb.append("<td class=\"scenario\">").append(escapeHtml(s.scenarioId)).append("</td>")
+            sb.append("<td>").append(escapeHtml(s.domain)).append("</td>")
+            sb.append("<td>").append(escapeHtml(s.vehicle)).append("</td>")
+            sb.append("<td><span class=\"chip ").append(resultClass).append("\">").append(resultText).append("</span></td>")
+            sb.append("<td><span class=\"chip ").append(diffClass).append("\">").append(escapeHtml(diffStatus)).append("</span></td>")
+            sb.append("<td>").append(fmtNullable(d?.deltaFirstOrangeSec)).append("</td>")
+            sb.append("<td>").append(fmtNullable(d?.deltaFirstRedSec)).append("</td>")
+            sb.append("<td>").append(d?.deltaTransitions ?: 0).append("</td>")
+            sb.append("<td class=\"links\"><a href='${reportsRelativePath}/${reportSubDir}/${s.scenarioId}.md'>MD</a> · <a href='${reportsRelativePath}/${reportSubDir}/${s.scenarioId}.jsonl'>JSONL</a></td>")
+            sb.append("</tr>")
+        }
+
+        if (summary.isEmpty()) {
+            sb.append("<tr><td colspan=\"9\" class=\"muted\">Žádná data pro tuto sadu testů.</td></tr>")
+        }
+
+        sb.append("</tbody></table></div>")
+        sb.append("</section>")
+        return sb.toString()
     }
 
     private fun maxTransitionsInWindow(run: ScenarioRun, windowSec: Float): Int {
