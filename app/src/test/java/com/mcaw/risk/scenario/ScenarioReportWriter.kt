@@ -93,6 +93,10 @@ object ScenarioReportWriter {
                 .append(fmt(roi)).append("|")
                 .append(fmt(qW)).append("|\n")
         }
+
+        if (transitionEvents.isEmpty()) {
+            sb.append("- (Žádné přechody alertů v tomto běhu – tabulka je prázdná.)\n")
+        }
         sb.append("\n")
 
         sb.append("## Přehled segmentů\n")
@@ -120,6 +124,7 @@ object ScenarioReportWriter {
             sb.append(",\"in\":{")
             sb.append("\"effectiveMode\":").append(e.input.effectiveMode)
             sb.append(",\"distanceM\":").append(fmt(e.input.distanceM))
+            sb.append(",\"distanceConfidence\":").append(fmt(e.input.distanceConfidence))
             sb.append(",\"approachSpeedMps\":").append(fmt(e.input.approachSpeedMps))
             sb.append(",\"ttcSec\":").append(fmt(e.input.ttcSec))
             sb.append(",\"ttcSlopeSecPerSec\":").append(fmt(e.input.ttcSlopeSecPerSec))

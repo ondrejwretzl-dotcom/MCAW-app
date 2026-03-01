@@ -40,9 +40,9 @@ if errorlevel 1 (
   exit /b 1
 )
 
-echo [INFO] Killing node/vite if running...
-taskkill /IM node.exe /F >nul 2>&1
-taskkill /IM vite.exe /F >nul 2>&1
+REM echo [INFO] Killing node/vite if running...
+REM taskkill /IM node.exe /F >nul 2>&1
+REM taskkill /IM vite.exe /F >nul 2>&1
 
 REM ---------- SAFETY: keep repo clean ----------
 if exist "%REPO_SIM%\node_modules" (

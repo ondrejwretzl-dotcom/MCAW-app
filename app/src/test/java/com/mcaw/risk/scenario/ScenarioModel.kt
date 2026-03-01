@@ -165,6 +165,8 @@ data class SimEvent(
 data class FrameTraceInput(
     val effectiveMode: Int,
     val distanceM: Float,
+    /** 0..1 confidence of distanceM as a risk input (approx/occlusion should down-weight). */
+    val distanceConfidence: Float,
     val approachSpeedMps: Float,
     val ttcSec: Float,
     val ttcSlopeSecPerSec: Float,

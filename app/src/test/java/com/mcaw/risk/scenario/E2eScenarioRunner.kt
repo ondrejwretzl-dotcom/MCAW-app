@@ -42,14 +42,22 @@ object E2eScenarioRunner {
             )
             prevDist = f.distM
 
-            val ttcSlope = if (!out.ttcSec.isFinite() || !prevTtcSec.isFinite()) Float.NaN else (prevTtcSec - out.ttcSec) * s.config.hz
+            // RiskEngine expects TTC slope as dTTC/dt (negative when TTC is decreasing / situation worsening).
+            val ttcSlope = if (!out.ttcSec.isFinite() || !prevTtcSec.isFinite()) Float.NaN else (out.ttcSec - prevTtcSec) * s.config.hz
             prevTtcSec = out.ttcSec
 
             val rel = out.relSignedEmaMps.coerceAtLeast(0f)
+
+            val derived = engine.debugDerivedThresholds(s.config.effectiveMode, f.qualityWeight)
+            val distanceConfidence = if (f.bottomOccluded) 0.35f else 1.0f
+            val occlusionCloseFactor = computeOcclusionCloseFactor(f.distM, derived.distRed, derived.distOrange, f.occlConfirmed)
+            val occlusionCloseEligible = f.occlConfirmed && f.bottomOccluded && rel >= 0.8f && !out.suppressRecedingHard && !out.suppressSteadyGapHard
+
             val risk = engine.evaluate(
                 tsMs = f.tsMs,
                 effectiveMode = s.config.effectiveMode,
                 distanceM = f.distM,
+                distanceConfidence = distanceConfidence,
                 approachSpeedMps = rel,
                 ttcSec = out.ttcSec,
                 ttcSlopeSecPerSec = ttcSlope,
@@ -58,6 +66,8 @@ object E2eScenarioRunner {
                 cutInActive = f.cutInActive,
                 brakeCueActive = f.brakeCueActive,
                 brakeCueStrength = f.brakeCueStrength,
+                occlusionCloseFactor = occlusionCloseFactor,
+                occlusionCloseEligible = occlusionCloseEligible,
                 qualityWeight = f.qualityWeight,
                 riderSpeedMps = f.riderSpeedMps,
                 riderSpeedConfidence = f.riderSpeedConfidence,
@@ -75,7 +85,17 @@ object E2eScenarioRunner {
                     risk = risk.riskScore,
                     reasonBits = risk.reasonBits,
                     reasonId = RiskEngine.reasonId(risk.reasonBits),
-                    derived = engine.debugDerivedThresholds(s.config.effectiveMode, f.qualityWeight)
+                    derived = derived,
+                    extra = mapOf(
+                        "segment" to f.segLabel,
+                        "distM" to f.distM,
+                        "relMps" to rel,
+                        "ttcSec" to out.ttcSec,
+                        "ttcSlope" to ttcSlope,
+                        "roi" to f.roiContainment,
+                        "egoOffsetN" to f.egoOffsetN,
+                        "qW" to f.qualityWeight
+                    )
                 )
                 lastLevel = risk.level
             }
@@ -84,6 +104,7 @@ object E2eScenarioRunner {
                 input = FrameTraceInput(
                     effectiveMode = s.config.effectiveMode,
                     distanceM = f.distM,
+                    distanceConfidence = distanceConfidence,
                     approachSpeedMps = rel,
                     ttcSec = out.ttcSec,
                     ttcSlopeSecPerSec = ttcSlope,
@@ -92,8 +113,8 @@ object E2eScenarioRunner {
                     cutInActive = f.cutInActive,
                     brakeCueActive = f.brakeCueActive,
                     brakeCueStrength = f.brakeCueStrength,
-                    occlusionCloseFactor = 0f,
-                    occlusionCloseEligible = false,
+                    occlusionCloseFactor = occlusionCloseFactor,
+                    occlusionCloseEligible = occlusionCloseEligible,
                     qualityWeight = f.qualityWeight,
                     riderSpeedMps = f.riderSpeedMps,
                     riderSpeedConfidence = f.riderSpeedConfidence,
@@ -105,8 +126,31 @@ object E2eScenarioRunner {
         }
 
         val verdicts = runExpectations(s, frames, levels)
-        val derived = engine.debugDerivedThresholds(s.config.effectiveMode, s.config.qualityWeight)
-        return ScenarioRun(s, derived, frames, levels, events, traces, verdicts)
+        val derivedEnd = engine.debugDerivedThresholds(s.config.effectiveMode, s.config.qualityWeight)
+        // Ensure we always have at least one event line for downstream tooling (grep / CI artifacts).
+        events += SimEvent(
+            type = "SUMMARY",
+            tSec = frames.lastOrNull()?.tSec ?: 0f,
+            level = levels.lastOrNull() ?: 0,
+            risk = 0f,
+            reasonBits = 0,
+            reasonId = 0,
+            derived = derivedEnd,
+            extra = mapOf(
+                "frames" to frames.size,
+                "transitions" to events.count { it.type == "ALERT_ENTER" || it.type == "ALERT_EXIT" },
+                "durationSec" to ((frames.lastOrNull()?.tSec ?: 0f) - (frames.firstOrNull()?.tSec ?: 0f)),
+                "approachSpeedSource" to "derived_from_distance_ema"
+            )
+        )
+        return ScenarioRun(s, derivedEnd, frames, levels, events, traces, verdicts)
+    }
+
+    private fun computeOcclusionCloseFactor(distM: Float, distRedThr: Float, distOrangeThr: Float, occlConfirmed: Boolean): Float {
+        if (!occlConfirmed || !distM.isFinite()) return 0f
+        if (distOrangeThr <= distRedThr) return 0f
+        val x = (distOrangeThr - distM) / (distOrangeThr - distRedThr)
+        return x.coerceIn(0f, 1f)
     }
 
     private fun runExpectations(s: E2eScenario, frames: List<SimFrame>, levels: List<Int>): List<Verdict> {

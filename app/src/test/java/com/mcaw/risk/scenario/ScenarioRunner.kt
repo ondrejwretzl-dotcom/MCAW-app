@@ -73,10 +73,21 @@ object ScenarioRunner {
             val rel = abs(relSigned)
             frames.add(f.copy(relMpsRaw = relSigned, relDerivValid = trendOut.relDerivValid))
 
+            // In engine-only scenarios distance is synthetic, but we still allow tests to model occlusion by down-weighting.
+            val distanceConfidence = if (f.bottomOccluded) 0.35f else 1.0f
+            val occlusionCloseFactor = computeOcclusionCloseFactor(
+                distM = f.distM,
+                distRedThr = derived.distRed,
+                distOrangeThr = derived.distOrange,
+                occlConfirmed = f.occlConfirmed
+            )
+            val occlusionCloseEligible = f.occlConfirmed && f.bottomOccluded && rel >= 0.8f && !trendOut.suppressRecedingHard && !trendOut.suppressSteadyGapHard
+
             val r = engine.evaluate(
                 tsMs = f.tsMs,
                 effectiveMode = s.config.effectiveMode,
                 distanceM = f.distM,
+                distanceConfidence = distanceConfidence,
                 approachSpeedMps = rel,
                 ttcSec = f.ttcSec,
                 ttcSlopeSecPerSec = f.ttcSlope,
@@ -85,6 +96,8 @@ object ScenarioRunner {
                 cutInActive = f.cutInActive,
                 brakeCueActive = f.brakeCueActive,
                 brakeCueStrength = f.brakeCueStrength,
+                occlusionCloseFactor = occlusionCloseFactor,
+                occlusionCloseEligible = occlusionCloseEligible,
                 qualityWeight = f.qualityWeight,
                 riderSpeedMps = f.riderSpeedMps,
                 riderSpeedConfidence = f.riderSpeedConfidence,
@@ -106,6 +119,7 @@ object ScenarioRunner {
                     input = FrameTraceInput(
                         effectiveMode = s.config.effectiveMode,
                         distanceM = f.distM,
+                        distanceConfidence = distanceConfidence,
                         approachSpeedMps = rel,
                         ttcSec = f.ttcSec,
                         ttcSlopeSecPerSec = f.ttcSlope,
@@ -114,8 +128,8 @@ object ScenarioRunner {
                         cutInActive = f.cutInActive,
                         brakeCueActive = f.brakeCueActive,
                         brakeCueStrength = f.brakeCueStrength,
-                        occlusionCloseFactor = 0f,
-                        occlusionCloseEligible = false,
+                        occlusionCloseFactor = occlusionCloseFactor,
+                        occlusionCloseEligible = occlusionCloseEligible,
                         qualityWeight = f.qualityWeight,
                         riderSpeedMps = f.riderSpeedMps,
                         riderSpeedConfidence = f.riderSpeedConfidence,
@@ -186,6 +200,19 @@ object ScenarioRunner {
         )
 
         return ScenarioRun(s, derived, frames, levels, events, frameTraceEvents, verdicts)
+    }
+
+    private fun computeOcclusionCloseFactor(
+        distM: Float,
+        distRedThr: Float,
+        distOrangeThr: Float,
+        occlConfirmed: Boolean
+    ): Float {
+        if (!occlConfirmed || !distM.isFinite()) return 0f
+        // Map close distance into 0..1 (>=orange -> 0, <=red -> 1). Conservative and stable.
+        if (distOrangeThr <= distRedThr) return 0f
+        val x = (distOrangeThr - distM) / (distOrangeThr - distRedThr)
+        return x.coerceIn(0f, 1f)
     }
 
     private data class TrendOut(

@@ -111,11 +111,11 @@
             android:layout_height="wrap_content"
             android:background="@drawable/bg_alert_banner"
             android:gravity="center"
-            android:paddingTop="30dp"
-            android:paddingBottom="25dp"
+            android:paddingTop="25dp"
+            android:paddingBottom="20dp"
             android:text="SAFE"
             android:textColor="#A7F3DD"
-            android:textSize="56sp"
+            android:textSize="52sp"
             android:textStyle="bold" />
 
     </com.google.android.material.card.MaterialCardView>
@@ -641,10 +641,10 @@
             app:layout_constraintBottom_toBottomOf="@id/btnPower">
 
             <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnCamera"
+                android:id="@+id/btnCalibration" <!-- RIGHT: kalibrace presunuta sem -->
                 android:layout_width="match_parent"
                 android:layout_height="56dp"
-                android:contentDescription="Kamera"
+                android:contentDescription="Kalibrace"
                 android:text=""
                 android:padding="0dp"
                 android:gravity="center"
@@ -717,7 +717,7 @@
             app:iconTint="#E5E7EB"
             app:iconSize="18dp" />
 
-        <com.google.android.material.button.MaterialButton
+        <!-- stara kalibrace <com.google.android.material.button.MaterialButton
             android:id="@+id/btnCalibration"
             android:layout_width="0dp"
             android:layout_height="40dp"
@@ -732,7 +732,7 @@
             app:icon="@android:drawable/ic_menu_compass"
             app:iconPadding="6dp"
             app:iconTint="#E5E7EB"
-            app:iconSize="18dp" />
+            app:iconSize="18dp" />-->
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnActivities"

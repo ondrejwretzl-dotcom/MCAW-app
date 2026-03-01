@@ -1,6 +1,8 @@
 export type FrameIn = {
   effectiveMode?: number;
   distanceM: number;
+  /** 0..1 confidence of distanceM as a risk input (approx/occlusion should down-weight). */
+  distanceConfidence?: number;
   approachSpeedMps: number; // relative closing speed (m/s), higher = more danger
   ttcSec: number;
   ttcHeightSec?: number;

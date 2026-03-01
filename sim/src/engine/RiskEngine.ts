@@ -50,8 +50,6 @@ export interface EvaluateInput {
   tsMs: number;
   effectiveMode: number;
   distanceM: number;
-  // 0..1 trust weight for distanceM (estimation confidence). Default 1.
-  distanceConfidence?: number;
   approachSpeedMps: number;
   ttcSec: number;
   ttcSlopeSecPerSec?: number;
@@ -264,6 +262,9 @@ export class RiskEngineRef {
     const brakeStrength = clamp(brakeCueStrength, 0, 1);
     const brakeScore = input.brakeCueActive ? (0.70 + 0.30 * brakeStrength) : 0;
     const cutInScore = input.cutInActive ? 1.0 : 0;
+
+    // Occlusion close: conservative boost used when bottom is occluded but target is likely close.
+    // Never a hard gate; designed to avoid missing alerts when distance/TTC are degraded.
     const occlF = clamp(input.occlusionCloseFactor ?? 0, 0, 1);
     const occlusionBoost = (input.occlusionCloseEligible && occlF > 0)
       ? clamp(0.10 * occlF + 0.04 * occlF * relScore, 0, 0.14)
@@ -329,8 +330,7 @@ export class RiskEngineRef {
     const strongRel = relScore >= strongK;
     const midDist = distScore >= midK;
     const midRel = relScore >= midK;
-    const strongOcclClose = (input.occlusionCloseEligible ?? false) && occlF >= 0.75;
-    const allowRed = strongTtc && (strongDist || strongRel || strongOcclClose || (slopeStrong && (midDist || midRel || strongOcclClose)));
+    const allowRed = strongTtc && (strongDist || strongRel || (slopeStrong && (midDist || midRel)));
 
     const preGuardLevel = this.riskToLevelWithHysteresis(risk, conserv);
     let level = preGuardLevel;
@@ -359,7 +359,6 @@ export class RiskEngineRef {
       if (egoBrake >= 0.65) bits |= BIT_EGO_BRAKE;
       if (conserv >= 0.15) bits |= BIT_QUALITY_CONSERV;
       if (riderSpeedConfidence < 0.60) bits |= BIT_SPEED_LOWCONF;
-      if ((input.occlusionCloseEligible ?? false) && occlF >= 0.60) bits |= BIT_BOTTOM_OCCLUDED_CLOSE;
       if (dynDistEnabled && speedForDynDistOk) bits |= BIT_DIST_DYNAMIC;
       else bits |= BIT_DIST_FIXED_FALLBACK;
       if (occlusionCandidate) bits |= BIT_OCCLUSION_CANDIDATE;
@@ -376,7 +375,6 @@ export class RiskEngineRef {
     } else {
       if (conserv >= 0.15) bits |= BIT_QUALITY_CONSERV;
       if (riderSpeedConfidence < 0.60) bits |= BIT_SPEED_LOWCONF;
-      if ((input.occlusionCloseEligible ?? false) && occlF >= 0.60) bits |= BIT_BOTTOM_OCCLUDED_CLOSE;
       if (dynDistEnabled && speedForDynDistOk) bits |= BIT_DIST_DYNAMIC;
       else bits |= BIT_DIST_FIXED_FALLBACK;
       if (occlusionCandidate) bits |= BIT_OCCLUSION_CANDIDATE;
