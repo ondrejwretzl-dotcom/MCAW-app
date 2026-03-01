@@ -11,7 +11,14 @@ interface ScenarioMeta {
     val notes: String
     val config: ScenarioConfig
     val expectations: List<Expectation>
+    fun segmentsForReport(): List<SegmentForReport>
 }
+
+data class SegmentForReport(
+    val name: String,
+    val tFromSec: Float,
+    val tToSec: Float
+)
 
 data class ScenarioCatalogEngineOnly(
     val title: String,
@@ -34,7 +41,11 @@ data class EngineOnlyScenario(
     override val config: ScenarioConfig,
     override val expectations: List<Expectation>,
     val segments: List<EngineOnlySegment>
-) : ScenarioMeta
+) : ScenarioMeta {
+    override fun segmentsForReport(): List<SegmentForReport> = segments.map {
+        SegmentForReport(name = it.label, tFromSec = it.tFromSec, tToSec = it.tToSec)
+    }
+}
 
 data class E2eScenario(
     override val id: String,
@@ -45,7 +56,11 @@ data class E2eScenario(
     override val config: ScenarioConfig,
     override val expectations: List<Expectation>,
     val segments: List<E2eSegment>
-) : ScenarioMeta
+) : ScenarioMeta {
+    override fun segmentsForReport(): List<SegmentForReport> = segments.map {
+        SegmentForReport(name = it.label, tFromSec = it.tFromSec, tToSec = it.tToSec)
+    }
+}
 
 enum class Domain { CITY, TUNNEL, HIGHWAY, RURAL }
 enum class Vehicle { CAR, MOTO }

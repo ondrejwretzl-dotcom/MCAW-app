@@ -96,9 +96,9 @@ object ScenarioReportWriter {
         sb.append("\n")
 
         sb.append("## Přehled segmentů\n")
-        for (seg in s.segments.sortedBy { it.tFromSec }) {
+        for (seg in s.segmentsForReport().sortedBy { it.tFromSec }) {
             sb.append("- [").append(fmt(seg.tFromSec)).append("–").append(fmt(seg.tToSec)).append("s] ")
-                .append(seg.label).append(" – ").append(seg.label).append("\n")
+                .append(seg.name).append(" – ").append(seg.name).append("\n")
         }
         sb.append("\n")
 
