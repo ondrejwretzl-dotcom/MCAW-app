@@ -255,6 +255,7 @@ class DetectionAnalyzer(
     private var lastTtcForSlopeTsMs: Long = -1L
     private var ttcSlopeEma: Float = 0f
     private var ttcSlopeEmaValid: Boolean = false
+    private var lastCoreTtcForSlope: Float = Float.NaN
     private val ttcHeightHoldMs: Long = 500L
 
     private var distEma: Float = Float.NaN
@@ -1010,13 +1011,33 @@ if (AppPreferences.debugOverlay) {
             val occlusionCandidate = bottomOccluded && roiContainment < 0.5f
             val occlusionConfirmed = occlusionConfirmedForFusion
 
+            val coreOut = detectionCorePipeline.update(
+                tsMs = tsMs,
+                distanceM = distanceM,
+                boxHeightPx = boxHPx,
+                trackedPresent = true,
+                bottomOccluded = bottomOccluded,
+                occlusionConfirmed = occlusionConfirmed,
+                qualityWeight = qualityWeight,
+                roiContainment = roiContainment,
+                riderSpeedMps = riderSpeedMps,
+                relSignedSampleMps = relSpeedSignedSample
+            )
+            val riskTtc = coreOut.ttcSec
+            val riskTtcSlope = if (lastCoreTtcForSlope.isFinite() && riskTtc.isFinite()) {
+                val dt = (dtSecForDeriv.takeIf { it.isFinite() && it > 0f } ?: (1f / 10f))
+                (lastCoreTtcForSlope - riskTtc) / dt
+            } else Float.NaN
+            lastCoreTtcForSlope = riskTtc
+            val riskApproachMps = coreOut.relSignedEmaMps.coerceAtLeast(0f)
+
             val risk = riskEngine.evaluate(
         tsMs = tsMs,
         effectiveMode = modeRes.effectiveMode,
         distanceM = distanceM,
-        approachSpeedMps = approachSpeedMps,
-        ttcSec = ttc,
-        ttcSlopeSecPerSec = ttcSlopeSecPerSec,
+        approachSpeedMps = riskApproachMps,
+        ttcSec = riskTtc,
+        ttcSlopeSecPerSec = riskTtcSlope,
         roiContainment = roiContainment,
         egoOffsetN = egoOffset,
         cutInActive = (cutInBoostUntilMs > 0L && tsMs <= cutInBoostUntilMs),
@@ -1026,10 +1047,10 @@ if (AppPreferences.debugOverlay) {
         occlusionConfirmed = occlusionConfirmed,
         suppressAdjacentOvertake = adjacentStable && !cutInEvidence,
         suppressRecedingObject = recedingStable,
-        suppressRecedingHard = suppressRecedingHard,
-        suppressSteadyGapHard = suppressSteadyGapHard,
+        suppressRecedingHard = coreOut.suppressRecedingHard,
+        suppressSteadyGapHard = coreOut.suppressSteadyGapHard,
         suppressStanding = standingState,
-        disableTtcApproachWeight = recedingStable,
+        disableTtcApproachWeight = coreOut.suppressRecedingHard,
         qualityWeight = qualityWeight,
         riderSpeedMps = riderSpeedMps,
         riderSpeedConfidence = riderSpeedConfidence,
@@ -1048,7 +1069,7 @@ if (AppPreferences.debugOverlay) {
             if (AppPreferences.debugOverlay && (frameIndex % logEveryNFrames == 0L)) {
                 val payload = RiskEngine.stripReasonVersion(risk.reasonBits)
                 traceLogger?.logLine(
-                    "M,$tsMs,METRICS2,${bestTrack.id},${bestTrack.consecutiveDetections},$zoomFactor,${cropBottomPx.toInt()},${roiBottomPxF.toInt()},${bestBox.y2.toInt()},${bottomOcclEpsPx.toInt()},${if (bottomOccluded) 1 else 0},${if (idSwitchedThisFrame) 1 else 0},${if (relDerivValid) 1 else 0},$relInvalidReasonMask,${distFromHeight ?: Float.NaN},${distFromGround ?: Float.NaN},${distGroundPred ?: Float.NaN},${distCropBound ?: Float.NaN},${distanceInputRaw},$distanceInput,$distanceM,${distSlopeEmaMps},${relSignedMps},${relAbsMps},$approachSpeedMps,$ttcFromDist,$ttc,${String.format(java.util.Locale.US, "%.3f", risk.riskScore)},${risk.level},$payload,${RiskEngine.reasonId(risk.reasonBits)},$trendState,$steadyMs,$approachMs,${if (steadySuppressActive) 1 else 0},$reenterCooldownMs,$distSource,$distConf,$riderSpeedRawMps,$riderSpeedMps,$riderSpeedConfidence,$riderSpeedSourceOrdinal,$riderSpeedAgeMs,$riderSpeedMethod,${ttcFromHeightsHeld ?: Float.NaN},$ttcFromDist,${ttcFusionOut[0]},${ttcFusionOut[1]},${if (ttcFusionOut[2] > 0.5f) 1 else 0}"
+                    "M,$tsMs,METRICS2,${bestTrack.id},${bestTrack.consecutiveDetections},$zoomFactor,${cropBottomPx.toInt()},${roiBottomPxF.toInt()},${bestBox.y2.toInt()},${bottomOcclEpsPx.toInt()},${if (bottomOccluded) 1 else 0},${if (idSwitchedThisFrame) 1 else 0},${if (relDerivValid) 1 else 0},$relInvalidReasonMask,${distFromHeight ?: Float.NaN},${distFromGround ?: Float.NaN},${distGroundPred ?: Float.NaN},${distCropBound ?: Float.NaN},${distanceInputRaw},$distanceInput,$distanceM,${distSlopeEmaMps},${relSignedMps},${relAbsMps},$riskApproachMps,$ttcFromDist,$riskTtc,${String.format(java.util.Locale.US, "%.3f", risk.riskScore)},${risk.level},$payload,${RiskEngine.reasonId(risk.reasonBits)},$trendState,$steadyMs,$approachMs,${if (steadySuppressActive) 1 else 0},$reenterCooldownMs,$distSource,$distConf,$riderSpeedRawMps,$riderSpeedMps,$riderSpeedConfidence,$riderSpeedSourceOrdinal,$riderSpeedAgeMs,$riderSpeedMethod,${ttcFromHeightsHeld ?: Float.NaN},$ttcFromDist,${ttcFusionOut[0]},${ttcFusionOut[1]},${if (ttcFusionOut[2] > 0.5f) 1 else 0}"
                 )
             }
 
