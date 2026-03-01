@@ -8,6 +8,10 @@ body { margin: 0; background: #0f1115; color: #f2f4f8; }
 .chip { padding: 5px 8px; border-radius: 999px; font-size: 12px; }
 .chip.mute { background: #2a2f38; }
 .chip.err { background: #4f2020; }
+.btn { border: 1px solid #2b3342; background: #182334; color: white; border-radius: 10px; padding: 9px 12px; cursor: pointer; font-weight: 600; }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.howto { margin: 8px 0 0; padding-left: 18px; color: #d6dbe3; }
+.howto li { margin: 6px 0; }
 .kpiGrid { display: grid; grid-template-columns: repeat(3, minmax(200px, 1fr)); gap: 12px; }
 .kpiGrid.four { grid-template-columns: repeat(4, minmax(220px, 1fr)); }
 .timeline { max-height: 380px; overflow: auto; display: flex; flex-direction: column; gap: 8px; }

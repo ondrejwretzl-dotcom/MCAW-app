@@ -5,6 +5,7 @@ import type { EventGroup, ParsedLogData, ScenarioTag, Severity, SplitMode } from
 import { buildEventGroups } from './kpi/events';
 import { falseRedBottomTouch, parseScenarioTags, relQuality, standingSuppressorKpi, switchBeneficialRate, ttcMismatchKpi } from './kpi/metrics';
 import { buildObjectSegments } from './kpi/segments';
+import { exportSimFramesJsonl } from './export/simFrames';
 import { DataQualityPanel } from './ui/components/DataQualityPanel';
 import { KpiDashboard } from './ui/components/KpiDashboard';
 import { LineChart } from './ui/components/LineChart';
@@ -27,6 +28,7 @@ export function App() {
   const [severityFilter, setSeverityFilter] = useState<'all' | Severity>('all');
   const [splitMode, setSplitMode] = useState<SplitMode>({ type: 'auto', label: 'Auto #74 split' });
   const [tags, setTags] = useState<ScenarioTag[]>([]);
+  const [loadedNames, setLoadedNames] = useState<string[]>([]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -71,12 +73,32 @@ export function App() {
             const loaded = await loadFiles(files);
             const data = parseLoadedLogs(loaded);
             setParsed(data);
+            setLoadedNames(files.map((f) => f.name));
             const built = buildEventGroups(data);
             setGroups(built);
             setSelectedId(built[0]?.id ?? '');
             setDetailOpen(false);
           }}
         />
+
+        <div style={{ marginTop: 10, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+          <button
+            className="btn"
+            disabled={!parsed}
+            onClick={() => {
+              if (!parsed) return;
+              const name = loadedNames[0] ?? 'mcaw_log.csv';
+              const exp = exportSimFramesJsonl(parsed, name);
+              downloadText(exp.framesJsonl, `${name.replace(/\.(csv|txt|log)$/i, '')}.frames.jsonl`);
+              downloadText(exp.reportMd, `${name.replace(/\.(csv|txt|log)$/i, '')}.export_report.md`);
+            }}
+          >
+            Export do SIM (.frames.jsonl + report)
+          </button>
+          <span style={{ color: '#666' }}>
+            Tip: export je strict JSON (žádné NaN/Inf) a je forward-compatible (nové sloupce jen vypíše do reportu).
+          </span>
+        </div>
 
         <div style={{ marginTop: 8 }}>
           <label>Split pro "before/after #74": </label>
@@ -128,6 +150,17 @@ export function App() {
           {parsed?.warnings.map((w) => <span key={w} className="chip err">{w}</span>)}
           {notices.map((n) => <span key={n} className="chip mute">{n}</span>)}
         </div>
+      </section>
+
+      <section className="card">
+        <h2>Jak to používat</h2>
+        <ol className="howto">
+          <li><b>Load log files</b> – nahraj CSV/TXT z telefonu (Download/MCAW/...).</li>
+          <li><b>Object Segments</b> – vyber segment (lock/final-target) a sleduj grafy TTC/REL/DIST/Approach.</li>
+          <li><b>Markery v grafech</b> – vertikální čáry značí ORANGE/RED, switch, bottom touch a standing suppress.</li>
+          <li><b>Export do SIM</b> – tlačítkem výše vygeneruj <code>*.frames.jsonl</code> + <code>export_report.md</code> a nahraj je do SIM.</li>
+          <li><b>Forward compatible</b> – nové sloupce v logu analyzér ignoruje, ale vypíše je v reportu.</li>
+        </ol>
       </section>
 
       <DataQualityPanel data={parsed} />
@@ -253,4 +286,14 @@ function fmt(ts: number): string {
 function decodeReasons(reasonBits: number): string[] {
   if (!reasonBits) return [];
   return REASON_BITS.filter((r) => (reasonBits & r.bit) !== 0).map((r) => `${r.key}: ${r.text}`);
+}
+
+function downloadText(text: string, filename: string) {
+  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
 }

@@ -23,9 +23,18 @@ export function ObjectSegmentsPanel({ segments }: { segments: ObjectSegment[] })
           {active && (
             <>
               <h3>Segment detail: {active.kind} / {active.objectId}</h3>
+              <Legend />
+
+              <h4 style={{ margin: '10px 0 6px' }}>TTC</h4>
               <LineChart values={active.points.map((p) => ({ ts: p.ts, v: p.ttc }))} markers={markers(active)} />
+
+              <h4 style={{ margin: '10px 0 6px' }}>REL (relative speed)</h4>
               <LineChart values={active.points.map((p) => ({ ts: p.ts, v: p.rel }))} markers={markers(active)} />
+
+              <h4 style={{ margin: '10px 0 6px' }}>Distance</h4>
               <LineChart values={active.points.map((p) => ({ ts: p.ts, v: p.dist }))} markers={markers(active)} />
+
+              <h4 style={{ margin: '10px 0 6px' }}>ApproachSpeed (derived)</h4>
               <LineChart values={active.points.map((p) => ({ ts: p.ts, v: p.approachSpeed }))} markers={markers(active)} />
 
               <div className="tableWrap">
@@ -49,6 +58,27 @@ export function ObjectSegmentsPanel({ segments }: { segments: ObjectSegment[] })
         </div>
       </div>
     </section>
+  );
+}
+
+function Legend() {
+  const items: Array<{ color: string; label: string }> = [
+    { color: '#ff5555', label: 'RED (level=2)' },
+    { color: '#ffb347', label: 'ORANGE (level=1)' },
+    { color: '#9f79ff', label: 'switch (idSwitched)' },
+    { color: '#00e1ff', label: 'bottom touch' },
+    { color: '#95ff66', label: 'standing suppress' },
+  ];
+
+  return (
+    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', margin: '6px 0 12px' }}>
+      {items.map((it) => (
+        <span key={it.label} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#cfd6e0' }}>
+          <i style={{ width: 10, height: 10, borderRadius: 2, background: it.color, display: 'inline-block' }} />
+          {it.label}
+        </span>
+      ))}
+    </div>
   );
 }
 
