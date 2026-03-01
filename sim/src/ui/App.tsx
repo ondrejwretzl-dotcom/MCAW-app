@@ -39,6 +39,16 @@ type CustomEngineParams = {
 
 type FieldErrors = Partial<Record<keyof CustomEngineParams, string>>;
 
+type TtcTuneState = {
+  lastTsMs: number;
+  ttcHeightHeld: number;
+  ttcHeightHeldTsMs: number;
+  ttcEma: number;
+  ttcEmaValid: boolean;
+  lastTtcFiniteTsMs: number;
+  prevHeightTtc: number;
+};
+
 const CUSTOM_DEFAULTS: CustomEngineParams = {
   ttcInvalidHoldMs: 400,
   ttcHeightHoldMs: 500,
@@ -70,6 +80,80 @@ function validateCustomParams(p: CustomEngineParams): FieldErrors {
   if (p.plateauMax < p.plateauBase) e.plateauMax = 'Must be >= plateauBase';
   if (p.approachHigh <= p.approachLow) e.approachHigh = 'Must be > approachLow';
   return e;
+}
+
+function smoothTtcCustom(ttcRaw: number, tsMs: number, cfg: CustomEngineParams, state: TtcTuneState): number {
+  const raw = Number.isFinite(ttcRaw) && ttcRaw > 0 ? clamp(ttcRaw, 0.05, 120) : Number.POSITIVE_INFINITY;
+  if (!Number.isFinite(raw)) {
+    if (state.ttcEmaValid && Number.isFinite(state.ttcEma) && state.lastTtcFiniteTsMs > 0 && (tsMs - state.lastTtcFiniteTsMs) <= cfg.ttcInvalidHoldMs) {
+      return state.ttcEma;
+    }
+    state.ttcEmaValid = false;
+    state.ttcEma = Number.POSITIVE_INFINITY;
+    state.lastTsMs = tsMs;
+    return Number.POSITIVE_INFINITY;
+  }
+
+  state.lastTtcFiniteTsMs = tsMs;
+  if (!state.ttcEmaValid || !Number.isFinite(state.ttcEma) || state.lastTsMs <= 0) {
+    state.ttcEma = raw;
+    state.ttcEmaValid = true;
+    state.lastTsMs = tsMs;
+    return state.ttcEma;
+  }
+
+  const dtSec = Math.max(0.001, (tsMs - state.lastTsMs) / 1000);
+  state.lastTsMs = tsMs;
+  const maxDrop = cfg.smoothTtcMaxDropRate * dtSec;
+  const maxRise = 3.0 * dtSec;
+  const prev = state.ttcEma;
+  const clamped = raw < prev ? Math.max(raw, prev - maxDrop) : Math.min(raw, prev + maxRise);
+  const alpha = clamped < prev ? cfg.smoothTtcAlphaDrop : 0.20;
+  state.ttcEma = prev + alpha * (clamped - prev);
+  return state.ttcEma;
+}
+
+function applyCustomTtcPipeline(
+  input: FrameIn,
+  relApproachMps: number,
+  tsMs: number,
+  cfg: CustomEngineParams,
+  state: TtcTuneState,
+): number {
+  const rawHeight = Number(input.ttcHeightSec ?? input.ttcSec);
+  const rawDistDirect = Number(input.distanceM) / Math.max(relApproachMps, 1e-6);
+  const rawDist = (Number.isFinite(rawDistDirect) && relApproachMps > cfg.ttcFromDistApproachGate)
+    ? clamp(rawDistDirect, 0.05, 120)
+    : Number.POSITIVE_INFINITY;
+
+  let heightNow = Number.isFinite(rawHeight) && rawHeight > 0 ? clamp(rawHeight, 0.05, 120) : Number.NaN;
+  if (Number.isFinite(heightNow) && Number.isFinite(state.prevHeightTtc)) {
+    const drop = state.prevHeightTtc - heightNow;
+    const ratio = state.prevHeightTtc / Math.max(heightNow, 0.05);
+    const minDropSec = cfg.minDeltaHPx * 0.10;
+    if (!(ratio >= cfg.minGrowthRatio && drop >= minDropSec)) {
+      heightNow = Number.NaN;
+    }
+  }
+  if (Number.isFinite(heightNow)) {
+    state.ttcHeightHeld = heightNow;
+    state.ttcHeightHeldTsMs = tsMs;
+    state.prevHeightTtc = heightNow;
+  }
+  const heldHeight = (Number.isFinite(heightNow) || (state.ttcHeightHeldTsMs > 0 && (tsMs - state.ttcHeightHeldTsMs) <= cfg.ttcHeightHoldMs))
+    ? state.ttcHeightHeld
+    : Number.NaN;
+
+  const fused = fuseTtc(
+    Number.isFinite(heldHeight) ? heldHeight : undefined,
+    Number.isFinite(rawDist) ? rawDist : undefined,
+    Number(input.distanceM),
+    relApproachMps,
+    Boolean(input.bottomOccluded),
+    false,
+    Number(input.qualityWeight ?? 1),
+  );
+  return smoothTtcCustom(fused.ttcFused, tsMs, cfg, state);
 }
 
 function defaultWhatIf(): WhatIfConfig {
@@ -223,6 +307,15 @@ export function App() {
 
     let mismatch = 0;
     const relState = new RelStabilityState();
+    const tunedTtcState: TtcTuneState = {
+      lastTsMs: -1,
+      ttcHeightHeld: Number.NaN,
+      ttcHeightHeldTsMs: -1,
+      ttcEma: Number.POSITIVE_INFINITY,
+      ttcEmaValid: false,
+      lastTtcFiniteTsMs: -1,
+      prevHeightTtc: Number.NaN,
+    };
 
     for (const fr of frames) {
       const input = fr.in;
@@ -294,12 +387,14 @@ export function App() {
         let tuned = null as any;
         let distO = NaN;
         let distR = NaN;
+        const tunedInput: FrameIn = { ...evalInput };
+        tunedInput.ttcSec = applyCustomTtcPipeline(tunedInput, approachForRisk, Math.round(fr.tSec * 1000), customParams, tunedTtcState);
 
-        if (true) {
+        if (whatIf.dynamicDistanceEnabled) {
           const v = Number(evalInput.riderSpeedMps ?? 0);
           if (Number.isFinite(v) && v > 0.1) {
             const thr = (engTuned as any).debugDerivedThresholds(effectiveMode, qualityWeight, undefined, {
-              dynamicDistanceEnabled: true,
+              dynamicDistanceEnabled: whatIf.dynamicDistanceEnabled,
               dynamicDistanceOrangeSec: whatIf.orangeGapSec,
               dynamicDistanceRedSec: whatIf.redGapSec,
               plateauBase: customParams.plateauBase,
@@ -318,8 +413,8 @@ export function App() {
               relOrange: thr.relOrange,
               relRed: thr.relRed,
             };
-            tuned = (engTuned as any).evaluate(evalInput, override, {
-              dynamicDistanceEnabled: true,
+            tuned = (engTuned as any).evaluate(tunedInput, override, {
+              dynamicDistanceEnabled: whatIf.dynamicDistanceEnabled,
               dynamicDistanceOrangeSec: whatIf.orangeGapSec,
               dynamicDistanceRedSec: whatIf.redGapSec,
               plateauBase: customParams.plateauBase,
@@ -329,8 +424,8 @@ export function App() {
               approachHigh: customParams.approachHigh,
             });
           } else {
-            tuned = (engTuned as any).evaluate(evalInput, undefined, {
-              dynamicDistanceEnabled: true,
+            tuned = (engTuned as any).evaluate(tunedInput, undefined, {
+              dynamicDistanceEnabled: whatIf.dynamicDistanceEnabled,
               dynamicDistanceOrangeSec: whatIf.orangeGapSec,
               dynamicDistanceRedSec: whatIf.redGapSec,
               plateauBase: customParams.plateauBase,
@@ -341,8 +436,8 @@ export function App() {
             });
           }
         } else {
-          tuned = (engTuned as any).evaluate(evalInput, undefined, {
-            dynamicDistanceEnabled: false,
+          tuned = (engTuned as any).evaluate(tunedInput, undefined, {
+            dynamicDistanceEnabled: whatIf.dynamicDistanceEnabled,
             dynamicDistanceOrangeSec: whatIf.orangeGapSec,
             dynamicDistanceRedSec: whatIf.redGapSec,
           });
