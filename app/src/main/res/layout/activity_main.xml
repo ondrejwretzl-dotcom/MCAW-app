@@ -640,8 +640,9 @@
             app:layout_constraintTop_toTopOf="@id/btnPower"
             app:layout_constraintBottom_toBottomOf="@id/btnPower">
 
+            <!-- RIGHT: kalibrace presunuta sem -->
             <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnCalibration" <!-- RIGHT: kalibrace presunuta sem -->
+                android:id="@+id/btnCalibration" 
                 android:layout_width="match_parent"
                 android:layout_height="56dp"
                 android:contentDescription="Kalibrace"
