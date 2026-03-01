@@ -1042,7 +1042,8 @@ if (AppPreferences.debugOverlay) {
             // Conservative "occlusion close" factor: used only when bottom is stably occluded and we have
             // a reasonable bound/approximation that indicates we might be close.
             var closeDistM = Float.POSITIVE_INFINITY
-            if (distCropBound.isFinite()) closeDistM = min(closeDistM, distCropBound)
+            val cb = distCropBound
+            if (cb != null && cb.isFinite()) closeDistM = min(closeDistM, cb)
             val dg = distGroundPred
             if (dg != null && dg.isFinite()) closeDistM = min(closeDistM, dg)
             val dc = distanceCandidate
