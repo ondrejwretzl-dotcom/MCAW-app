@@ -1,26 +1,37 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BASELINE_POINTER="${BASELINE_POINTER:-.ci/baselines/approved_latest.txt}"
-FAIL_ON_HARD="${FAIL_ON_HARD:-true}"
+BASELINE_POINTER_ENGINE="${BASELINE_POINTER_ENGINE:-.ci/baselines/approved_engine_only_latest.txt}"
+BASELINE_POINTER_E2E="${BASELINE_POINTER_E2E:-.ci/baselines/approved_e2e_latest.txt}"
+FAIL_ON_HARD_REGRESSION="${FAIL_ON_HARD_REGRESSION:-true}"
 FAIL_ON_SCENARIO="${FAIL_ON_SCENARIO:-false}"
 
 GRADLE_PROPS=(
-  "-Dmcaw.failOnHardRegression=${FAIL_ON_HARD}"
+  "-Dmcaw.failOnHardRegression=${FAIL_ON_HARD_REGRESSION}"
   "-Dmcaw.failOnScenario=${FAIL_ON_SCENARIO}"
 )
 
-if [[ -f "$BASELINE_POINTER" ]]; then
-  BASELINE_PATH="$(tr -d '\r' < "$BASELINE_POINTER" | head -n1 | xargs)"
-  if [[ -n "$BASELINE_PATH" && -f "$BASELINE_PATH" ]]; then
-    echo "Using baseline: $BASELINE_PATH"
-    GRADLE_PROPS+=("-Dmcaw.baselineSummary=${BASELINE_PATH}")
+for suite in engine_only e2e; do
+  if [[ "$suite" == "engine_only" ]]; then
+    POINTER="$BASELINE_POINTER_ENGINE"
+    PROP="mcaw.baselineSummaryEngineOnly"
   else
-    echo "Baseline pointer exists but file missing: '$BASELINE_PATH'"
+    POINTER="$BASELINE_POINTER_E2E"
+    PROP="mcaw.baselineSummaryE2E"
   fi
-else
-  echo "No baseline pointer file at $BASELINE_POINTER (first run mode)."
-fi
+
+  if [[ -f "$POINTER" ]]; then
+    BASELINE_PATH="$(tr -d '\r' < "$POINTER" | head -n1 | xargs)"
+    if [[ -n "$BASELINE_PATH" && -f "$BASELINE_PATH" ]]; then
+      echo "Using $suite baseline: $BASELINE_PATH"
+      GRADLE_PROPS+=("-D${PROP}=${BASELINE_PATH}")
+    else
+      echo "Baseline pointer exists but file missing: '$BASELINE_PATH'"
+    fi
+  else
+    echo "No baseline pointer file at $POINTER (first run mode)."
+  fi
+done
 
 set +e
 ./gradlew :app:testDebugUnitTest --no-daemon "${GRADLE_PROPS[@]}"

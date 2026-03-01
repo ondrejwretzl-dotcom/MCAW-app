@@ -12,9 +12,46 @@ import kotlin.math.max
  */
 object ScenarioCatalogFactory {
 
+    /*
+     Scope contract:
+     | Suite | Purpose |
+     | ENGINEONLY (RiskEngine-only) | RiskEngine weights/thresholds/hysteresis on processed inputs |
+     | E2E (core pipeline + engine) | TTC holds/smoothing/approach gate/suppress/occlusion driven behavior |
+     */
+
     const val CATALOG_VERSION = "2026-02-28"
 
-    fun createDefaultCatalog(): ScenarioCatalog {
+    fun createDefaultCatalog(): ScenarioCatalog = createEngineOnlyCatalog()
+
+    fun createEngineOnlyCatalog(): ScenarioCatalog {
+        val full = createFullCatalog()
+        val excluded = setOf(
+            "R1_V1_TTC_INVALID_CLOSING_CONTINUES",
+            "R2_V2_FOLLOW_STABLE_ORANGE"
+        )
+        return full.copy(
+            title = "MCAW 2.0 – EngineOnly katalog simulací",
+            scenarios = full.scenarios.filterNot { it.id in excluded }.map { it.copy(suite = ScenarioSuite.ENGINE_ONLY) }
+        )
+    }
+
+    fun createE2eCatalog(): ScenarioCatalog {
+        val fullById = createFullCatalog().scenarios.associateBy { it.id }
+        val e2eScenarios = listOfNotNull(
+            fullById["R1_V1_TTC_INVALID_CLOSING_CONTINUES"]?.copy(suite = ScenarioSuite.E2E),
+            fullById["R2_V2_FOLLOW_STABLE_ORANGE"]?.copy(suite = ScenarioSuite.E2E),
+            fullById["C3_RECEDING_HARD_SUPPRESS"]?.copy(suite = ScenarioSuite.E2E),
+            e2eTtcHeightInvalidWindowDuringClosing(),
+            e2eRecedingWarmupNoBlink()
+        )
+        return ScenarioCatalog(
+            title = "MCAW 2.0 – E2E katalog simulací",
+            version = CATALOG_VERSION,
+            scenarios = e2eScenarios
+        )
+    }
+
+    private fun createFullCatalog(): ScenarioCatalog {
         val list = ArrayList<Scenario>()
 
         list += cityParkedPassBy()
@@ -739,6 +776,54 @@ object ScenarioCatalogFactory {
                     brakeCueActive = { t -> t >= hazard + 0.6f },
                     brakeCueStrength = { _ -> 0.8f }
                 )
+            )
+        )
+    }
+
+    private fun e2eTtcHeightInvalidWindowDuringClosing(): Scenario {
+        val hazard = 3.0f
+        return Scenario(
+            id = "E2E_TTC_HEIGHT_INVALID_WINDOW_DURING_CLOSING",
+            suite = ScenarioSuite.E2E,
+            title = "E2E: TTC height invalid window during closing",
+            domain = Domain.CITY,
+            vehicle = Vehicle.CAR,
+            notes = "Height TTC invalid krátce během přibližování nesmí oddálit ORANGE.",
+            config = ScenarioConfig(hz = 10, riderSpeedMps = 14f, qualityWeight = 0.95f),
+            expectations = listOf(
+                Expectation.MustEnterLevelBy(1, 1.5f, hazard, "ORANGE deadline"),
+                Expectation.MustNotEnterLevel(2, "No RED without strong TTC"),
+                Expectation.MaxTransitionsInWindow(3, 5f, "Stable")
+            ),
+            segments = listOf(
+                Segment(0f, hazard, "follow", { 34f }, { 1.2f }, { 10f }),
+                Segment(
+                    hazard,
+                    9f,
+                    "closing",
+                    { t -> max(7f, 34f - (t - hazard) * 5.4f) },
+                    { 5.5f },
+                    { t -> if (t in (hazard + 0.7f)..(hazard + 1.2f)) Float.NaN else max(1.8f, 6.0f - (t - hazard) * 0.7f) }
+                )
+            )
+        )
+    }
+
+    private fun e2eRecedingWarmupNoBlink(): Scenario {
+        return Scenario(
+            id = "E2E_RECEDING_WARMUP_NO_BLINK",
+            suite = ScenarioSuite.E2E,
+            title = "E2E: receding warmup no blink",
+            domain = Domain.CITY,
+            vehicle = Vehicle.CAR,
+            notes = "Receding od t=0 nesmí zablikat ORANGE.",
+            config = ScenarioConfig(hz = 10, riderSpeedMps = 12f, qualityWeight = 1.0f),
+            expectations = listOf(
+                Expectation.MustNotEnterLevel(1, "No ORANGE blink"),
+                Expectation.MaxTransitionsInWindow(1, 6f, "No transitions")
+            ),
+            segments = listOf(
+                Segment(0f, 7f, "receding", { t -> 4.3f + t * 0.9f }, { 6f }, { 1.1f }, { 0.2f })
             )
         )
     }

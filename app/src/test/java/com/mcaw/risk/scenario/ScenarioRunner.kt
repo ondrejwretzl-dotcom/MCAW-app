@@ -387,5 +387,11 @@ object ScenarioRunner {
         ScenarioReportWriter.writeFrameTraceJsonl(run, File(outDir, "${run.scenario.id}.frames.jsonl"))
     }
 
+    fun writeReports(run: ScenarioRun, outDir: File, suiteDirName: String) {
+        val suiteDir = File(outDir, suiteDirName)
+        suiteDir.mkdirs()
+        writeReports(run, suiteDir)
+    }
+
     private fun fmt(v: Float): String = String.format("%.2f", v)
 }

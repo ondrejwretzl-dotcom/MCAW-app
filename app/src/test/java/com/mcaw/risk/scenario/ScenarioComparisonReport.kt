@@ -430,6 +430,26 @@ object ScenarioComparisonReport {
         }
     }
 
+    fun mergeDiffs(engineDiff: DiffResult?, e2eDiff: DiffResult?): DiffResult? {
+        if (engineDiff == null && e2eDiff == null) return null
+        val entries = ArrayList<DiffEntry>()
+        if (engineDiff != null) {
+            entries += engineDiff.entries.map { it.copy(scenarioId = "ENGINE_ONLY:${it.scenarioId}") }
+        }
+        if (e2eDiff != null) {
+            entries += e2eDiff.entries.map { it.copy(scenarioId = "E2E:${it.scenarioId}") }
+        }
+        return DiffResult(
+            baselinePath = listOfNotNull(engineDiff?.baselinePath, e2eDiff?.baselinePath).joinToString(";"),
+            currentPath = listOfNotNull(engineDiff?.currentPath, e2eDiff?.currentPath).joinToString(";"),
+            hardRegressionCount = (engineDiff?.hardRegressionCount ?: 0) + (e2eDiff?.hardRegressionCount ?: 0),
+            softRegressionCount = (engineDiff?.softRegressionCount ?: 0) + (e2eDiff?.softRegressionCount ?: 0),
+            improvedCount = (engineDiff?.improvedCount ?: 0) + (e2eDiff?.improvedCount ?: 0),
+            unchangedCount = (engineDiff?.unchangedCount ?: 0) + (e2eDiff?.unchangedCount ?: 0),
+            entries = entries
+        )
+    }
+
     private fun firstTimeAtOrAbove(run: ScenarioRun, level: Int): Float? {
         val idx = run.levels.indexOfFirst { it >= level }
         return if (idx >= 0 && idx < run.frames.size) run.frames[idx].tSec else null
@@ -439,6 +459,37 @@ object ScenarioComparisonReport {
         var transitions = 0
         for (i in 1 until levels.size) if (levels[i] != levels[i - 1]) transitions++
         return transitions
+    }
+
+
+    fun writeHtmlIndexDual(
+        outFile: File,
+        engineSummary: List<ScenarioSummary>,
+        e2eSummary: List<ScenarioSummary>,
+        engineDiff: DiffResult?,
+        e2eDiff: DiffResult?,
+        reportsRelativePath: String = "."
+    ) {
+        val combinedHard = (engineDiff?.hardRegressionCount ?: 0) + (e2eDiff?.hardRegressionCount ?: 0)
+        val badge = if (combinedHard == 0) "PASS" else "FAIL"
+        val html = buildString {
+            append("""
+            <!doctype html><html><head><meta charset="utf-8"/><title>MCAW Scenario Report</title></head><body>
+            <h1>MCAW Scenario Report</h1>
+            <p><b>Combined status:</b> $badge</p>
+            <h2>EngineOnly Summary</h2>
+            <ul><li>Scenarios: ${engineSummary.size}</li><li>Hard regressions: ${engineDiff?.hardRegressionCount ?: 0}</li></ul>
+            <a href="summary_engine_only.json">summary_engine_only.json</a><br/>
+            <a href="diff_summary_engine_only.json">diff_summary_engine_only.json</a>
+            <h2>E2E Summary</h2>
+            <ul><li>Scenarios: ${e2eSummary.size}</li><li>Hard regressions: ${e2eDiff?.hardRegressionCount ?: 0}</li></ul>
+            <a href="summary_e2e.json">summary_e2e.json</a><br/>
+            <a href="diff_summary_e2e.json">diff_summary_e2e.json</a>
+            </body></html>
+            """)
+        }
+        outFile.parentFile?.mkdirs()
+        outFile.writeText(html)
     }
 
     private fun maxTransitionsInWindow(run: ScenarioRun, windowSec: Float): Int {

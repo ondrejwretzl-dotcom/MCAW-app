@@ -23,15 +23,17 @@ class ScenarioSimulationReportTest {
 
     @Test
     fun runScenarioCatalog_andGenerateReports() {
-        val catalog = ScenarioCatalogFactory.createDefaultCatalog()
+        val engineCatalog = ScenarioCatalogFactory.createEngineOnlyCatalog()
+        val e2eCatalog = ScenarioCatalogFactory.createE2eCatalog()
         val stamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss"))
         val outDir = File("build/reports/mcaw_scenarios/$stamp")
         outDir.mkdirs()
 
         val indexMd = StringBuilder(12_000)
         indexMd.append("# MCAW 2.0 – Přehled simulací scénářů\n\n")
-        indexMd.append("- Katalog: **").append(catalog.title).append("**\n")
-        indexMd.append("- Verze katalogu: ").append(catalog.version).append("\n")
+        indexMd.append("- EngineOnly katalog: **").append(engineCatalog.title).append("**\n")
+        indexMd.append("- E2E katalog: **").append(e2eCatalog.title).append("**\n")
+        indexMd.append("- Verze katalogu: ").append(engineCatalog.version).append("\n")
         indexMd.append("- Vygenerováno: ").append(stamp).append("\n\n")
 
         indexMd.append("## Shrnutí\n")
@@ -41,12 +43,13 @@ class ScenarioSimulationReportTest {
         var allOk = true
         var passCount = 0
         var failCount = 0
-        val runs = ArrayList<com.mcaw.risk.scenario.ScenarioRun>(catalog.scenarios.size)
+        val engineRuns = ArrayList<com.mcaw.risk.scenario.ScenarioRun>(engineCatalog.scenarios.size)
+        val e2eRuns = ArrayList<com.mcaw.risk.scenario.ScenarioRun>(e2eCatalog.scenarios.size)
 
-        for (s in catalog.scenarios) {
+        for (s in engineCatalog.scenarios) {
             val run = ScenarioRunner.runScenario(s)
-            ScenarioRunner.writeReports(run, outDir)
-            runs.add(run)
+            ScenarioRunner.writeReports(run, outDir, "engine_only")
+            engineRuns.add(run)
 
             val pass = run.verdicts.all { it.ok }
             allOk = allOk && pass
@@ -60,7 +63,7 @@ class ScenarioSimulationReportTest {
                 .append(s.vehicle).append("|")
                 .append(if (pass) "✅ PROŠEL" else "❌ NEPROŠEL").append("|")
                 .append(shortWhy.replace("|", "/")).append("|")
-                .append("[").append(s.id).append(".md](").append(s.id).append(".md)").append("|")
+                .append("[").append(s.id).append(".md](engine_only/").append(s.id).append(".md)").append("|")
                 .append("\n")
         }
 
@@ -73,15 +76,28 @@ class ScenarioSimulationReportTest {
 
         File(outDir, "INDEX.md").writeText(indexMd.toString())
 
-        val summary = ScenarioComparisonReport.summarizeRuns(runs)
-        val summaryFile = File(outDir, "summary.json")
-        ScenarioComparisonReport.writeSummaryJson(summary, summaryFile)
+        for (s in e2eCatalog.scenarios) {
+            val run = com.mcaw.risk.scenario.E2eScenarioRunner.runScenario(s)
+            ScenarioRunner.writeReports(run, outDir, "e2e")
+            e2eRuns.add(run)
 
-        val baselinePath = (System.getProperty("mcaw.baselineSummary") ?: "").trim()
-        val baselineFile = if (baselinePath.isBlank()) null else File(baselinePath)
-        val baselineSummary = if (baselineFile != null && baselineFile.exists()) {
-            ScenarioComparisonReport.readSummaryJson(baselineFile)
-        } else emptyList()
+            val pass = run.verdicts.all { it.ok }
+            allOk = allOk && pass
+        }
+
+        val engineSummary = ScenarioComparisonReport.summarizeRuns(engineRuns)
+        val e2eSummary = ScenarioComparisonReport.summarizeRuns(e2eRuns)
+        val engineSummaryFile = File(outDir, "summary_engine_only.json")
+        val e2eSummaryFile = File(outDir, "summary_e2e.json")
+        ScenarioComparisonReport.writeSummaryJson(engineSummary, engineSummaryFile)
+        ScenarioComparisonReport.writeSummaryJson(e2eSummary, e2eSummaryFile)
+
+        val baselineEnginePath = (System.getProperty("mcaw.baselineSummaryEngineOnly") ?: "").trim()
+        val baselineE2ePath = (System.getProperty("mcaw.baselineSummaryE2E") ?: "").trim()
+        val baselineEngineFile = if (baselineEnginePath.isBlank()) null else File(baselineEnginePath)
+        val baselineE2eFile = if (baselineE2ePath.isBlank()) null else File(baselineE2ePath)
+        val baselineEngineSummary = if (baselineEngineFile != null && baselineEngineFile.exists()) ScenarioComparisonReport.readSummaryJson(baselineEngineFile) else emptyList()
+        val baselineE2eSummary = if (baselineE2eFile != null && baselineE2eFile.exists()) ScenarioComparisonReport.readSummaryJson(baselineE2eFile) else emptyList()
 
         // Threshold defaults tuned to the current passing scenario catalog:
         // - hard latency: 0.60s (avoids noise while catching meaningful warning delays)
@@ -93,10 +109,20 @@ class ScenarioSimulationReportTest {
         val hardTransitionsInc = (System.getProperty("mcaw.diff.hardTransitionsInc") ?: "2").toIntOrNull() ?: 2
         val softTransitionsInc = (System.getProperty("mcaw.diff.softTransitionsInc") ?: "1").toIntOrNull() ?: 1
 
-        val diff = if (baselineSummary.isNotEmpty()) {
+        val engineDiff = if (baselineEngineSummary.isNotEmpty()) {
             ScenarioComparisonReport.compare(
-                baseline = baselineSummary,
-                current = summary,
+                baseline = baselineEngineSummary,
+                current = engineSummary,
+                hardLatencyRegressionSec = hardLatencySec,
+                softLatencyRegressionSec = softLatencySec,
+                hardTransitionsIncrease = hardTransitionsInc,
+                softTransitionsIncrease = softTransitionsInc
+            )
+        } else null
+        val e2eDiff = if (baselineE2eSummary.isNotEmpty()) {
+            ScenarioComparisonReport.compare(
+                baseline = baselineE2eSummary,
+                current = e2eSummary,
                 hardLatencyRegressionSec = hardLatencySec,
                 softLatencyRegressionSec = softLatencySec,
                 hardTransitionsIncrease = hardTransitionsInc,
@@ -104,22 +130,27 @@ class ScenarioSimulationReportTest {
             )
         } else null
 
-        if (diff != null) {
-            ScenarioComparisonReport.writeDiffJson(
-                diff = diff,
-                outFile = File(outDir, "diff_summary.json"),
-                baselinePath = baselineFile?.absolutePath ?: "",
-                currentPath = summaryFile.absolutePath
-            )
+        if (engineDiff != null) {
+            ScenarioComparisonReport.writeDiffJson(engineDiff, File(outDir, "diff_summary_engine_only.json"), baselineEngineFile?.absolutePath ?: "", engineSummaryFile.absolutePath)
+        }
+        if (e2eDiff != null) {
+            ScenarioComparisonReport.writeDiffJson(e2eDiff, File(outDir, "diff_summary_e2e.json"), baselineE2eFile?.absolutePath ?: "", e2eSummaryFile.absolutePath)
         }
 
-        ScenarioComparisonReport.writeHtmlIndex(
+        ScenarioComparisonReport.writeHtmlIndexDual(
             outFile = File(outDir, "index.html"),
-            summary = summary,
-            diff = diff,
+            engineSummary = engineSummary,
+            e2eSummary = e2eSummary,
+            engineDiff = engineDiff,
+            e2eDiff = e2eDiff,
             reportsRelativePath = "."
         )
 
+        val failOnHard = (System.getProperty("mcaw.failOnHardRegression") ?: "true").toBoolean()
+        if (failOnHard) {
+            val hard = (engineDiff?.hardRegressionCount ?: 0) + (e2eDiff?.hardRegressionCount ?: 0)
+            assertTrue("Hard regression detected: $hard", hard == 0)
+        }
         // Export runbook into report folder so artifact is self-contained.
         val runbookCandidates = listOf(
             File("docs/SCENARIO_BASELINE_RUNBOOK.md"),
@@ -140,9 +171,9 @@ class ScenarioSimulationReportTest {
 
         if (baselineUpdateEnabled && baselineCandidatePath.isNotBlank()) {
             val decision = ScenarioComparisonReport.decideBaselineUpdate(
-                hasBaseline = baselineSummary.isNotEmpty(),
+                hasBaseline = baselineEngineSummary.isNotEmpty() || baselineE2eSummary.isNotEmpty(),
                 allScenariosPass = allOk,
-                diff = diff,
+                diff = ScenarioComparisonReport.mergeDiffs(engineDiff, e2eDiff),
                 requireAllPass = baselineRequireAllPass,
                 maxSoftRegressions = baselineMaxSoftRegressions,
                 minImproved = baselineMinImproved
@@ -159,7 +190,7 @@ class ScenarioSimulationReportTest {
             if (decision.shouldUpdate) {
                 val candidate = File(baselineCandidatePath)
                 candidate.parentFile?.mkdirs()
-                ScenarioComparisonReport.writeSummaryJson(summary, candidate)
+                ScenarioComparisonReport.writeSummaryJson(engineSummary, candidate)
             }
         }
 
@@ -171,13 +202,6 @@ class ScenarioSimulationReportTest {
             )
         }
 
-        val failOnHardRegression = (System.getProperty("mcaw.failOnHardRegression") ?: "false").equals("true", ignoreCase = true)
-        if (failOnHardRegression && diff != null) {
-            assertTrue(
-                "Nalezena tvrdá regrese proti baseline (count=${diff.hardRegressionCount}). Viz $outDir/index.html",
-                diff.hardRegressionCount == 0
-            )
-        }
     }
 
     private fun shorten(s: String): String {

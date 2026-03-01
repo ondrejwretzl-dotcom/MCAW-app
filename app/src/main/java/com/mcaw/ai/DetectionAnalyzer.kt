@@ -13,6 +13,8 @@ import com.mcaw.config.AppPreferences
 import com.mcaw.config.DetectionModePolicy
 import com.mcaw.location.SpeedProvider
 import com.mcaw.location.RiderImuMonitor
+import com.mcaw.ai.pipeline.DetectionCorePipeline
+import com.mcaw.ai.pipeline.DetectionTuning
 import com.mcaw.risk.RiskEngine
 import com.mcaw.model.Box
 import com.mcaw.model.Detection
@@ -246,6 +248,7 @@ class DetectionAnalyzer(
     private var lastTtcHeight: Float = Float.POSITIVE_INFINITY
     private var lastTtcHeightTsMs: Long = -1L
     private val ttcFusionOut: FloatArray = FloatArray(3)
+    private val detectionCorePipeline = DetectionCorePipeline(DetectionTuning.DEFAULT)
 
     // TTC slope (sec/sec) for trend detection (negative = TTC decreasing)
     private var lastTtcForSlope: Float = Float.NaN

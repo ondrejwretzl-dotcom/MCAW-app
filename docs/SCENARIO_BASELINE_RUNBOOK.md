@@ -10,10 +10,14 @@ Každý běh scénářů generuje do `build/reports/mcaw_scenarios/<timestamp>/`
 
 - `INDEX.md` – čitelný markdown přehled scénářů
 - `index.html` – klikatelný dashboard
-- `summary.json` – strojový snapshot metrik (vstup pro baseline diff)
-- `diff_summary.json` – porovnání proti baseline (pokud baseline byla předána)
-- `<SCENARIO_ID>.md` – detail scénáře
-- `<SCENARIO_ID>.jsonl` – strukturované eventy
+- `summary_engine_only.json` – snapshot ENGINE_ONLY suite
+- `summary_e2e.json` – snapshot E2E suite
+- `diff_summary_engine_only.json` – diff proti ENGINE_ONLY baseline
+- `diff_summary_e2e.json` – diff proti E2E baseline
+- `engine_only/<SCENARIO_ID>.md` – detail scénáře ENGINE_ONLY (oddělené namespace)
+- `engine_only/<SCENARIO_ID>.jsonl` – strukturované eventy ENGINE_ONLY
+- `e2e/<SCENARIO_ID>.md` – detail scénáře E2E (oddělené namespace)
+- `e2e/<SCENARIO_ID>.jsonl` – strukturované eventy E2E
 - `baseline_update_decision.txt` – rozhodnutí quality gate (pokud je update baseline zapnutý)
 - `RUNBOOK.md` – kopie tohoto návodu pro pohodlné čtení v artefaktu
 
@@ -22,7 +26,8 @@ Každý běh scénářů generuje do `build/reports/mcaw_scenarios/<timestamp>/`
 ## 2) Ruční vstupy (co zadáváš ty)
 
 ### Povinné vstupy pro compare
-- `mcaw.baselineSummary=/path/to/approved/baseline_summary.json`
+- `mcaw.baselineSummaryEngineOnly=/path/to/approved/summary_engine_only.json`
+- `mcaw.baselineSummaryE2E=/path/to/approved/summary_e2e.json`
 
 ### Volitelné vstupy pro prahy diffu
 - `mcaw.diff.hardLatencySec` (default `0.60`)
@@ -197,3 +202,16 @@ Po běhu workflow `Scenario Regression`:
 3. Otevři tento URL a rovnou uvidíš `index.html` + odkazy na report soubory.
 
 Pozn.: workflow je nastavené tak, aby se report publikoval i když compare krok skončí non-zero (abys měl co debugovat).
+
+
+## 9) Suite contract + rollout
+
+| Suite | Scope |
+|---|---|
+| ENGINE_ONLY | RiskEngine weights/thresholds/hysteresis over processed TTC/dist/REL inputs. |
+| E2E | DetectionCorePipeline (TTC validity holds, smoothing, approach gate, suppress gates, occlusion flags) + RiskEngine. |
+
+### Rollout plan
+1. Phase 1 (1–2 sprints): E2E report-only, `FAIL_ON_HARD_REGRESSION=false`.
+2. Phase 2: Stabilize noise, calibrate epsilons, finalize suite membership.
+3. Phase 3: Freeze baseline and set `FAIL_ON_HARD_REGRESSION=true`.
