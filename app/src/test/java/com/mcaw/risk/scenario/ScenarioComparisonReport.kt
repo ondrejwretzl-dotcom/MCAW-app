@@ -441,6 +441,37 @@ object ScenarioComparisonReport {
         return transitions
     }
 
+
+    fun writeHtmlIndexDual(
+        outFile: File,
+        engineSummary: List<ScenarioSummary>,
+        e2eSummary: List<ScenarioSummary>,
+        engineDiff: DiffResult?,
+        e2eDiff: DiffResult?,
+        reportsRelativePath: String = "."
+    ) {
+        val combinedHard = (engineDiff?.hardRegressionCount ?: 0) + (e2eDiff?.hardRegressionCount ?: 0)
+        val badge = if (combinedHard == 0) "PASS" else "FAIL"
+        val html = buildString {
+            append("""
+            <!doctype html><html><head><meta charset="utf-8"/><title>MCAW Scenario Report</title></head><body>
+            <h1>MCAW Scenario Report</h1>
+            <p><b>Combined status:</b> $badge</p>
+            <h2>EngineOnly Summary</h2>
+            <ul><li>Scenarios: ${engineSummary.size}</li><li>Hard regressions: ${engineDiff?.hardRegressionCount ?: 0}</li></ul>
+            <a href="summary_engine_only.json">summary_engine_only.json</a><br/>
+            <a href="diff_summary_engine_only.json">diff_summary_engine_only.json</a>
+            <h2>E2E Summary</h2>
+            <ul><li>Scenarios: ${e2eSummary.size}</li><li>Hard regressions: ${e2eDiff?.hardRegressionCount ?: 0}</li></ul>
+            <a href="summary_e2e.json">summary_e2e.json</a><br/>
+            <a href="diff_summary_e2e.json">diff_summary_e2e.json</a>
+            </body></html>
+            """)
+        }
+        outFile.parentFile?.mkdirs()
+        outFile.writeText(html)
+    }
+
     private fun maxTransitionsInWindow(run: ScenarioRun, windowSec: Float): Int {
         if (run.frames.isEmpty()) return 0
         var best = 0
