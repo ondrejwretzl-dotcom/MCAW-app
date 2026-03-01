@@ -21,6 +21,9 @@ export type FrameIn = {
   bestId?: number;
   hasBest?: boolean;
   bottomOccluded?: boolean;
+  suppressRecedingHard?: boolean;
+  suppressSteadyGapHard?: boolean;
+  suppressStanding?: boolean;
 };
 
 export type FrameOut = {

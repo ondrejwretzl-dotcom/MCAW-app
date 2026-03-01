@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { parseJsonl } from '../io/jsonl';
 import { RiskEngineRef } from '../engine/RiskEngine';
 import { fuseTtc } from '../engine/ttcFusion';
@@ -20,6 +20,141 @@ import { RelStabilityState } from './lib/relStability';
 import { templateC2 } from './lib/templates';
 
 type DataSource = 'upload' | 'builder';
+
+
+type CustomEngineParams = {
+  ttcInvalidHoldMs: number;
+  ttcHeightHoldMs: number;
+  smoothTtcMaxDropRate: number;
+  smoothTtcAlphaDrop: number;
+  minGrowthRatio: number;
+  minDeltaHPx: number;
+  ttcFromDistApproachGate: number;
+  plateauBase: number;
+  plateauMax: number;
+  approachGateMin: number;
+  approachLow: number;
+  approachHigh: number;
+};
+
+type FieldErrors = Partial<Record<keyof CustomEngineParams, string>>;
+
+type TtcTuneState = {
+  lastTsMs: number;
+  ttcHeightHeld: number;
+  ttcHeightHeldTsMs: number;
+  ttcEma: number;
+  ttcEmaValid: boolean;
+  lastTtcFiniteTsMs: number;
+  prevHeightTtc: number;
+};
+
+const CUSTOM_DEFAULTS: CustomEngineParams = {
+  ttcInvalidHoldMs: 400,
+  ttcHeightHoldMs: 500,
+  smoothTtcMaxDropRate: 12.0,
+  smoothTtcAlphaDrop: 0.65,
+  minGrowthRatio: 1.01,
+  minDeltaHPx: 0.7,
+  ttcFromDistApproachGate: 0.2,
+  plateauBase: 0.45,
+  plateauMax: 0.65,
+  approachGateMin: 0.8,
+  approachLow: 1.5,
+  approachHigh: 4.5,
+};
+
+function validateCustomParams(p: CustomEngineParams): FieldErrors {
+  const e: FieldErrors = {};
+  const finite = (k: keyof CustomEngineParams) => { if (!Number.isFinite(p[k])) e[k] = 'Must be finite.'; };
+  (Object.keys(p) as Array<keyof CustomEngineParams>).forEach(finite);
+  if (p.smoothTtcAlphaDrop < 0 || p.smoothTtcAlphaDrop > 1) e.smoothTtcAlphaDrop = 'Range 0..1';
+  if (p.smoothTtcMaxDropRate <= 0) e.smoothTtcMaxDropRate = 'Must be > 0';
+  if (p.ttcInvalidHoldMs < 0 || p.ttcInvalidHoldMs > 5000) e.ttcInvalidHoldMs = 'Range 0..5000ms';
+  if (p.ttcHeightHoldMs < 0 || p.ttcHeightHoldMs > 5000) e.ttcHeightHoldMs = 'Range 0..5000ms';
+  if (p.minGrowthRatio <= 0) e.minGrowthRatio = 'Must be > 0';
+  if (p.minDeltaHPx <= 0) e.minDeltaHPx = 'Must be > 0';
+  if (p.ttcFromDistApproachGate <= 0) e.ttcFromDistApproachGate = 'Must be > 0';
+  if (p.plateauBase < 0 || p.plateauBase > 1) e.plateauBase = 'Range 0..1';
+  if (p.plateauMax < 0 || p.plateauMax > 1) e.plateauMax = 'Range 0..1';
+  if (p.plateauMax < p.plateauBase) e.plateauMax = 'Must be >= plateauBase';
+  if (p.approachHigh <= p.approachLow) e.approachHigh = 'Must be > approachLow';
+  return e;
+}
+
+function smoothTtcCustom(ttcRaw: number, tsMs: number, cfg: CustomEngineParams, state: TtcTuneState): number {
+  const raw = Number.isFinite(ttcRaw) && ttcRaw > 0 ? clamp(ttcRaw, 0.05, 120) : Number.POSITIVE_INFINITY;
+  if (!Number.isFinite(raw)) {
+    if (state.ttcEmaValid && Number.isFinite(state.ttcEma) && state.lastTtcFiniteTsMs > 0 && (tsMs - state.lastTtcFiniteTsMs) <= cfg.ttcInvalidHoldMs) {
+      return state.ttcEma;
+    }
+    state.ttcEmaValid = false;
+    state.ttcEma = Number.POSITIVE_INFINITY;
+    state.lastTsMs = tsMs;
+    return Number.POSITIVE_INFINITY;
+  }
+
+  state.lastTtcFiniteTsMs = tsMs;
+  if (!state.ttcEmaValid || !Number.isFinite(state.ttcEma) || state.lastTsMs <= 0) {
+    state.ttcEma = raw;
+    state.ttcEmaValid = true;
+    state.lastTsMs = tsMs;
+    return state.ttcEma;
+  }
+
+  const dtSec = Math.max(0.001, (tsMs - state.lastTsMs) / 1000);
+  state.lastTsMs = tsMs;
+  const maxDrop = cfg.smoothTtcMaxDropRate * dtSec;
+  const maxRise = 3.0 * dtSec;
+  const prev = state.ttcEma;
+  const clamped = raw < prev ? Math.max(raw, prev - maxDrop) : Math.min(raw, prev + maxRise);
+  const alpha = clamped < prev ? cfg.smoothTtcAlphaDrop : 0.20;
+  state.ttcEma = prev + alpha * (clamped - prev);
+  return state.ttcEma;
+}
+
+function applyCustomTtcPipeline(
+  input: FrameIn,
+  relApproachMps: number,
+  tsMs: number,
+  cfg: CustomEngineParams,
+  state: TtcTuneState,
+): number {
+  const rawHeight = Number(input.ttcHeightSec ?? input.ttcSec);
+  const rawDistDirect = Number(input.distanceM) / Math.max(relApproachMps, 1e-6);
+  const rawDist = (Number.isFinite(rawDistDirect) && relApproachMps > cfg.ttcFromDistApproachGate)
+    ? clamp(rawDistDirect, 0.05, 120)
+    : Number.POSITIVE_INFINITY;
+
+  let heightNow = Number.isFinite(rawHeight) && rawHeight > 0 ? clamp(rawHeight, 0.05, 120) : Number.NaN;
+  if (Number.isFinite(heightNow) && Number.isFinite(state.prevHeightTtc)) {
+    const drop = state.prevHeightTtc - heightNow;
+    const ratio = state.prevHeightTtc / Math.max(heightNow, 0.05);
+    const minDropSec = cfg.minDeltaHPx * 0.10;
+    if (!(ratio >= cfg.minGrowthRatio && drop >= minDropSec)) {
+      heightNow = Number.NaN;
+    }
+  }
+  if (Number.isFinite(heightNow)) {
+    state.ttcHeightHeld = heightNow;
+    state.ttcHeightHeldTsMs = tsMs;
+    state.prevHeightTtc = heightNow;
+  }
+  const heldHeight = (Number.isFinite(heightNow) || (state.ttcHeightHeldTsMs > 0 && (tsMs - state.ttcHeightHeldTsMs) <= cfg.ttcHeightHoldMs))
+    ? state.ttcHeightHeld
+    : Number.NaN;
+
+  const fused = fuseTtc(
+    Number.isFinite(heldHeight) ? heldHeight : undefined,
+    Number.isFinite(rawDist) ? rawDist : undefined,
+    Number(input.distanceM),
+    relApproachMps,
+    Boolean(input.bottomOccluded),
+    false,
+    Number(input.qualityWeight ?? 1),
+  );
+  return smoothTtcCustom(fused.ttcFused, tsMs, cfg, state);
+}
 
 function defaultWhatIf(): WhatIfConfig {
   return {
@@ -103,6 +238,20 @@ export function App() {
 
   // Controls
   const [whatIf, setWhatIf] = useState<WhatIfConfig>(defaultWhatIf());
+  const [useCustomParams, setUseCustomParams] = useState<boolean>(false);
+  const [customParamsDraft, setCustomParamsDraft] = useState<CustomEngineParams>(CUSTOM_DEFAULTS);
+  const [customParams, setCustomParams] = useState<CustomEngineParams>(CUSTOM_DEFAULTS);
+  const [customErrors, setCustomErrors] = useState<FieldErrors>({});
+
+  useEffect(() => {
+    if (!useCustomParams) return;
+    const handle = window.setTimeout(() => {
+      const errs = validateCustomParams(customParamsDraft);
+      setCustomErrors(errs);
+      if (Object.keys(errs).length === 0) setCustomParams(customParamsDraft);
+    }, 200);
+    return () => window.clearTimeout(handle);
+  }, [useCustomParams, customParamsDraft]);
   const [showOnlyDiffs, setShowOnlyDiffs] = useState<boolean>(false);
 
   const [showInputPlot, setShowInputPlot] = useState<boolean>(false);
@@ -158,6 +307,15 @@ export function App() {
 
     let mismatch = 0;
     const relState = new RelStabilityState();
+    const tunedTtcState: TtcTuneState = {
+      lastTsMs: -1,
+      ttcHeightHeld: Number.NaN,
+      ttcHeightHeldTsMs: -1,
+      ttcEma: Number.POSITIVE_INFINITY,
+      ttcEmaValid: false,
+      lastTtcFiniteTsMs: -1,
+      prevHeightTtc: Number.NaN,
+    };
 
     for (const fr of frames) {
       const input = fr.in;
@@ -225,18 +383,25 @@ export function App() {
         }
       }
 
-      if (whatIf.enabled) {
+      if (useCustomParams) {
         let tuned = null as any;
         let distO = NaN;
         let distR = NaN;
+        const tunedInput: FrameIn = { ...evalInput };
+        tunedInput.ttcSec = applyCustomTtcPipeline(tunedInput, approachForRisk, Math.round(fr.tSec * 1000), customParams, tunedTtcState);
 
         if (whatIf.dynamicDistanceEnabled) {
           const v = Number(evalInput.riderSpeedMps ?? 0);
           if (Number.isFinite(v) && v > 0.1) {
             const thr = (engTuned as any).debugDerivedThresholds(effectiveMode, qualityWeight, undefined, {
-              dynamicDistanceEnabled: true,
+              dynamicDistanceEnabled: whatIf.dynamicDistanceEnabled,
               dynamicDistanceOrangeSec: whatIf.orangeGapSec,
               dynamicDistanceRedSec: whatIf.redGapSec,
+              plateauBase: customParams.plateauBase,
+              plateauMax: customParams.plateauMax,
+              approachGateMin: customParams.approachGateMin,
+              approachLow: customParams.approachLow,
+              approachHigh: customParams.approachHigh,
             });
             distO = clamp(v * whatIf.orangeGapSec, whatIf.distOrangeClampMinM, whatIf.distOrangeClampMaxM);
             distR = clamp(v * whatIf.redGapSec, whatIf.distRedClampMinM, whatIf.distRedClampMaxM);
@@ -248,21 +413,31 @@ export function App() {
               relOrange: thr.relOrange,
               relRed: thr.relRed,
             };
-            tuned = (engTuned as any).evaluate(evalInput, override, {
-              dynamicDistanceEnabled: true,
+            tuned = (engTuned as any).evaluate(tunedInput, override, {
+              dynamicDistanceEnabled: whatIf.dynamicDistanceEnabled,
               dynamicDistanceOrangeSec: whatIf.orangeGapSec,
               dynamicDistanceRedSec: whatIf.redGapSec,
+              plateauBase: customParams.plateauBase,
+              plateauMax: customParams.plateauMax,
+              approachGateMin: customParams.approachGateMin,
+              approachLow: customParams.approachLow,
+              approachHigh: customParams.approachHigh,
             });
           } else {
-            tuned = (engTuned as any).evaluate(evalInput, undefined, {
-              dynamicDistanceEnabled: true,
+            tuned = (engTuned as any).evaluate(tunedInput, undefined, {
+              dynamicDistanceEnabled: whatIf.dynamicDistanceEnabled,
               dynamicDistanceOrangeSec: whatIf.orangeGapSec,
               dynamicDistanceRedSec: whatIf.redGapSec,
+              plateauBase: customParams.plateauBase,
+              plateauMax: customParams.plateauMax,
+              approachGateMin: customParams.approachGateMin,
+              approachLow: customParams.approachLow,
+              approachHigh: customParams.approachHigh,
             });
           }
         } else {
-          tuned = (engTuned as any).evaluate(evalInput, undefined, {
-            dynamicDistanceEnabled: false,
+          tuned = (engTuned as any).evaluate(tunedInput, undefined, {
+            dynamicDistanceEnabled: whatIf.dynamicDistanceEnabled,
             dynamicDistanceOrangeSec: whatIf.orangeGapSec,
             dynamicDistanceRedSec: whatIf.redGapSec,
           });
@@ -293,7 +468,7 @@ export function App() {
     };
 
     const baseTimes = computeFirstTimes(baseLevel, t);
-    const tunedTimes = whatIf.enabled ? computeFirstTimes(tunedLevel, t) : { firstOrange: null, firstRed: null };
+    const tunedTimes = useCustomParams ? computeFirstTimes(tunedLevel, t) : { firstOrange: null, firstRed: null };
 
     // Input series
     const speedKmh = frames.map((f) => mpsToKmh(Number(f.in.riderSpeedMps ?? 0)));
@@ -311,11 +486,11 @@ export function App() {
       baseRisk: baseRisk[i],
       baseLevel: baseLevel[i],
       baseReasonBits: baseReason[i],
-      tunedRisk: whatIf.enabled ? tunedRisk[i] : undefined,
-      tunedLevel: whatIf.enabled ? tunedLevel[i] : undefined,
-      tunedReasonBits: whatIf.enabled ? tunedReason[i] : undefined,
-      distOrangeM: whatIf.enabled ? tunedDistOrange[i] : undefined,
-      distRedM: whatIf.enabled ? tunedDistRed[i] : undefined,
+      tunedRisk: useCustomParams ? tunedRisk[i] : undefined,
+      tunedLevel: useCustomParams ? tunedLevel[i] : undefined,
+      tunedReasonBits: useCustomParams ? tunedReason[i] : undefined,
+      distOrangeM: useCustomParams ? tunedDistOrange[i] : undefined,
+      distRedM: useCustomParams ? tunedDistRed[i] : undefined,
     }));
 
     // CSV rows
@@ -338,7 +513,7 @@ export function App() {
     return {
       t,
       base: { risk: baseRisk, level: baseLevel, reason: baseReason, raw: baseRaw, ema: baseEma, first: baseTimes },
-      tuned: whatIf.enabled ? { risk: tunedRisk, level: tunedLevel, reason: tunedReason, raw: tunedRaw, ema: tunedEma, first: tunedTimes, distOrange: tunedDistOrange, distRed: tunedDistRed } : null,
+      tuned: useCustomParams ? { risk: tunedRisk, level: tunedLevel, reason: tunedReason, raw: tunedRaw, ema: tunedEma, first: tunedTimes, distOrange: tunedDistOrange, distRed: tunedDistRed } : null,
       thresholds: thr,
       mismatchCount: frames.some((f) => !!f.outKotlin) ? mismatch : null,
       hasKotlinOut: frames.some((f) => !!f.outKotlin),
@@ -346,7 +521,7 @@ export function App() {
       rows,
       csvRows,
     };
-  }, [activeFrames, whatIf]);
+  }, [activeFrames, whatIf, useCustomParams, customParams]);
 
   const inputSeries = useMemo(() => {
     if (!simulation) return [];
@@ -405,8 +580,8 @@ export function App() {
         </label>
 
         <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          What-if
-          <input type="checkbox" checked={whatIf.enabled} onChange={(e) => setWhatIf({ ...whatIf, enabled: e.target.checked })} />
+          Use custom parameters
+          <input type="checkbox" checked={useCustomParams} onChange={(e) => setUseCustomParams(e.target.checked)} />
         </label>
 
         <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -415,37 +590,62 @@ export function App() {
             type="checkbox"
             checked={whatIf.dynamicDistanceEnabled}
             onChange={(e) => setWhatIf({ ...whatIf, dynamicDistanceEnabled: e.target.checked })}
-            disabled={!whatIf.enabled}
+            disabled={!useCustomParams}
           />
         </label>
 
         <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           orangeGap(s)
-          <input type="number" step={0.1} value={whatIf.orangeGapSec} onChange={(e) => setWhatIf({ ...whatIf, orangeGapSec: Number(e.target.value) })} style={{ width: 70 }} disabled={!whatIf.enabled} />
+          <input type="number" step={0.1} value={whatIf.orangeGapSec} onChange={(e) => setWhatIf({ ...whatIf, orangeGapSec: Number(e.target.value) })} style={{ width: 70 }} disabled={!useCustomParams} />
         </label>
         <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           redGap(s)
-          <input type="number" step={0.1} value={whatIf.redGapSec} onChange={(e) => setWhatIf({ ...whatIf, redGapSec: Number(e.target.value) })} style={{ width: 70 }} disabled={!whatIf.enabled} />
+          <input type="number" step={0.1} value={whatIf.redGapSec} onChange={(e) => setWhatIf({ ...whatIf, redGapSec: Number(e.target.value) })} style={{ width: 70 }} disabled={!useCustomParams} />
         </label>
 
         <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           orange clamp m
-          <input type="number" value={whatIf.distOrangeClampMinM} onChange={(e) => setWhatIf({ ...whatIf, distOrangeClampMinM: Number(e.target.value) })} style={{ width: 70 }} disabled={!whatIf.enabled} />
+          <input type="number" value={whatIf.distOrangeClampMinM} onChange={(e) => setWhatIf({ ...whatIf, distOrangeClampMinM: Number(e.target.value) })} style={{ width: 70 }} disabled={!useCustomParams} />
           <span>..</span>
-          <input type="number" value={whatIf.distOrangeClampMaxM} onChange={(e) => setWhatIf({ ...whatIf, distOrangeClampMaxM: Number(e.target.value) })} style={{ width: 70 }} disabled={!whatIf.enabled} />
+          <input type="number" value={whatIf.distOrangeClampMaxM} onChange={(e) => setWhatIf({ ...whatIf, distOrangeClampMaxM: Number(e.target.value) })} style={{ width: 70 }} disabled={!useCustomParams} />
         </label>
 
         <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           red clamp m
-          <input type="number" value={whatIf.distRedClampMinM} onChange={(e) => setWhatIf({ ...whatIf, distRedClampMinM: Number(e.target.value) })} style={{ width: 70 }} disabled={!whatIf.enabled} />
+          <input type="number" value={whatIf.distRedClampMinM} onChange={(e) => setWhatIf({ ...whatIf, distRedClampMinM: Number(e.target.value) })} style={{ width: 70 }} disabled={!useCustomParams} />
           <span>..</span>
-          <input type="number" value={whatIf.distRedClampMaxM} onChange={(e) => setWhatIf({ ...whatIf, distRedClampMaxM: Number(e.target.value) })} style={{ width: 70 }} disabled={!whatIf.enabled} />
+          <input type="number" value={whatIf.distRedClampMaxM} onChange={(e) => setWhatIf({ ...whatIf, distRedClampMaxM: Number(e.target.value) })} style={{ width: 70 }} disabled={!useCustomParams} />
         </label>
 
-        <button onClick={downloadCsv} disabled={!simulation}>Download CSV</button>
+
+        {useCustomParams && (
+          <div style={{ border: '1px solid #d1d5db', borderRadius: 8, padding: 10, width: '100%', background: '#f9fafb' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+              <b>Engine Parameters</b>
+              <span style={{ background: '#7c3aed', color: 'white', borderRadius: 12, padding: '2px 8px', fontSize: 11 }}>CUSTOM</span>
+            </div>
+            <p style={{ marginTop: 0, color: '#4b5563' }}>Editable TTC stabilization and closing-gated plateau parameters.</p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(180px, 1fr))', gap: 8 }}>
+              {(Object.keys(customParamsDraft) as Array<keyof CustomEngineParams>).map((k) => (
+                <label key={k} style={{ display: 'flex', flexDirection: 'column', fontSize: 12 }}>
+                  {k}
+                  <input
+                    type="number"
+                    step={k.includes('alpha') || k.includes('Ratio') || k.includes('plateau') || k.includes('approach') || k.includes('Delta') ? 0.01 : 1}
+                    value={customParamsDraft[k]}
+                    onChange={(e) => setCustomParamsDraft({ ...customParamsDraft, [k]: Number(e.target.value) })}
+                  />
+                  {customErrors[k] && <span style={{ color: '#dc2626' }}>{customErrors[k]}</span>}
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <button onClick={downloadCsv} disabled={!simulation || (useCustomParams && Object.keys(customErrors).length > 0)}>Download CSV</button>
       </div>
 
-      {dataSource === 'upload' ? (
+      <section style={{ marginTop: 10 }}><h3>Inputs</h3><p style={{ marginTop: 0, color: "#4b5563" }}>Scenario source from uploaded log frames or manual builder input.</p>{dataSource === 'upload' ? (
         <UploadPanel
           scenarios={uploaded}
           selectedScenarioId={selectedUploadId}
@@ -480,8 +680,9 @@ export function App() {
       )}
 
       {dataSource === 'upload' && <MdPanel title="Show test notes (MD)" md={activeScenario?.notesMd} />}
+      </section>
 
-      {simulation && (
+      <section style={{ marginTop: 12 }}><h3>Results</h3><p style={{ marginTop: 0, color: "#4b5563" }}>Risk, level, and timeline computed from default or custom parameters.</p>{simulation && (
         <>
           <SummaryCards
             baseFirstOrange={simulation.base.first.firstOrange}
@@ -521,11 +722,15 @@ export function App() {
         </>
       )}
 
+      </section>
+
+      <section style={{ marginTop: 12 }}><h3>Details</h3><p style={{ marginTop: 0, color: "#4b5563" }}>Debug tables and optional traces for verification.</p>
       {!simulation && (
         <div style={{ marginTop: 18, color: '#666' }}>
           Upload a <code>*.frames.jsonl</code> file or create a scenario in builder and click Recompute.
         </div>
       )}
+      </section>
     </div>
   );
 }
