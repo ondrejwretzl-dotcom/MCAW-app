@@ -93,7 +93,7 @@ class PreviewActivity : ComponentActivity() {
 
     private fun speedSourceLabel(): String {
         return runCatching {
-            val values = com.mcaw.ai.SpeedProvider.Source.values()
+            val values = SpeedProvider.Source.values()
             values.getOrNull(overlay.riderSpeedSourceOrdinal)?.name ?: "UNK"
         }.getOrDefault("UNK")
     }
