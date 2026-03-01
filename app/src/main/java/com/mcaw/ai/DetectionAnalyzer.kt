@@ -86,6 +86,9 @@ class DetectionAnalyzer(
         const val DIST_SOURCE_GROUND_PRED = 2
         const val DIST_SOURCE_HEIGHT = 3
         const val DIST_SOURCE_BLEND = 4
+        // Internal occlusion fallbacks (still logged for debug / analyzer; do not rely on numeric values as stable API).
+        const val DIST_SOURCE_OCCL_EXTRAP = 5
+        const val DIST_SOURCE_OCCL_BOUND = 6
         const val REL_EPS_IN = 0.35f
         const val REL_EPS_OUT = 0.55f
         const val DIST_STEADY_EPS = 0.20f
@@ -746,15 +749,20 @@ if (AppPreferences.debugOverlay) {
                 val dtRelMs = (tsMs - lastReliableTsMs).coerceAtLeast(0L)
                 if (dtOccMs <= 800L && lastReliableRelMps.isFinite() && lastReliableDistM.isFinite() && bestTrack.id == lastReliableLockedId && lastReliableTsMs > 0L) {
                     relInvalidReasonMask = relInvalidReasonMask or OCCL_EXTRAP_ACTIVE
+                    distSource = DIST_SOURCE_OCCL_EXTRAP
+                    // Extrapolated distance is inherently less trustworthy than direct estimates.
+                    distConf = min(distConf, 0.25f)
                     val pred = lastReliableDistM - lastReliableRelMps * (dtRelMs.toFloat() / 1000f)
-                    pred.coerceIn(1.0f, lastReliableDistM)
+                    // No hard clamp to 1.0m (creates fake steady-gap). Keep a small technical floor only.
+                    pred.coerceIn(0.30f, lastReliableDistM)
                 } else {
+                    // After the short extrapolation window, prefer current approximations (pred ground / crop bound)
+                    // over stale holds. This avoids "1.001m" fake fixes and keeps distance behavior consistent.
                     relInvalidReasonMask = relInvalidReasonMask or OCCL_FALLBACK_HOLD
-                    val holdBase = if (lastDistanceInputM.isFinite()) lastDistanceInputM else (distanceCandidate ?: lastReliableDistM)
-                    if (holdBase.isFinite()) {
-                        val dtSec = (((tsMs - lastDistanceInputTsMs).toFloat() / 1000f)).coerceIn(0.01f, 0.5f)
-                        (holdBase - 1.0f * dtSec).coerceAtLeast(1.0f)
-                    } else Float.NaN
+                    distSource = DIST_SOURCE_OCCL_BOUND
+                    distConf = min(distConf, 0.35f)
+                    val approx = distanceCandidate ?: distCropBound
+                    if (approx != null && approx.isFinite()) approx else Float.NaN
                 }
             }
             distConf = distConf.coerceIn(0f, 1f)
@@ -1031,10 +1039,30 @@ if (AppPreferences.debugOverlay) {
             lastCoreTtcForSlope = riskTtc
             val riskApproachMps = coreOut.relSignedEmaMps.coerceAtLeast(0f)
 
+            // Conservative "occlusion close" factor: used only when bottom is stably occluded and we have
+            // a reasonable bound/approximation that indicates we might be close.
+            var closeDistM = Float.POSITIVE_INFINITY
+            if (distCropBound.isFinite()) closeDistM = min(closeDistM, distCropBound)
+            if (distGroundPred != null && distGroundPred.isFinite()) closeDistM = min(closeDistM, distGroundPred)
+            if (distanceCandidate != null && distanceCandidate.isFinite()) closeDistM = min(closeDistM, distanceCandidate)
+            val occlClose = if (closeDistM.isFinite() && closeDistM > 0f) {
+                // Map: <=2m => 1.0 ; >=DIST_CLOSE_M => 0.0
+                val nearM = 2.0f
+                val denom = max(0.001f, (RiskEngine.DIST_CLOSE_M - nearM))
+                ((RiskEngine.DIST_CLOSE_M - closeDistM) / denom).coerceIn(0f, 1f)
+            } else 0f
+            val occlCloseEligible = bottomOccluded && occlusionConfirmedForFusion && occlClose > 0f &&
+                !coreOut.suppressRecedingHard && !coreOut.suppressSteadyGapHard && !standingState &&
+                (riskApproachMps >= 0.8f || brakeCue.active || imu.brakeConfidence >= 0.65f)
+
+            // Distance confidence for RiskEngine: down-weight untrusted distance sources (esp. occlusion fallbacks).
+            val distanceConfidence = distConf
+
             val risk = riskEngine.evaluate(
         tsMs = tsMs,
         effectiveMode = modeRes.effectiveMode,
         distanceM = distanceM,
+        distanceConfidence = distanceConfidence,
         approachSpeedMps = riskApproachMps,
         ttcSec = riskTtc,
         ttcSlopeSecPerSec = riskTtcSlope,
@@ -1043,6 +1071,8 @@ if (AppPreferences.debugOverlay) {
         cutInActive = (cutInBoostUntilMs > 0L && tsMs <= cutInBoostUntilMs),
         brakeCueActive = brakeCue.active,
         brakeCueStrength = brakeCue.strength,
+        occlusionCloseFactor = occlClose,
+        occlusionCloseEligible = occlCloseEligible,
         occlusionCandidate = occlusionCandidate,
         occlusionConfirmed = occlusionConfirmed,
         suppressAdjacentOvertake = adjacentStable && !cutInEvidence,

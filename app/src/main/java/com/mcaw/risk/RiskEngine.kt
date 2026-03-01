@@ -273,6 +273,9 @@ class RiskEngine {
         tsMs: Long,
         effectiveMode: Int,
         distanceM: Float,
+        // 0..1: how trustworthy is distanceM (estimation quality). Used as a weight, not a hard gate.
+        // Default 1.0 to preserve behavior for callers that do not provide confidence.
+        distanceConfidence: Float = 1f,
         approachSpeedMps: Float,
         ttcSec: Float,
         ttcSlopeSecPerSec: Float = 0f, // sec/sec (negative = closing faster)
@@ -341,7 +344,9 @@ class RiskEngine {
             suppressSteadyGapHard = suppressSteadyGapHard,
             suppressStanding = suppressStanding
         )
-        val distScore = scoreLowIsBad(distanceM, distRedThr, distOrangeThr, orangePlateau = distPlateau)
+        val distConf = distanceConfidence.coerceIn(0f, 1f)
+        val distScoreRaw = scoreLowIsBad(distanceM, distRedThr, distOrangeThr, orangePlateau = distPlateau)
+        val distScore = (distScoreRaw * distConf).coerceIn(0f, 1f)
         val relScore = if (disableTtcApproachWeight) 0f else scoreHighIsBad(approachSpeedMps, thr.relOrange, thr.relRed)
 
         // ROI weight: containment favors objects in ROI; egoOffset penalizes off-center targets.
@@ -352,7 +357,15 @@ class RiskEngine {
 
         val brakeScore = if (brakeCueActive) (0.70f + 0.30f * brakeCueStrength.coerceIn(0f, 1f)) else 0f
         val cutInScore = if (cutInActive) 1.0f else 0f
-        val occlusionBoost = 0f
+        // Occlusion close: conservative boost used when bottom is occluded but target is likely close.
+        // This is a weight/penalty approach (never a hard gate), designed to avoid missing alerts in near-crash cases
+        // while not creating false positives in steady-gap / receding scenarios.
+        val occlF = occlusionCloseFactor.coerceIn(0f, 1f)
+        val occlusionBoost = if (occlusionCloseEligible && occlF > 0f) {
+            // Base boost with mild reinforcement when also approaching (relScore).
+            // Tuned to stay below dominant factors (TTC/REL/DIST), but still matter when DIST/TTC are degraded.
+            (0.10f * occlF + 0.04f * occlF * relScore).coerceIn(0f, 0.14f)
+        } else 0f
 
         // IMU braking: if rider is braking hard, slightly raise risk (predictive) near target.
         val egoBrake = egoBrakingConfidence.coerceIn(0f, 1f)
@@ -421,7 +434,8 @@ class RiskEngine {
         val strongRel = relScore >= strongK
         val midDist = distScore >= midK
         val midRel = relScore >= midK
-        val allowRed = strongTtc && (strongDist || strongRel || (slopeStrong && (midDist || midRel)))
+        val strongOcclClose = occlusionCloseEligible && occlF >= 0.75f
+        val allowRed = strongTtc && (strongDist || strongRel || strongOcclClose || (slopeStrong && (midDist || midRel || strongOcclClose)))
 
         // --- Convert risk -> level (with hysteresis) ---
         val preGuardLevel = riskToLevelWithHysteresis(risk, conserv)
@@ -457,6 +471,7 @@ class RiskEngine {
             if (egoBrake >= 0.65f) bits = bits or BIT_EGO_BRAKE
             if (conserv >= 0.15f) bits = bits or BIT_QUALITY_CONSERV
             if (riderSpeedConfidence < 0.60f) bits = bits or BIT_SPEED_LOWCONF
+            if (occlusionCloseEligible && occlF >= 0.60f) bits = bits or BIT_BOTTOM_OCCLUDED_CLOSE
             if (dynDistEnabled && speedForDynDistOk) bits = bits or BIT_DIST_DYNAMIC else bits = bits or BIT_DIST_FIXED_FALLBACK
             if (occlusionCandidate) bits = bits or BIT_OCCLUSION_CANDIDATE
             if (occlusionConfirmed) bits = bits or BIT_OCCLUSION_CONFIRMED
@@ -472,6 +487,7 @@ class RiskEngine {
         } else {
             if (conserv >= 0.15f) bits = bits or BIT_QUALITY_CONSERV
             if (riderSpeedConfidence < 0.60f) bits = bits or BIT_SPEED_LOWCONF
+            if (occlusionCloseEligible && occlF >= 0.60f) bits = bits or BIT_BOTTOM_OCCLUDED_CLOSE
             if (dynDistEnabled && speedForDynDistOk) bits = bits or BIT_DIST_DYNAMIC else bits = bits or BIT_DIST_FIXED_FALLBACK
             if (occlusionCandidate) bits = bits or BIT_OCCLUSION_CANDIDATE
             if (occlusionConfirmed) bits = bits or BIT_OCCLUSION_CONFIRMED
