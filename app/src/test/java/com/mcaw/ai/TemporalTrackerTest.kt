@@ -143,6 +143,17 @@ class TemporalTrackerTest {
         assertEquals(1, tracker.getLockedMissFrames())
     }
 
+    @Test
+    fun rejectNewWideDetections_doesNotCreateNewTrack() {
+        val tracker = TemporalTracker()
+        val wide = Detection(box = Box(10f, 10f, 210f, 90f), score = 0.95f, label = "car") // W/H ~2.5
+
+        val out = tracker.update(listOf(wide), tsMs = 0L)
+
+        assertEquals(0, out.size)
+        assertEquals(1, tracker.getLastRejectedNewWideCount())
+    }
+
     private fun det(x1: Float, y1: Float, x2: Float, y2: Float, score: Float = 0.95f): Detection =
         Detection(box = Box(x1, y1, x2, y2), score = score, label = "car")
 }

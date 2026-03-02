@@ -14,7 +14,14 @@ class TemporalTracker(
     private val lockGraceMaxMissFrames: Int = 3,
     private val switchConfirmFrames: Int = 3,
     private val switchMargin: Float = 0.08f,
-    private val minLockAgeFramesBeforeSwitch: Int = 3
+    private val minLockAgeFramesBeforeSwitch: Int = 3,
+
+    /**
+     * Suppress obvious detector glitches: very wide (W > H) boxes.
+     * We ONLY reject them as *new tracks*; existing tracks may still match them to preserve continuity.
+     */
+    private val rejectNewWideDetections: Boolean = true,
+    private val newWideAspectMin: Float = 1.15f
 ) {
     enum class SwitchReason { NONE, GRACE_EXPIRED, BETTER_STABLE, LOST, OCCLUSION_MATCH }
     data class TrackedDetection(
@@ -44,6 +51,9 @@ class TemporalTracker(
     private var lastOcclusionMatchUsed = false
     private var frameCounter: Long = 0L
 
+    // Debug counters (no allocations): reset every update().
+    private var lastRejectedNewWideCount: Int = 0
+
     // Reuse buffer to avoid per-frame allocations (growth is rare).
     private var matchedFlags = BooleanArray(0)
 
@@ -51,6 +61,7 @@ class TemporalTracker(
         frameCounter += 1
         lastSwitchReason = SwitchReason.NONE
         lastOcclusionMatchUsed = false
+        lastRejectedNewWideCount = 0
         if (matchedFlags.size < detections.size) {
             matchedFlags = BooleanArray(max(detections.size, matchedFlags.size * 2))
         }
@@ -101,7 +112,17 @@ class TemporalTracker(
         // New tracks for unmatched detections.
         for (i in 0 until detections.size) {
             if (!matchedFlags[i]) {
-                tracks.add(Track(nextId++, detections[i], 1, 0))
+                val det = detections[i]
+                if (rejectNewWideDetections) {
+                    val h = det.box.h
+                    val w = det.box.w
+                    // Reject only if it's clearly wide; minor jitter around 1.0 is allowed.
+                    if (h > 0f && (w / h) >= newWideAspectMin) {
+                        lastRejectedNewWideCount += 1
+                        continue
+                    }
+                }
+                tracks.add(Track(nextId++, det, 1, 0))
             }
         }
 
@@ -142,6 +163,7 @@ class TemporalTracker(
     }
     fun getLastSwitchReason(): SwitchReason = lastSwitchReason
     fun wasLastMatchOcclusionFallback(): Boolean = lastOcclusionMatchUsed
+    fun getLastRejectedNewWideCount(): Int = lastRejectedNewWideCount
 
     private enum class LabelGroup { VEHICLE, PERSON, OTHER, UNKNOWN }
 

@@ -38,6 +38,25 @@ class DetectionPostProcessor(
         val roi: RectNorm = RectNorm(0.15f, 0.15f, 0.85f, 0.85f),
         val roiMinContainment: Float = 0.80f,
 
+        /**
+         * Geometry sanity filters to suppress obvious detector glitches.
+         * All thresholds are in normalized 0..1 ratios relative to the full frame.
+         */
+        val airborneBigEnabled: Boolean = true,
+        // Reject if bottom edge is unusually high AND the box is big (area or height).
+        val airborneBottomYMax: Float = 0.55f,
+        val airborneMinAreaRatio: Float = 0.08f,
+        val airborneMinHeightRatio: Float = 0.45f,
+
+        val fullWidthEnabled: Boolean = true,
+        // Hard reject almost-full-width boxes.
+        val fullWidthHardRatio: Float = 0.98f,
+        // Soft reject wide boxes when their height/aspect indicates a "stripe" glitch.
+        val fullWidthRatio: Float = 0.94f,
+        val fullWidthMaxHeightRatio: Float = 0.60f,
+        val fullWidthThinMaxHeightRatio: Float = 0.40f,
+        val fullWidthWideAspectMin: Float = 2.6f,
+
         val debug: Boolean = false
     )
 
@@ -115,6 +134,31 @@ class DetectionPostProcessor(
         if (areaRatio < config.minAreaRatio || areaRatio > config.maxAreaRatio) return "minArea"
         val aspect = if (b.h > 0f) b.w / b.h else Float.POSITIVE_INFINITY
         if (aspect < config.minAspect || aspect > config.maxAspect) return "aspect"
+
+        // --- Geometry sanity filters (glitch suppression) ---
+        val widthRatio = b.w / frameW
+        val heightRatio = b.h / frameH
+        val bottomY = max(b.y1, b.y2)
+        val bottomYRatio = bottomY / frameH
+
+        // "Airborne" big boxes: bottom edge too high while being large.
+        if (config.airborneBigEnabled) {
+            if (bottomYRatio < config.airborneBottomYMax &&
+                (areaRatio >= config.airborneMinAreaRatio || heightRatio >= config.airborneMinHeightRatio)
+            ) {
+                return "airborneBig"
+            }
+        }
+
+        // Full-width / near full-width glitches (often horizon/stripe artifacts).
+        if (config.fullWidthEnabled) {
+            if (widthRatio >= config.fullWidthHardRatio) return "fullWidthHard"
+            if (widthRatio >= config.fullWidthRatio) {
+                // Reject wide boxes that look like a stripe or have suspiciously low height.
+                if (heightRatio <= config.fullWidthMaxHeightRatio) return "fullWidth"
+                if (heightRatio <= config.fullWidthThinMaxHeightRatio && aspect >= config.fullWidthWideAspectMin) return "fullWidthStripe"
+            }
+        }
 
         val cx = b.cx / frameW
         val cy = b.cy / frameH
