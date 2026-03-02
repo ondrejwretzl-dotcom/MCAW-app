@@ -243,11 +243,6 @@ class DetectionAnalyzer(
 
     // Distance history for sliding-window relative speed
     private data class DistSample(val tsMs: Long, val distM: Float)
-    // TTC smoothing/hold (prevents blinking when switching TTC source)
-    private var ttcEma: Float = Float.POSITIVE_INFINITY
-    private var ttcEmaValid: Boolean = false
-    private var lastTtcUpdateTsMs: Long = -1L
-
     private var lastTtcHeight: Float = Float.POSITIVE_INFINITY
     private var lastTtcHeightTsMs: Long = -1L
     private val ttcFusionOut: FloatArray = FloatArray(3)
@@ -390,9 +385,8 @@ private fun updateCutInState(tsMs: Long, box: Box, frameW: Float, frameH: Float)
     private val motionByTrack: HashMap<Long, MotionState> = HashMap()
     private var activeMotionTrackId: Long = -1L
 
-    // TTC hold: keep last finite TTC briefly when raw becomes invalid (prevents blinking)
-    private var lastTtcFiniteTsMs: Long = -1L
     private val ttcInvalidHoldMs: Long = 400L
+    private val ttcSmoother = TtcSmoother(ttcInvalidHoldMs)
 
 
     private fun flog(msg: String, force: Boolean = false) {
@@ -828,6 +822,15 @@ if (AppPreferences.debugOverlay) {
 
             val approachSpeedFromDist = relSignedEmaMps.coerceAtLeast(0f)
 
+            // Resolve effective mode early so TTC smoothing can be speed/context-aware.
+            val modeRes = autoModeSwitcher.resolve(
+                selectedMode = AppPreferences.detectionMode,
+                riderSpeedMps = riderSpeedMps,
+                riderSpeedConfidence = riderSpeedConfidence,
+                lastAlertLevel = lastAlertLevel,
+                nowMs = tsMs
+            )
+
             // TTC from bbox growth tends to be more stable than distance derivative
             val boxHPx = (bestBox.y2 - bestBox.y1).coerceAtLeast(0f)
             // If bbox bottom is affected by crop-bottom occlusion, height growth is biased.
@@ -865,7 +868,14 @@ if (AppPreferences.debugOverlay) {
             )
 
             val recedingStableForRelease = relSignedEmaMps < 0f && approachEmaMps < 0.4f && !ttcFromDist.isFinite()
-            val ttc = smoothTtc(ttcRaw, tsMs, recedingStableForRelease)
+            val ttc = ttcSmoother.update(
+                ttcRaw = ttcRaw,
+                tsMs = tsMs,
+                riderSpeedMps = riderSpeedMps,
+                riderSpeedConfidence = riderSpeedConfidence,
+                effectiveMode = modeRes.effectiveMode,
+                recedingStable = recedingStableForRelease
+            )
 
             // TTC slope (sec/sec). Robust + EMA to avoid noise.
             val ttcSlopeSecPerSec: Float = run {
@@ -901,13 +911,7 @@ if (AppPreferences.debugOverlay) {
             val objectSpeedMps =
                 if (riderSpeedMps.isFinite()) (riderSpeedMps - relSpeedSigned) else Float.POSITIVE_INFINITY
 
-            val modeRes = autoModeSwitcher.resolve(
-                selectedMode = AppPreferences.detectionMode,
-                riderSpeedMps = riderSpeedMps,
-                riderSpeedConfidence = riderSpeedConfidence,
-                lastAlertLevel = lastAlertLevel,
-                nowMs = tsMs
-            )
+            // modeRes already resolved above
             if (modeRes.changed) {
                 flog("auto_mode effective=${'$'}{modeName(modeRes.effectiveMode)} reason=${'$'}{modeRes.reason}", force = true)
             }
@@ -1856,10 +1860,7 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
         brakeCueActive = false
         brakeCueStrength = 0f
 
-        ttcEmaValid = false
-        ttcEma = Float.POSITIVE_INFINITY
-        lastTtcUpdateTsMs = -1L
-        lastTtcFiniteTsMs = -1L
+        ttcSmoother.reset()
         lastTtcHeight = Float.POSITIVE_INFINITY
         lastTtcHeightTsMs = -1L
         trendState = TREND_STEADY
@@ -1895,51 +1896,6 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
      * - clamps unrealistic jumps based on dt
      * - asymmetric EMA (faster when TTC decreases)
      */
-    private fun smoothTtc(ttcRaw: Float, tsMs: Long, recedingStable: Boolean = false): Float {
-        val raw = if (ttcRaw.isFinite() && ttcRaw > 0f) ttcRaw.coerceIn(0.05f, 120f) else Float.POSITIVE_INFINITY
-
-        // If TTC becomes invalid, hold the last finite value briefly to avoid UI blinking.
-        if (!raw.isFinite()) {
-            val holdMs = if (recedingStable) 300L else ttcInvalidHoldMs
-            if (ttcEmaValid && ttcEma.isFinite() && lastTtcFiniteTsMs > 0L && (tsMs - lastTtcFiniteTsMs) <= holdMs) {
-                return ttcEma
-            }
-            ttcEmaValid = false
-            ttcEma = Float.POSITIVE_INFINITY
-            lastTtcUpdateTsMs = tsMs
-            return Float.POSITIVE_INFINITY
-        }
-
-        // Remember last finite TTC timestamp
-        lastTtcFiniteTsMs = tsMs
-
-        if (!ttcEmaValid || !ttcEma.isFinite() || lastTtcUpdateTsMs <= 0L) {
-            ttcEma = raw
-            ttcEmaValid = true
-            lastTtcUpdateTsMs = tsMs
-            return ttcEma
-        }
-
-        val dtSec = ((tsMs - lastTtcUpdateTsMs).coerceAtLeast(1L)).toFloat() / 1000f
-        lastTtcUpdateTsMs = tsMs
-
-        // Limit TTC change rate (seconds per second). Allow faster drops than rises.
-        val maxDropRate = 12.0f  // TTC can drop by up to 12s per 1s
-        val maxRiseRate = 3.0f   // TTC can rise by up to 3s per 1s
-        val maxDrop = maxDropRate * dtSec
-        val maxRise = maxRiseRate * dtSec
-
-        val prev = ttcEma
-        val clamped = when {
-            raw < prev -> raw.coerceAtLeast(prev - maxDrop)
-            else -> raw.coerceAtMost(prev + maxRise)
-        }
-
-        val alpha = if (clamped < prev) 0.65f else 0.20f
-        ttcEma = prev + alpha * (clamped - prev)
-        return ttcEma
-    }
-
     /**
      * TTC estimated directly from bbox height growth (less sensitive to distance quantization).
      * Returns null if growth is too small/noisy.
