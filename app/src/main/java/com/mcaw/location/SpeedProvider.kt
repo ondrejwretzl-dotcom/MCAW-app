@@ -39,13 +39,13 @@ class SpeedProvider(private val context: Context) {
         val gps = gpsSource.latest()
 
         val selected = when {
-            ble != null && now - ble.timestampMs <= 2000L ->
+            ble != null && now - ble.timestampMs <= 2000L && ble.speedMps.isFinite() ->
                 Reading(ble.speedMps, Source.BLE, 0.95f, ble.timestampMs)
 
-            gps != null && now - gps.timestampMs <= 2000L ->
+            gps != null && now - gps.timestampMs <= 2000L && gps.speedMps.isFinite() ->
                 Reading(gps.speedMps, Source.GPS, 0.85f, gps.timestampMs)
 
-            gps != null && now - gps.timestampMs <= 4000L ->
+            gps != null && now - gps.timestampMs <= 4000L && gps.speedMps.isFinite() ->
                 Reading(gps.speedMps, Source.GPS, 0.55f, gps.timestampMs)
 
             else ->

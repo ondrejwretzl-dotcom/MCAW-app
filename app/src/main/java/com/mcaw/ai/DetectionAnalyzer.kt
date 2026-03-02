@@ -1166,6 +1166,7 @@ sendOverlayUpdate(
                 box = bestBox,
                 frameW = frameW,
                 frameH = frameH,
+                cropBottomPx = cropBottomPx,
                 dist = distanceM,
                 approachSpeed = approachSpeedMps,
                 relSignedMps = relSignedMps,
@@ -1224,12 +1225,17 @@ sendOverlayUpdate(
             sendMetricsUpdate(
                 dist = distanceM,
                 approachSpeed = approachSpeedMps,
+                relAbsMps = relAbsMps,
                 objectSpeed = objectSpeedMps,
                 riderSpeed = riderSpeedMps,
                 riderSpeedSourceOrdinal = riderSpeedSourceOrdinal,
                 riderSpeedConfidence = riderSpeedConfidence,
                 riderSpeedMethod = riderSpeedMethod,
+                riderSpeedAgeMs = riderSpeedAgeMs,
                 ttc = ttc,
+                ttcHeightSec = ttcHeightSec,
+                ttcDistSec = ttcDistSec,
+                targetTrackId = targetTrackId,
                 level = level,
                 label = label,
                 brakeCue = brakeCue.active,
@@ -1403,6 +1409,7 @@ if (AppPreferences.debugOverlay) {
         box: Box,
         frameW: Float,
         frameH: Float,
+        cropBottomPx: Float = Float.NaN,
         dist: Float,
         approachSpeed: Float,
         relSignedMps: Float,
@@ -1503,6 +1510,16 @@ if (AppPreferences.debugOverlay) {
         i.putExtra("bottom_pred_px", bottomPredPx)
         i.putExtra("dist_ground_pred_m", distGroundPredM)
 
+        // --- Occlusion / bbox bottom estimate diagnostics (PreviewActivity) ---
+        // When roiBottomTouch is true, bbox.bottom is likely clipped by crop-bottom.
+        // In that case, bottom_pred_px provides a heuristic estimate of the true bottom.
+        i.putExtra("crop_bottom_px", cropBottomPx)
+        val bboxExtrapolated = roiBottomTouch && bottomPredPx.isFinite() && (bottomPredPx > box.y2 + 1f)
+        i.putExtra("bbox_extrapolated", bboxExtrapolated)
+        i.putExtra("bbox_bottom_est_px", bottomPredPx)
+        // Reuse dist confidence as a practical proxy; keeps contract light for Patch 1.
+        i.putExtra("bbox_est_conf", if (bboxExtrapolated) distConf else 0f)
+
         // keep ROI always in preview overlay
         i.putExtra("roi_trap_top_y_n", roiN.topY)
         i.putExtra("roi_trap_bottom_y_n", roiN.bottomY)
@@ -1549,18 +1566,27 @@ if (AppPreferences.debugOverlay) {
         i.putExtra("dist_conf", 0f)
         i.putExtra("bottom_pred_px", Float.NaN)
         i.putExtra("dist_ground_pred_m", Float.NaN)
+        i.putExtra("crop_bottom_px", Float.NaN)
+        i.putExtra("bbox_extrapolated", false)
+        i.putExtra("bbox_bottom_est_px", Float.NaN)
+        i.putExtra("bbox_est_conf", 0f)
         ctx.sendBroadcast(i)
     }
 
     private fun sendMetricsUpdate(
         dist: Float,
         approachSpeed: Float,
+        relAbsMps: Float = Float.NaN,
         objectSpeed: Float,
         riderSpeed: Float,
         riderSpeedSourceOrdinal: Int = 0,
         riderSpeedConfidence: Float = 0f,
         riderSpeedMethod: Int = RIDER_SPEED_METHOD_UNKNOWN,
+        riderSpeedAgeMs: Long = 0L,
         ttc: Float,
+        ttcHeightSec: Float = Float.NaN,
+        ttcDistSec: Float = Float.NaN,
+        targetTrackId: Long = -1L,
         level: Int,
         label: String,
         brakeCue: Boolean,
@@ -1586,12 +1612,18 @@ if (AppPreferences.debugOverlay) {
         val i = Intent(ACTION_METRICS_UPDATE).setPackage(ctx.packageName)
         i.putExtra(EXTRA_DISTANCE, dist)
         i.putExtra(EXTRA_SPEED, approachSpeed)
+        // Expanded metrics for on-device LOG and debug parity with Preview HUD.
+        i.putExtra("rel_abs_mps", relAbsMps)
         i.putExtra(EXTRA_OBJECT_SPEED, objectSpeed)
         i.putExtra(EXTRA_RIDER_SPEED, riderSpeed)
         i.putExtra(EXTRA_RIDER_SPEED_SOURCE, riderSpeedSourceOrdinal)
         i.putExtra(EXTRA_RIDER_SPEED_CONFIDENCE, riderSpeedConfidence)
         i.putExtra(EXTRA_RIDER_SPEED_METHOD, riderSpeedMethod)
+        i.putExtra("rider_speed_age_ms", riderSpeedAgeMs)
         i.putExtra(EXTRA_TTC, ttc)
+        i.putExtra("ttc_h", ttcHeightSec)
+        i.putExtra("ttc_d", ttcDistSec)
+        i.putExtra("target_track_id", targetTrackId)
         i.putExtra(EXTRA_LEVEL, level)
         i.putExtra(EXTRA_LABEL, label)
         i.putExtra(EXTRA_BRAKE_CUE, brakeCue)
@@ -1614,9 +1646,13 @@ if (AppPreferences.debugOverlay) {
         sendMetricsUpdate(
             dist = Float.NaN,
             approachSpeed = Float.NaN,
+            relAbsMps = Float.NaN,
             objectSpeed = Float.NaN,
             riderSpeed = Float.NaN,
             ttc = Float.NaN,
+            ttcHeightSec = Float.NaN,
+            ttcDistSec = Float.NaN,
+            targetTrackId = -1L,
             level = 0,
             label = "",
             brakeCue = false,
