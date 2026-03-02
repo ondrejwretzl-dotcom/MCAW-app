@@ -14,6 +14,7 @@ import android.os.Handler
 import android.os.Looper
 import android.view.View
 import android.widget.TextView
+import android.widget.LinearLayout
 import androidx.activity.ComponentActivity
 import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.core.CameraSelector
@@ -60,7 +61,12 @@ class PreviewActivity : ComponentActivity() {
     private lateinit var speedMonitor: SpeedMonitor
 
     private lateinit var txtHudPrimary: TextView
-    private lateinit var txtHudMetrics: TextView
+
+    private lateinit var hudMetricsRow: LinearLayout
+    private lateinit var txtHudMetricsCol1: TextView
+    private lateinit var txtHudMetricsCol2: TextView
+    private lateinit var txtHudMetricsCol3: TextView
+
     private lateinit var txtHudRisk: TextView
 
     private val searchHandler = Handler(Looper.getMainLooper())
@@ -98,28 +104,58 @@ class PreviewActivity : ComponentActivity() {
         }.getOrDefault("UNK")
     }
 
-    private fun format3WithUnit(value: Float, unit: String): String = "${format3(value)} $unit"
+        private fun format2(value: Float): String {
+        if (!value.isFinite()) return "—"
+        val rounded = (value * 100f).roundToInt() / 100f
+        val sign = if (rounded < 0f) "-" else ""
+        val absV = kotlin.math.abs(rounded)
+        val intPart = absV.toInt()
+        val frac = ((absV - intPart) * 100f).roundToInt().coerceIn(0, 99)
+        val fracTxt = if (frac < 10) "0$frac" else frac.toString()
+        return "$sign$intPart.$fracTxt"
+    }
+
+    private fun format2WithUnit(value: Float, unit: String): String = "${format2(value)} $unit"
 
     private fun renderHudMetrics() {
-        // Fixed line order to avoid jumping.
+        // Fixed order + 3 columns so it doesn't truncate and doesn't jump.
         val trackId = if (overlay.targetPresent && overlay.targetTrackId >= 0L) overlay.targetTrackId.toString() else "—"
+
         val ridMps = overlay.riderSpeed
-        val ridKmh = if (ridMps.isFinite()) ridMps * 3.6f else Float.NaN
         val ridSrc = speedSourceLabel()
         val ridConf = overlay.riderSpeedConfidence
         val ridAge = overlay.riderSpeedAgeMs
 
-        txtHudMetrics.visibility = View.VISIBLE
-        txtHudMetrics.text = listOf(
+        // Object speed (m/s) - already broadcast as "object_speed"
+        val objMps = overlay.objectSpeed
+
+        // Show row + fill columns
+        hudMetricsRow.visibility = View.VISIBLE
+
+        val col1 = listOf(
             "Track ID: $trackId",
-            "TTC(fused): ${format3WithUnit(overlay.ttc, "s")}",
-            "TTC(H):    ${format3WithUnit(overlay.ttcHeight, "s")}",
-            "TTC(D):    ${format3WithUnit(overlay.ttcDist, "s")}",
-            "REL(signed): ${format3WithUnit(overlay.relSignedMps, "m/s")}",
-            "REL(abs):    ${format3WithUnit(overlay.relAbsMps, "m/s")}",
-            "DIST:      ${format3WithUnit(overlay.distance, "m")}",
-            "RIDER:     ${format3WithUnit(ridMps, "m/s")} (${format3WithUnit(ridKmh, "km/h")}) src=$ridSrc conf=${format3(ridConf)} age=${ridAge}ms"
+            "TTC(fused): ${format2WithUnit(overlay.ttc, "s")}",
+            "TTC(H):    ${format2WithUnit(overlay.ttcHeight, "s")}",
+            "TTC(D):    ${format2WithUnit(overlay.ttcDist, "s")}"
         ).joinToString("\n")
+
+        val col2 = listOf(
+            "REL(signed): ${format2WithUnit(overlay.relSignedMps, "m/s")}",
+            "REL(abs):    ${format2WithUnit(overlay.relAbsMps, "m/s")}",
+            "OBJ:         ${format2WithUnit(objMps, "m/s")}",
+            "DIST:        ${format2WithUnit(overlay.distance, "m")}"
+        ).joinToString("\n")
+
+        val col3 = listOf(
+            "RIDER: ${format2WithUnit(ridMps, "m/s")}",
+            "src=$ridSrc",
+            "conf=${format2(ridConf)}",
+            "age=${ridAge}ms"
+        ).joinToString("\n")
+
+        txtHudMetricsCol1.text = col1
+        txtHudMetricsCol2.text = col2
+        txtHudMetricsCol3.text = col3
     }
 
     private fun clearTrackedHudValues(keepRider: Boolean) {
@@ -287,7 +323,12 @@ class PreviewActivity : ComponentActivity() {
 
         val txtPreviewBuild = findViewById<TextView>(R.id.txtPreviewBuild)
         txtHudPrimary = findViewById(R.id.txtHudPrimary)
-        txtHudMetrics = findViewById(R.id.txtHudMetrics)
+
+        hudMetricsRow = findViewById(R.id.hudMetricsRow)
+        txtHudMetricsCol1 = findViewById(R.id.txtHudMetricsCol1)
+        txtHudMetricsCol2 = findViewById(R.id.txtHudMetricsCol2)
+        txtHudMetricsCol3 = findViewById(R.id.txtHudMetricsCol3)
+
         txtHudRisk = findViewById(R.id.txtHudRisk)
 
         speedProvider = SpeedProvider(this)

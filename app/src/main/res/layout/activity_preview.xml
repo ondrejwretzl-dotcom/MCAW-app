@@ -32,16 +32,45 @@
             android:textSize="13sp"
             android:text="Živý náhled aktivní" />
 
-        <TextView
-            android:id="@+id/txtHudMetrics"
+                <LinearLayout
+            android:id="@+id/hudMetricsRow"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textColor="#D1D5DB"
-            android:textSize="12sp"
-            android:typeface="monospace"
-            android:maxLines="4"
-            android:visibility="gone"
-            android:text="" />
+            android:orientation="horizontal"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/txtHudMetricsCol1"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textColor="#D1D5DB"
+                android:textSize="12sp"
+                android:typeface="monospace"
+                android:text="" />
+
+            <TextView
+                android:id="@+id/txtHudMetricsCol2"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textColor="#D1D5DB"
+                android:textSize="12sp"
+                android:typeface="monospace"
+                android:paddingStart="10dp"
+                android:text="" />
+
+            <TextView
+                android:id="@+id/txtHudMetricsCol3"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textColor="#D1D5DB"
+                android:textSize="12sp"
+                android:typeface="monospace"
+                android:paddingStart="10dp"
+                android:text="" />
+        </LinearLayout>
 
         <TextView
             android:id="@+id/txtHudRisk"

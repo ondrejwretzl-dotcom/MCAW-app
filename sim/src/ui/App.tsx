@@ -174,7 +174,74 @@ function defaultDraft(): ScenarioDraft {
 }
 
 function isFrameEvent(x: any): boolean {
-  return x && (x.type === 'FRAME' || (x.in && x.out) || (x.in && x.tSec !== undefined));
+  // Legacy formats:
+  // - {type:"FRAME", tSec, in:{...}, out:{...}}
+  // - {in:{...}, out:{...}}
+  // Newer log_analyzer export (mcaw.frames.v1):
+  // - {tMs, distanceM, approachSpeedMps, ttcSec, ...} (flat)
+  // - {type:"META", ...} should be ignored
+  if (!x) return false;
+  if (x.type === 'META') return false;
+  if (x.type === 'FRAME' || (x.in && x.out) || (x.in && x.tSec !== undefined)) return true;
+  // Accept flat mcaw.frames.v1 frames
+  if (x.tMs !== undefined && (x.distanceM !== undefined || x.distM !== undefined) && x.ttcSec !== undefined) return true;
+  return false;
+}
+
+function toFiniteOrUndef(v: any): number | undefined {
+  const n = typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : NaN;
+  return Number.isFinite(n) ? n : undefined;
+}
+
+function normalizeFrameEvent(it: any, base: string): { id: string; tSec: number; input: FrameIn; out?: FrameOut } | null {
+  // Legacy
+  if (it.type === 'FRAME' || it.in) {
+    const tSec = Number(it.tSec ?? it.t ?? 0);
+    const input: FrameIn = it.in ?? it.input ?? {};
+    const out: FrameOut | undefined = it.out ?? it.output ?? it.outKotlin;
+    const scenarioFromLine = String(it.scenario ?? it.scenarioId ?? '').trim();
+    const id = scenarioFromLine.length > 0 ? scenarioFromLine : base;
+    return { id, tSec, input, out };
+  }
+
+  // Flat mcaw.frames.v1 from log_analyzer
+  const tMs = toFiniteOrUndef(it.tMs);
+  if (tMs === undefined) return null;
+  const tSec = tMs / 1000.0;
+
+  const idFromLine = String(it.scenario ?? it.scenarioId ?? it.source ?? '').trim();
+  const id = idFromLine.length > 0 ? idFromLine : base;
+
+  const input: FrameIn = {
+    effectiveMode: toFiniteOrUndef(it.effectiveMode) ?? 1,
+    distanceM: toFiniteOrUndef(it.distanceM) ?? toFiniteOrUndef(it.distM) ?? 0,
+    approachSpeedMps: toFiniteOrUndef(it.approachSpeedMps) ?? toFiniteOrUndef(it.approachSpeed) ?? toFiniteOrUndef(it.relV) ?? 0,
+    ttcSec: toFiniteOrUndef(it.ttcSec) ?? toFiniteOrUndef(it.ttc) ?? 0,
+    ttcSlopeSecPerSec: toFiniteOrUndef(it.ttcSlopeSecPerSec) ?? 0,
+    roiContainment: toFiniteOrUndef(it.roiContainment) ?? toFiniteOrUndef(it.roi) ?? 1,
+    qualityWeight: toFiniteOrUndef(it.qualityWeight) ?? toFiniteOrUndef(it.quality) ?? 1,
+    brakeCueActive: Boolean(it.brakeCueActive ?? it.brakeCue ?? false),
+    brakeCueStrength: toFiniteOrUndef(it.brakeCueStrength) ?? (Boolean(it.brakeCueActive ?? it.brakeCue) ? 1 : 0),
+    occlusionCloseFactor: toFiniteOrUndef(it.occlusionCloseFactor) ?? 0,
+    occlusionCloseEligible: Boolean(it.occlusionCloseEligible ?? false),
+    // Optional / newer
+    distanceConfidence: toFiniteOrUndef(it.distanceConfidence),
+    egoBrakingConfidence: toFiniteOrUndef(it.egoBrakingConfidence),
+    riderSpeedMps: toFiniteOrUndef(it.riderSpeedMps),
+    riderSpeedConfidence: toFiniteOrUndef(it.riderSpeedConfidence),
+    leanDeg: it.leanDeg ?? null,
+  } as any;
+
+  const out: FrameOut | undefined =
+    it.level !== undefined || it.riskScore !== undefined || it.reasonBits !== undefined
+      ? ({
+          level: toFiniteOrUndef(it.level) ?? 0,
+          riskScore: toFiniteOrUndef(it.riskScore) ?? 0,
+          reasonBits: toFiniteOrUndef(it.reasonBits) ?? 0,
+        } as any)
+      : undefined;
+
+  return { id, tSec, input, out };
 }
 
 async function readFiles(files: FileList): Promise<ScenarioDoc[]> {
@@ -193,11 +260,9 @@ async function readFiles(files: FileList): Promise<ScenarioDoc[]> {
       const items = parseJsonl(text).filter(isFrameEvent);
       const framesByScenario: Record<string, FrameRow[]> = {};
       for (const it of items) {
-        const tSec = Number(it.tSec ?? it.t ?? 0);
-        const input: FrameIn = it.in ?? it.input ?? {};
-        const out: FrameOut | undefined = it.out ?? it.output ?? it.outKotlin;
-        const scenarioFromLine = String(it.scenario ?? it.scenarioId ?? '').trim();
-        const id = scenarioFromLine.length > 0 ? scenarioFromLine : base;
+        const norm = normalizeFrameEvent(it, base);
+        if (!norm) continue;
+        const { id, tSec, input, out } = norm;
         // Guard required fields
         if (input.distanceM === undefined || input.approachSpeedMps === undefined || input.ttcSec === undefined) continue;
         if (!framesByScenario[id]) framesByScenario[id] = [];
