@@ -54,7 +54,7 @@ class TtcSmoother(
         // Remember last finite TTC timestamp
         lastTtcFiniteTsMs = tsMs
 
-        if (!ttcEmaValid || !ttcEma.isFinite() || lastTtcUpdateTsMs <= 0L) {
+        if (!ttcEmaValid || !ttcEma.isFinite() || lastTtcUpdateTsMs < 0L) {
             ttcEma = raw
             ttcEmaValid = true
             lastTtcUpdateTsMs = tsMs
