@@ -46,4 +46,17 @@ class TtcSmootherTest {
         assertEquals(8.36f, city, 1e-4f)
         assertEquals(8.44f, hwy, 1e-4f)
     }
+
+    @Test
+    fun `second sample after t0 uses smoothing instead of reinit`() {
+        val smoother = TtcSmoother(ttcInvalidHoldMs = 400L)
+
+        assertEquals(10.0f, smoother.update(10f, 0L, 5f, 1f, AppPreferences.MODE_CITY), 1e-6f)
+
+        val next = smoother.update(8f, 1000L, 5f, 1f, AppPreferences.MODE_CITY)
+
+        // Must use CITY alphaDown=0.60 on 10 -> 8, i.e. 8.8 (not raw 8.0 re-init).
+        assertEquals(8.8f, next, 1e-4f)
+    }
+
 }
