@@ -32,13 +32,16 @@ class LocationSpeedSource(private val context: Context) {
     @SuppressLint("MissingPermission")
     fun start() {
         if (started || !hasFineLocation()) return
-        started = true
+        var requested = false
         if (manager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
             manager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 500L, 0.2f, listener, Looper.getMainLooper())
+            requested = true
         }
         if (manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
             manager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 1000L, 0.3f, listener, Looper.getMainLooper())
+            requested = true
         }
+        started = requested
     }
 
     fun stop() {
