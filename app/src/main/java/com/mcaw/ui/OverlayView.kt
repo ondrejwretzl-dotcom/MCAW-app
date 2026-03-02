@@ -23,6 +23,15 @@ class OverlayView @JvmOverloads constructor(
         strokeWidth = 4f
     }
 
+    // Dashed bbox used when bottom is estimated due to crop-bottom occlusion.
+    private val estBoxPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.CYAN
+        style = Paint.Style.STROKE
+        strokeWidth = 4f
+        pathEffect = DashPathEffect(floatArrayOf(14f, 10f), 0f)
+        alpha = 220
+    }
+
     private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.GREEN
         style = Paint.Style.FILL
@@ -179,6 +188,34 @@ class OverlayView @JvmOverloads constructor(
 
     // True if current bbox is touching ROI bottom edge (partial occlusion likely).
     var roiBottomTouch: Boolean = false
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    /** Crop-bottom Y in frame pixels (used to validate bbox bottom estimation). */
+    var cropBottomPx: Float = Float.NaN
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    /** True when analyzer reports that bbox bottom is extrapolated/estimated (occlusion confirmed). */
+    var bboxExtrapolated: Boolean = false
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    /** Estimated bbox bottom Y in frame pixels. */
+    var bboxBottomEstPx: Float = Float.NaN
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    /** Confidence (0..1) for bbox estimation (proxy). */
+    var bboxEstConf: Float = 0f
         set(value) {
             field = value
             invalidate()
@@ -526,6 +563,30 @@ class OverlayView @JvmOverloads constructor(
             canvas.drawRect(mappedBox, boxPaint)
             drawCornerDots(canvas, mappedBox)
             if (brakeCueActive) drawBrakeCue(canvas, mappedBox)
+
+            // Draw estimated bbox (dashed) only when occlusion is confirmed AND estimate is valid.
+            // PreviewActivity uses this to make "measured" vs "estimated" geometry obvious.
+            if (bboxExtrapolated && bboxEstConf >= 0.35f && bboxBottomEstPx.isFinite()) {
+                val viewW = width.toFloat()
+                val viewH = height.toFloat()
+                if (viewW > 0f && viewH > 0f && frameWidth > 0f && frameHeight > 0f) {
+                    val scale = min(viewW / frameWidth, viewH / frameHeight)
+                    val scaledW = frameWidth * scale
+                    val scaledH = frameHeight * scale
+                    val dx = (viewW - scaledW) / 2f
+                    val dy = (viewH - scaledH) / 2f
+
+                    val capPx = max(40f, frameHeight * 0.12f)
+                    val maxBottomPx = if (cropBottomPx.isFinite()) (cropBottomPx + capPx) else frameHeight
+                    val estBottomPx = bboxBottomEstPx
+                    val valid = estBottomPx >= b.y2 && estBottomPx <= maxBottomPx
+                    if (valid) {
+                        val mappedBottom = (estBottomPx * scale + dy).coerceIn(mappedBox.top, viewH)
+                        val estRect = RectF(mappedBox.left, mappedBox.top, mappedBox.right, mappedBottom)
+                        canvas.drawRect(estRect, estBoxPaint)
+                    }
+                }
+            }
         }
 
 

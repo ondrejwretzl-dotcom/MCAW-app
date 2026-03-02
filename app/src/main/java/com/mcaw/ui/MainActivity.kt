@@ -135,9 +135,12 @@ class MainActivity : ComponentActivity() {
             lastMetricsUpdateMs = SystemClock.elapsedRealtime()
 
             val ttc = intent.getFloatExtra(DetectionAnalyzer.EXTRA_TTC, Float.POSITIVE_INFINITY)
+            val ttcH = intent.getFloatExtra("ttc_h", Float.NaN)
+            val ttcD = intent.getFloatExtra("ttc_d", Float.NaN)
             val distance =
                 intent.getFloatExtra(DetectionAnalyzer.EXTRA_DISTANCE, Float.POSITIVE_INFINITY)
             val speed = intent.getFloatExtra(DetectionAnalyzer.EXTRA_SPEED, Float.POSITIVE_INFINITY)
+            val relAbsMps = intent.getFloatExtra("rel_abs_mps", Float.NaN)
             val relSigned = intent.getFloatExtra(DetectionAnalyzer.EXTRA_REL_SIGNED_MPS, Float.NaN)
             val trendState = intent.getIntExtra(DetectionAnalyzer.EXTRA_TREND_STATE, DetectionAnalyzer.TREND_STEADY)
             val steadySuppressActive = intent.getBooleanExtra(DetectionAnalyzer.EXTRA_STEADY_SUPPRESS_ACTIVE, false)
@@ -146,6 +149,11 @@ class MainActivity : ComponentActivity() {
                 intent.getFloatExtra(DetectionAnalyzer.EXTRA_OBJECT_SPEED, Float.POSITIVE_INFINITY)
             val riderSpeed =
                 intent.getFloatExtra(DetectionAnalyzer.EXTRA_RIDER_SPEED, Float.POSITIVE_INFINITY)
+            val riderSpeedSrcOrdinal = intent.getIntExtra(DetectionAnalyzer.EXTRA_RIDER_SPEED_SOURCE, 0)
+            val riderSpeedConf = intent.getFloatExtra(DetectionAnalyzer.EXTRA_RIDER_SPEED_CONFIDENCE, 0f)
+            val riderSpeedMethod = intent.getIntExtra(DetectionAnalyzer.EXTRA_RIDER_SPEED_METHOD, DetectionAnalyzer.RIDER_SPEED_METHOD_UNKNOWN)
+            val riderSpeedAgeMs = intent.getLongExtra("rider_speed_age_ms", 0L)
+            val trackId = intent.getLongExtra("target_track_id", -1L)
             val level = intent.getIntExtra(DetectionAnalyzer.EXTRA_LEVEL, 0)
             val alertReason = intent.getStringExtra(DetectionAnalyzer.EXTRA_ALERT_REASON) ?: ""
             val reasonBits = intent.getIntExtra(DetectionAnalyzer.EXTRA_REASON_BITS, 0)
@@ -174,7 +182,6 @@ class MainActivity : ComponentActivity() {
             applyRiderSpeedText(riderText, fromMetrics = true)
 
             val speedKmh = if (relDerivValid && speed.isFinite()) speed * 3.6f else Float.POSITIVE_INFINITY
-            val relSignedKmh = if (relDerivValid && relSigned.isFinite()) relSigned * 3.6f else Float.NaN
             val objKmh = if (objectSpeed.isFinite()) objectSpeed * 3.6f else Float.POSITIVE_INFINITY
 
             if (hasTarget) {
@@ -194,19 +201,36 @@ class MainActivity : ComponentActivity() {
             updateBrakeLamp(brakeCue)
             updateWhy(disp.level, disp.why)
 
-            val relKmhLog = if (speed.isFinite()) speed * 3.6f else Float.POSITIVE_INFINITY
-            val objKmhLog = if (objectSpeed.isFinite()) objectSpeed * 3.6f else Float.POSITIVE_INFINITY
+            // LOG (on-device) should be close to Preview HUD for quick diagnosis.
+            val srcLabel = try {
+                SpeedProvider.Source.values().getOrNull(riderSpeedSrcOrdinal)?.name ?: riderSpeedSrcOrdinal.toString()
+            } catch (_: Throwable) {
+                riderSpeedSrcOrdinal.toString()
+            }
+
             addLog(
-                "Metriky: TTC ${formatMetric(ttc, "s")} · " +
-                    "Vzdálenost ${formatMetric(distance, "m")} · " +
-                    "Rel ${formatMetric(relKmhLog, "km/h")} · " +
-                    "Objekt ${mappedLabel.ifBlank { "--" }}" +
-                    (if (AppPreferences.debugOverlay && alertReason.isNotBlank()) " · WHY $alertReason" else "")
+                "MET: " +
+                    "id=${if (trackId >= 0L) trackId else "—"} " +
+                    "ttc=${formatMetric(ttc, "s")} " +
+                    "h=${formatMetric(ttcH, "s")} " +
+                    "d=${formatMetric(ttcD, "s")} " +
+                    "dist=${formatMetric(distance, "m")} " +
+                    "relS=${formatMetric(relSigned, "m/s")} " +
+                    "relA=${formatMetric(if (relAbsMps.isFinite()) relAbsMps else speed, "m/s")} " +
+                    "obj=${formatMetric(objectSpeed, "m/s")} " +
+                    "rid=${formatMetric(riderSpeed, "m/s")} " +
+                    "src=$srcLabel conf=${"%.2f".format(riderSpeedConf)} age=${riderSpeedAgeMs}ms " +
+                    "L$level ${mappedLabel.ifBlank { "--" }} " +
+                    (if (riskScore.isFinite()) "risk=${"%.2f".format(riskScore)} " else "") +
+                    (if (AppPreferences.debugOverlay && alertReason.isNotBlank()) "why=${alertReason.replace("\n", " ").take(60)}" else "")
             )
+
             logActivity(
-                "metrics ttc=${formatMetric(ttc, "s")} dist=${formatMetric(distance, "m")} " +
-                    "rel=${formatMetric(relKmhLog, "km/h")} obj=${formatMetric(objKmhLog, "km/h")} " +
-                    "level=$level brakeCue=$brakeCue reason=${alertReason.replace("\n"," ").take(120)}"
+                "metrics id=$trackId ttc=${formatMetric(ttc, "s")} ttcH=${formatMetric(ttcH, "s")} ttcD=${formatMetric(ttcD, "s")} " +
+                    "dist=${formatMetric(distance, "m")} relS=${formatMetric(relSigned, "m/s")} relA=${formatMetric(if (relAbsMps.isFinite()) relAbsMps else speed, "m/s")} " +
+                    "obj=${formatMetric(objectSpeed, "m/s")} rid=${formatMetric(riderSpeed, "m/s")} " +
+                    "src=$srcLabel conf=${"%.2f".format(riderSpeedConf)} ageMs=$riderSpeedAgeMs method=$riderSpeedMethod " +
+                    "level=$level brakeCue=$brakeCue reason=${alertReason.replace("\n", " ").take(120)}"
             )
         }
     }
@@ -559,7 +583,7 @@ class MainActivity : ComponentActivity() {
             textSize = 13f
             typeface = android.graphics.Typeface.MONOSPACE
             text = buildString {
-                append("Aktivity:\n")
+                append("LOG:\n")
                 logLines.forEach { line ->
                     append("• ")
                     append(line)
@@ -571,7 +595,7 @@ class MainActivity : ComponentActivity() {
         activityDialogText = tv
 
         activityDialog = androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle("Aktivity")
+            .setTitle("LOG")
             .setView(scroll)
             .setPositiveButton("ZAVŘÍT") { d, _ -> d.dismiss() }
             .setOnDismissListener {

@@ -19,7 +19,9 @@ class LocationSpeedSource(private val context: Context) {
 
     private val listener = object : LocationListener {
         override fun onLocationChanged(location: Location) {
-            val speed = if (location.hasSpeed()) location.speed else 0f
+            // IMPORTANT: if the Location sample does not carry a speed field,
+            // do NOT coerce to 0.0 (that creates false "standing" states downstream).
+            val speed = if (location.hasSpeed()) location.speed else Float.NaN
             latestSample = Sample(speed, android.os.SystemClock.elapsedRealtime())
         }
 
