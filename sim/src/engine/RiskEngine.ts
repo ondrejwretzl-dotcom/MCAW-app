@@ -68,6 +68,11 @@ export interface EvaluateInput {
   suppressSteadyGapHard?: boolean;
   suppressStanding?: boolean;
   disableTtcApproachWeight?: boolean;
+  /**
+   * B2: Cut-in / rapid hazard onset – allow bypassing EMA integration for a short window.
+   * Mirrors app RiskEngine.kt: when true, output riskScore uses rawRisk (post multipliers) for this frame.
+   */
+  bypassEma?: boolean;
   qualityWeight?: number;
   riderSpeedMps: number;
   riderSpeedConfidence: number;
@@ -302,14 +307,24 @@ export class RiskEngineRef {
     // --- EMA integrate ---
     const riseAlpha = 0.30;
     const fallAlpha = 0.15;
+    // In app, bypassEma is enabled only during cut-in boost window.
+    // In sim/scenarios, cutInActive typically models that window, so default to cutInActive if not provided.
+    const bypassEma = (input.bypassEma ?? input.cutInActive) === true;
+
     if (!this.emaInit) {
       this.emaRisk = rawRisk;
       this.emaInit = true;
     } else {
-      const a = rawRisk >= this.emaRisk ? riseAlpha : fallAlpha;
-      this.emaRisk += a * (rawRisk - this.emaRisk);
+      if (bypassEma) {
+        // Align upwards only (match Kotlin): immediate reaction now, no drop when bypass ends.
+        if (rawRisk > this.emaRisk) this.emaRisk = rawRisk;
+      } else {
+        const a = rawRisk >= this.emaRisk ? riseAlpha : fallAlpha;
+        this.emaRisk += a * (rawRisk - this.emaRisk);
+      }
     }
-    let risk = clamp(this.emaRisk, 0, 1);
+
+    let risk = clamp(bypassEma ? rawRisk : this.emaRisk, 0, 1);
     if (input.suppressAdjacentOvertake) risk *= S_ADJACENT_OVERTAKE;
     if (occlusionCandidate && !occlusionConfirmed) risk *= S_BOTTOM_TOUCH_CANDIDATE;
     if (input.suppressRecedingObject) risk *= S_RECEDING;

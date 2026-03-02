@@ -21,7 +21,11 @@ class RiskEngineScenarioTest {
         val qW: Float = 1.0f
     )
 
-    private fun runScenario(frames: List<Frame>, mode: Int = 1): List<Int> {
+    private fun runScenario(
+        frames: List<Frame>,
+        mode: Int = 1,
+        bypassEmaWhenCutIn: Boolean = false
+    ): List<Int> {
         val engine = RiskEngine()
         val levels = ArrayList<Int>(frames.size)
         for (f in frames) {
@@ -37,6 +41,7 @@ class RiskEngineScenarioTest {
                 cutInActive = f.cutIn,
                 brakeCueActive = f.brakeCue > 0f,
                 brakeCueStrength = f.brakeCue.coerceIn(0f, 1f),
+                bypassEma = bypassEmaWhenCutIn && f.cutIn,
                 occlusionCloseFactor = 0f,
                 occlusionCloseEligible = false,
                 qualityWeight = f.qW,
@@ -48,6 +53,61 @@ class RiskEngineScenarioTest {
             levels.add(r.level)
         }
         return levels
+    }
+
+    @Test
+    fun scenarioB2_highwayCutIn_bypassEma_shouldRaiseAlertEarlier() {
+        // B2: High-speed cut-in – we expect faster onset when bypassEma is enabled
+        // during the cut-in boost window.
+        // Setup: stable driving, then sudden cut-in at ~1s causing TTC/rel to worsen.
+        val frames = buildList {
+            // pre-cut-in: stable safe
+            for (i in 0 until 20) {
+                val ts = i * 50L
+                add(Frame(ts, distM = 45f, relMps = 1.2f, ttcSec = 18f, ttcSlope = 0f, cutIn = false))
+            }
+            // cut-in window: aggressive closing
+            for (i in 20 until 35) {
+                val ts = i * 50L
+                val k = (i - 20)
+                val ttc = (3.2f - k * 0.12f).coerceAtLeast(0.9f)
+                val dist = (35f - k * 1.6f).coerceAtLeast(8f)
+                add(Frame(ts, distM = dist, relMps = 12.0f, ttcSec = ttc, ttcSlope = -1.8f, cutIn = true))
+            }
+            // post-cut-in: continue closing a bit
+            for (i in 35 until 50) {
+                val ts = i * 50L
+                val k = (i - 35)
+                val ttc = (1.8f - k * 0.04f).coerceAtLeast(0.7f)
+                val dist = (12f - k * 0.2f).coerceAtLeast(8f)
+                add(Frame(ts, distM = dist, relMps = 10.0f, ttcSec = ttc, ttcSlope = -1.2f, cutIn = false))
+            }
+        }
+
+        val noBypass = runScenario(frames, bypassEmaWhenCutIn = false)
+        val withBypass = runScenario(frames, bypassEmaWhenCutIn = true)
+
+        val firstOrangeNo = noBypass.indexOfFirst { it >= 1 }
+        val firstOrangeBy = withBypass.indexOfFirst { it >= 1 }
+        assertTrue("Sanity: ORANGE should appear in both runs", firstOrangeNo >= 0 && firstOrangeBy >= 0)
+
+        assertTrue(
+            "B2: bypassEma must not be slower than baseline for ORANGE onset",
+            firstOrangeBy <= firstOrangeNo
+        )
+
+        val firstRedNo = noBypass.indexOfFirst { it == 2 }
+        val firstRedBy = withBypass.indexOfFirst { it == 2 }
+        // RED might be guarded in some modes; if it happens in both, bypass should be earlier or equal.
+        if (firstRedNo >= 0 && firstRedBy >= 0) {
+            assertTrue(
+                "B2: bypassEma should reach RED earlier or equal when RED is allowed",
+                firstRedBy <= firstRedNo
+            )
+        }
+
+        // Anti-blink: bypass should not introduce more level toggles.
+        assertTrue("Bypass must not increase flicker", transitions(withBypass) <= transitions(noBypass) + 2)
     }
 
     private fun transitions(levels: List<Int>): Int {

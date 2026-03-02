@@ -96,6 +96,8 @@ object ScenarioRunner {
                 cutInActive = f.cutInActive,
                 brakeCueActive = f.brakeCueActive,
                 brakeCueStrength = f.brakeCueStrength,
+                // Mirror app behavior: during cut-in boost window the pipeline bypasses EMA risk integration.
+                bypassEma = f.cutInActive,
                 occlusionCloseFactor = occlusionCloseFactor,
                 occlusionCloseEligible = occlusionCloseEligible,
                 qualityWeight = f.qualityWeight,

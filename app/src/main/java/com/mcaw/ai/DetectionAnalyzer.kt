@@ -1061,6 +1061,8 @@ if (AppPreferences.debugOverlay) {
             // Distance confidence for RiskEngine: down-weight untrusted distance sources (esp. occlusion fallbacks).
             val distanceConfidence = distConf
 
+            val cutInBoostActive = (cutInBoostUntilMs > 0L && tsMs <= cutInBoostUntilMs)
+
             val risk = riskEngine.evaluate(
         tsMs = tsMs,
         effectiveMode = modeRes.effectiveMode,
@@ -1071,9 +1073,12 @@ if (AppPreferences.debugOverlay) {
         ttcSlopeSecPerSec = riskTtcSlope,
         roiContainment = roiContainment,
         egoOffsetN = egoOffset,
-        cutInActive = (cutInBoostUntilMs > 0L && tsMs <= cutInBoostUntilMs),
+        cutInActive = cutInBoostActive,
         brakeCueActive = brakeCue.active,
         brakeCueStrength = brakeCue.strength,
+        // B2: During cut-in boost window, bypass EMA integration to avoid delayed alert onset.
+        // Hysteresis still stabilizes transitions.
+        bypassEma = cutInBoostActive,
         occlusionCloseFactor = occlClose,
         occlusionCloseEligible = occlCloseEligible,
         occlusionCandidate = occlusionCandidate,
@@ -1222,12 +1227,6 @@ sendOverlayUpdate(
                     "ttcH=${ttcFromHeightsHeld ?: Float.NaN} ttcD=$ttcFromDist ttc=$ttc wd=${ttcFusionOut[0]} mr=${ttcFusionOut[1]} sanity=${if (ttcFusionOut[2] > 0.5f) 1 else 0}"
             )
 
-            // Keep metrics inputs explicit/local to avoid accidental unresolved references
-            // after nearby refactors.
-            val ttcHeightSecForMetrics = ttcFromHeightsHeld ?: Float.NaN
-            val ttcDistSecForMetrics = ttcFromDist
-            val targetTrackIdForMetrics = bestTrack.id
-
             sendMetricsUpdate(
                 dist = distanceM,
                 approachSpeed = approachSpeedMps,
@@ -1239,9 +1238,9 @@ sendOverlayUpdate(
                 riderSpeedMethod = riderSpeedMethod,
                 riderSpeedAgeMs = riderSpeedAgeMs,
                 ttc = ttc,
-                ttcHeightSec = ttcHeightSecForMetrics,
-                ttcDistSec = ttcDistSecForMetrics,
-                targetTrackId = targetTrackIdForMetrics,
+                ttcHeightSec = ttcHeightSec,
+                ttcDistSec = ttcDistSec,
+                targetTrackId = targetTrackId,
                 level = level,
                 label = label,
                 brakeCue = brakeCue.active,

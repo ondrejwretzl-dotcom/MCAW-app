@@ -294,6 +294,18 @@ class RiskEngine {
         suppressSteadyGapHard: Boolean = false,
         suppressStanding: Boolean = false,
         disableTtcApproachWeight: Boolean = false,
+        /**
+         * B2: Cut-in / rapid hazard onset – allow bypassing EMA integration for a short window.
+         *
+         * Why:
+         * - Hysteresis stabilizes level transitions, but EMA on riskScore can delay the rise.
+         * - For high-speed cut-in we want immediate rawRisk response without breaking global smoothing.
+         *
+         * Contract:
+         * - When true, this call uses rawRisk (post multipliers) as riskScore for this frame.
+         * - EMA state is still updated (aligned upwards) to keep continuity when bypass ends.
+         */
+        bypassEma: Boolean = false,
         // C2: quality acts as a weight (0..1), not a hard gate.
         // 1.0 = full confidence, lower values = more conservative thresholds and lower gain.
         qualityWeight: Float = 1f,
@@ -404,14 +416,23 @@ class RiskEngine {
         // --- EMA integrate (continuity) ---
         val riseAlpha = 0.30f
         val fallAlpha = 0.15f
+
+        // Always keep EMA state in sync (for continuity), but optionally bypass its output.
         if (!emaInit) {
             emaRisk = rawRisk
             emaInit = true
         } else {
-            val a = if (rawRisk >= emaRisk) riseAlpha else fallAlpha
-            emaRisk += a * (rawRisk - emaRisk)
+            if (bypassEma) {
+                // Align upwards only: when bypass is active, we want immediate reaction,
+                // but we also want to avoid a sudden drop when bypass ends.
+                if (rawRisk > emaRisk) emaRisk = rawRisk
+            } else {
+                val a = if (rawRisk >= emaRisk) riseAlpha else fallAlpha
+                emaRisk += a * (rawRisk - emaRisk)
+            }
         }
-        var risk = emaRisk.coerceIn(0f, 1f)
+
+        var risk = (if (bypassEma) rawRisk else emaRisk).coerceIn(0f, 1f)
 
         if (suppressAdjacentOvertake) risk *= S_ADJACENT_OVERTAKE
         if (occlusionCandidate && !occlusionConfirmed) risk *= S_BOTTOM_TOUCH_CANDIDATE
