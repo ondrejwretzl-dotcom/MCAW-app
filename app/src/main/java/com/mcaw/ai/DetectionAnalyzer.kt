@@ -1222,6 +1222,12 @@ sendOverlayUpdate(
                     "ttcH=${ttcFromHeightsHeld ?: Float.NaN} ttcD=$ttcFromDist ttc=$ttc wd=${ttcFusionOut[0]} mr=${ttcFusionOut[1]} sanity=${if (ttcFusionOut[2] > 0.5f) 1 else 0}"
             )
 
+            // Keep metrics inputs explicit/local to avoid accidental unresolved references
+            // after nearby refactors.
+            val ttcHeightSecForMetrics = ttcFromHeightsHeld ?: Float.NaN
+            val ttcDistSecForMetrics = ttcFromDist
+            val targetTrackIdForMetrics = bestTrack.id
+
             sendMetricsUpdate(
                 dist = distanceM,
                 approachSpeed = approachSpeedMps,
@@ -1233,9 +1239,9 @@ sendOverlayUpdate(
                 riderSpeedMethod = riderSpeedMethod,
                 riderSpeedAgeMs = riderSpeedAgeMs,
                 ttc = ttc,
-                ttcHeightSec = ttcHeightSec,
-                ttcDistSec = ttcDistSec,
-                targetTrackId = targetTrackId,
+                ttcHeightSec = ttcHeightSecForMetrics,
+                ttcDistSec = ttcDistSecForMetrics,
+                targetTrackId = targetTrackIdForMetrics,
                 level = level,
                 label = label,
                 brakeCue = brakeCue.active,
