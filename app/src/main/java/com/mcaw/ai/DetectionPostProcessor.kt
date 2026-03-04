@@ -65,8 +65,18 @@ class DetectionPostProcessor(
     data class Result(
         val trackable: List<Detection>,
         val seedable: List<Detection>,
+        val seedableIndices: IntArray,
+        val topSeedBlockedDebug: SeedBlockedDebug?,
         val rejected: List<RejectedDetection>,
         val counts: Counts
+    )
+
+    data class SeedBlockedDebug(
+        val bottomYRatio: Float,
+        val widthRatio: Float,
+        val heightRatio: Float,
+        val areaRatio: Float,
+        val geomReason: String
     )
 
     data class RejectedDetection(val detection: Detection, val reason: String)
@@ -107,6 +117,10 @@ class DetectionPostProcessor(
 
         val trackable = mutableListOf<Detection>()
         val seedable = mutableListOf<Detection>()
+        val seedableIdxBuf = IntArray(nmsResult.accepted.size)
+        var seedableIdxCount = 0
+        var topSeedBlockedDebug: SeedBlockedDebug? = null
+        var topSeedBlockedScore = Float.NEGATIVE_INFINITY
 
         for (det in nmsResult.accepted) {
             val hardReason = hardRejectionReason(det, frameWidth, frameHeight)
@@ -117,13 +131,27 @@ class DetectionPostProcessor(
 
             // Always allow the detection to reach the tracker; only gate whether it may seed a new track.
             trackable.add(det)
+            val trackableIndex = trackable.lastIndex
 
             val geomReason = geometrySeedRejectionReason(det, frameWidth, frameHeight)
             if (geomReason == null) {
                 seedable.add(det)
+                seedableIdxBuf[seedableIdxCount++] = trackableIndex
             } else {
                 // Keep as trackable but mark as non-seedable for debug / forensics.
                 rejected.add(RejectedDetection(det, "nonSeedable:$geomReason"))
+                if (det.score > topSeedBlockedScore && frameWidth > 0f && frameHeight > 0f) {
+                    val b = det.box
+                    val bottomY = max(b.y1, b.y2)
+                    topSeedBlockedScore = det.score
+                    topSeedBlockedDebug = SeedBlockedDebug(
+                        bottomYRatio = (bottomY / frameHeight).coerceIn(0f, 1f),
+                        widthRatio = (b.w / frameWidth).coerceAtLeast(0f),
+                        heightRatio = (b.h / frameHeight).coerceAtLeast(0f),
+                        areaRatio = (b.area / (frameWidth * frameHeight)).coerceAtLeast(0f),
+                        geomReason = geomReason
+                    )
+                }
             }
         }
 
@@ -137,6 +165,8 @@ class DetectionPostProcessor(
         return Result(
             trackable = trackable,
             seedable = seedable,
+            seedableIndices = seedableIdxBuf.copyOf(seedableIdxCount),
+            topSeedBlockedDebug = topSeedBlockedDebug,
             rejected = rejected,
             counts = Counts(
                 raw = raw.size,

@@ -57,7 +57,7 @@ class TemporalTracker(
     // Reuse buffer to avoid per-frame allocations (growth is rare).
     private var matchedFlags = BooleanArray(0)
 
-    fun update(trackableDetections: List<Detection>, seedableDetections: List<Detection>, tsMs: Long = -1L, bottomOccluded: Boolean = false): List<TrackedDetection> {
+    fun update(trackableDetections: List<Detection>, seedableIndices: IntArray, tsMs: Long = -1L, bottomOccluded: Boolean = false): List<TrackedDetection> {
         frameCounter += 1
         lastSwitchReason = SwitchReason.NONE
         lastOcclusionMatchUsed = false
@@ -110,28 +110,47 @@ class TemporalTracker(
         }
 
         
-// Create NEW tracks only from detections that are allowed to seed (sanity filters apply here).
-val matchedDetections = HashSet<Detection>(trackableDetections.size)
-for (i in 0 until trackableDetections.size) {
-    if (matchedFlags[i]) matchedDetections.add(trackableDetections[i])
-}
+        // Create NEW tracks only from detections that are allowed to seed (sanity filters apply here).
 
-for (det in seedableDetections) {
-    if (matchedDetections.contains(det)) continue
+        // Cold-start fallback: when no track exists yet and no seedable index exists,
+        // allow unmatched trackable detections to seed. This prevents "zero detection"
+        // lockout when geometry seed filters are temporarily too strict.
+        if (seedableIndices.isNotEmpty() || tracks.isNotEmpty()) {
+            for (i in seedableIndices) {
+                if (i < 0 || i >= trackableDetections.size) continue
+                if (matchedFlags[i]) continue
+                val det = trackableDetections[i]
 
-    if (rejectNewWideDetections) {
-        val h = det.box.h
-        val w = det.box.w
-        // Reject only if it's clearly wide; minor jitter around 1.0 is allowed.
-        if (h > 0f && (w / h) >= newWideAspectMin) {
-            lastRejectedNewWideCount += 1
-            continue
+                if (rejectNewWideDetections) {
+                    val h = det.box.h
+                    val w = det.box.w
+                    // Reject only if it's clearly wide; minor jitter around 1.0 is allowed.
+                    if (h > 0f && (w / h) >= newWideAspectMin) {
+                        lastRejectedNewWideCount += 1
+                        continue
+                    }
+                }
+                tracks.add(Track(nextId++, det, 1, 0))
+            }
+        } else {
+            for (i in 0 until trackableDetections.size) {
+                if (matchedFlags[i]) continue
+                val det = trackableDetections[i]
+
+                if (rejectNewWideDetections) {
+                    val h = det.box.h
+                    val w = det.box.w
+                    // Reject only if it's clearly wide; minor jitter around 1.0 is allowed.
+                    if (h > 0f && (w / h) >= newWideAspectMin) {
+                        lastRejectedNewWideCount += 1
+                        continue
+                    }
+                }
+                tracks.add(Track(nextId++, det, 1, 0))
+            }
         }
-    }
-    tracks.add(Track(nextId++, det, 1, 0))
-}
 
-tracks.removeAll { it.misses > maxMisses }
+        tracks.removeAll { it.misses > maxMisses }
         updateLockState(tsMs)
 
         return tracks.map {
@@ -156,6 +175,8 @@ tracks.removeAll { it.misses > maxMisses }
         lastSwitchReason = SwitchReason.NONE
         lastOcclusionMatchUsed = false
     }
+
+    fun getTrackCount(): Int = tracks.size
 
     fun getLockedTrackId(): Long? = lockedTrackId
     fun getLockedAgeFrames(): Int = lockedAgeFrames

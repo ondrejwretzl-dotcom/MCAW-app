@@ -556,9 +556,19 @@ if (AppPreferences.debugOverlay) {
                 )
             }
 
+            val trackerWasEmpty = tracker.getTrackCount() == 0
+            if (trackerWasEmpty && post.counts.trackable > 0 && post.counts.seedable == 0) {
+                post.topSeedBlockedDebug?.let { dbg ->
+                    flog(
+                        "seed_blocked cold_start top: bottomY=${String.format(Locale.US, "%.3f", dbg.bottomYRatio)} w=${String.format(Locale.US, "%.3f", dbg.widthRatio)} h=${String.format(Locale.US, "%.3f", dbg.heightRatio)} area=${String.format(Locale.US, "%.3f", dbg.areaRatio)} reason=${dbg.geomReason}",
+                        force = true
+                    )
+                }
+            }
+
             val tracked = tracker.update(
                 trackableDetections = post.trackable,
-                seedableDetections = post.seedable,
+                seedableIndices = post.seedableIndices,
                 tsMs = tsMs,
                 bottomOccluded = bottomOccludedStable
             )
@@ -1994,7 +2004,16 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
 
         val gated = tracks.filter { it.alertGatePassed && it.misses == 0 }
         val pool = if (gated.isNotEmpty()) gated else tracks.filter { it.misses == 0 }
-        if (pool.isEmpty()) return null
+        if (pool.isEmpty()) {
+            val lockedId = tracker.getLockedTrackId()
+            val lockedEstimated = if (lockedId != null && tracker.isLockGraceActive(tsMs)) {
+                tracks.firstOrNull { it.id == lockedId && it.misses > 0 }
+            } else {
+                null
+            }
+            if (lockedEstimated != null) return lockedEstimated
+            return null
+        }
 
         val poolEgo = if (AppPreferences.laneFilter) {
             val maxOff = dynamicEgoMaxOffset(tsMs)
