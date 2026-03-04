@@ -57,7 +57,31 @@ class DetectionPostProcessor(
         val fullWidthThinMaxHeightRatio: Float = 0.40f,
         val fullWidthWideAspectMin: Float = 2.6f,
 
-        val debug: Boolean = false
+
+
+        // ===== Huge / large box suppression (seed-only) =====
+        val hugeEnabled: Boolean = true,
+        val hugeWidthRatio: Float = 0.95f,
+        val hugeHeightRatio: Float = 0.95f,
+        val hugeAreaRatio: Float = 0.55f,
+        val largeAreaRatio: Float = 0.40f,
+        val largeDimRatio: Float = 0.80f,
+
+        // ===== Stripe suppression (seed-only) =====
+        val stripeEnabled: Boolean = true,
+
+        // Horizontal stripes (wide + thin)
+        val wideStripeAspectMin: Float = 3.0f,
+        val wideStripeMaxHeightRatio: Float = 0.22f,
+        val wideStripeMinWidthRatio: Float = 0.70f,
+
+        // Vertical stripes (tall + thin)
+        val tallStripeAspectMin: Float = 3.0f,
+        val tallStripeMaxWidthRatio: Float = 0.20f,
+        val tallStripeMinHeightRatio: Float = 0.70f,
+
+
+                val debug: Boolean = false
     )
 
     data class RectNorm(val left: Float, val top: Float, val right: Float, val bottom: Float)
@@ -217,6 +241,41 @@ class DetectionPostProcessor(
         val bottomY = max(b.y1, b.y2)
         val bottomYRatio = bottomY / frameH
 
+        // Common geometric ratios for seed-only sanity rules.
+        val aspect = if (heightRatio > 0f) widthRatio / heightRatio else Float.POSITIVE_INFINITY
+        val invAspect = if (widthRatio > 0f) heightRatio / widthRatio else Float.POSITIVE_INFINITY
+
+        // Huge / near-fullscreen boxes are very likely glitches.
+        if (config.hugeEnabled) {
+            if (widthRatio >= config.hugeWidthRatio || heightRatio >= config.hugeHeightRatio) {
+                return "hugeBox"
+            }
+            if (areaRatio >= config.hugeAreaRatio) {
+                return "hugeBox"
+            }
+            if (areaRatio >= config.largeAreaRatio &&
+                (widthRatio >= config.largeDimRatio || heightRatio >= config.largeDimRatio)
+            ) {
+                return "largeBox"
+            }
+        }
+
+        // Stripe-like glitches: extremely wide+thin (horizontal) OR tall+thin (vertical).
+        if (config.stripeEnabled) {
+            if (aspect >= config.wideStripeAspectMin &&
+                heightRatio <= config.wideStripeMaxHeightRatio &&
+                widthRatio >= config.wideStripeMinWidthRatio
+            ) {
+                return "wideThinStripe"
+            }
+            if (invAspect >= config.tallStripeAspectMin &&
+                widthRatio <= config.tallStripeMaxWidthRatio &&
+                heightRatio >= config.tallStripeMinHeightRatio
+            ) {
+                return "tallThinStripe"
+            }
+        }
+
         // "Airborne" big boxes: bottom edge too high while being large.
         if (config.airborneBigEnabled) {
             if (bottomYRatio < config.airborneBottomYMax &&
@@ -231,7 +290,6 @@ class DetectionPostProcessor(
             if (widthRatio >= config.fullWidthHardRatio) return "fullWidthHard"
             if (widthRatio >= config.fullWidthRatio) {
                 if (heightRatio <= config.fullWidthMaxHeightRatio) return "fullWidth"
-                val aspect = if (b.h > 0f) b.w / b.h else Float.POSITIVE_INFINITY
                 if (heightRatio <= config.fullWidthThinMaxHeightRatio && aspect >= config.fullWidthWideAspectMin) {
                     return "fullWidthStripe"
                 }

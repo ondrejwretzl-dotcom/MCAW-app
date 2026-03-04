@@ -20,7 +20,7 @@ class TemporalTracker(
      * Suppress obvious detector glitches: very wide (W > H) boxes.
      * We ONLY reject them as *new tracks*; existing tracks may still match them to preserve continuity.
      */
-    private val rejectNewWideDetections: Boolean = true,
+    private val rejectNewWideDetections: Boolean = false,
     private val newWideAspectMin: Float = 1.15f
 ) {
     enum class SwitchReason { NONE, GRACE_EXPIRED, BETTER_STABLE, LOST, OCCLUSION_MATCH }
