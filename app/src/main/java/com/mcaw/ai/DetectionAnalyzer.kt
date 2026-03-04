@@ -547,7 +547,7 @@ if (AppPreferences.debugOverlay) {
 
             val tPostNs = SystemClock.elapsedRealtimeNanos()
             val post = postProcessor.process(detsForPost, frameW, frameH)
-            flog("counts raw=${post.counts.raw} thr=${post.counts.threshold} nms=${post.counts.nms} accepted=${post.counts.filters} (roiSoft=${softRoiFiltered.size} postIn=${detsForPost.size})")
+            flog("counts raw=${post.counts.raw} thr=${post.counts.threshold} nms=${post.counts.nms} trackable=${post.counts.trackable} seedable=${post.counts.seedable} (roiSoft=${softRoiFiltered.size} postIn=${detsForPost.size})")
 
             if (AppPreferences.debugOverlay) {
                 flog(
@@ -556,7 +556,22 @@ if (AppPreferences.debugOverlay) {
                 )
             }
 
-            val tracked = tracker.update(post.accepted, tsMs = tsMs, bottomOccluded = bottomOccludedStable)
+            val trackerWasEmpty = tracker.getTrackCount() == 0
+            if (trackerWasEmpty && post.counts.trackable > 0 && post.counts.seedable == 0) {
+                post.topSeedBlockedDebug?.let { dbg ->
+                    flog(
+                        "seed_blocked cold_start top: bottomY=${String.format(Locale.US, "%.3f", dbg.bottomYRatio)} w=${String.format(Locale.US, "%.3f", dbg.widthRatio)} h=${String.format(Locale.US, "%.3f", dbg.heightRatio)} area=${String.format(Locale.US, "%.3f", dbg.areaRatio)} reason=${dbg.geomReason}",
+                        force = true
+                    )
+                }
+            }
+
+            val tracked = tracker.update(
+                trackableDetections = post.trackable,
+                seedableIndices = post.seedableIndices,
+                tsMs = tsMs,
+                bottomOccluded = bottomOccludedStable
+            )
             val bestTrack = selectLockedTarget(tracked, frameW, frameH, roiTrap, tsMs)
 
             if (bestTrack == null) {
@@ -1308,7 +1323,7 @@ sendOverlayUpdate(
 if (AppPreferences.debugOverlay) {
                 Log.d(
                     "DetectionAnalyzer",
-                    "pipeline raw=${post.counts.raw} thr=${post.counts.threshold} nms=${post.counts.nms} filters=${post.counts.filters} tracks=${tracked.size} gate=${tracked.count { it.alertGatePassed }}"
+                    "pipeline raw=${post.counts.raw} thr=${post.counts.threshold} nms=${post.counts.nms} trackable=${post.counts.trackable} seedable=${post.counts.seedable} tracks=${tracked.size} gate=${tracked.count { it.alertGatePassed }}"
                 )
                 post.rejected.take(5).forEach {
                     Log.d(
@@ -1989,7 +2004,16 @@ return if (orangeDs || ttcLevel == 1) 1 else 0
 
         val gated = tracks.filter { it.alertGatePassed && it.misses == 0 }
         val pool = if (gated.isNotEmpty()) gated else tracks.filter { it.misses == 0 }
-        if (pool.isEmpty()) return null
+        if (pool.isEmpty()) {
+            val lockedId = tracker.getLockedTrackId()
+            val lockedEstimated = if (lockedId != null && tracker.isLockGraceActive(tsMs)) {
+                tracks.firstOrNull { it.id == lockedId && it.misses > 0 }
+            } else {
+                null
+            }
+            if (lockedEstimated != null) return lockedEstimated
+            return null
+        }
 
         val poolEgo = if (AppPreferences.laneFilter) {
             val maxOff = dynamicEgoMaxOffset(tsMs)
