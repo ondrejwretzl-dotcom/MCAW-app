@@ -44,7 +44,7 @@ class DetectionPostProcessor(
          */
         val airborneBigEnabled: Boolean = true,
         // Reject if bottom edge is unusually high AND the box is big (area or height).
-        val airborneBottomYMax: Float = 0.55f,
+        val airborneBottomYMax: Float = 0.61f,
         val airborneMinAreaRatio: Float = 0.08f,
         val airborneMinHeightRatio: Float = 0.45f,
 
@@ -63,7 +63,8 @@ class DetectionPostProcessor(
     data class RectNorm(val left: Float, val top: Float, val right: Float, val bottom: Float)
 
     data class Result(
-        val accepted: List<Detection>,
+        val trackable: List<Detection>,
+        val seedable: List<Detection>,
         val rejected: List<RejectedDetection>,
         val counts: Counts
     )
@@ -74,7 +75,8 @@ class DetectionPostProcessor(
         val raw: Int,
         val threshold: Int,
         val nms: Int,
-        val filters: Int
+        val trackable: Int,
+        val seedable: Int
     )
 
     // Can be updated on the fly (e.g., from prefs)
@@ -103,20 +105,31 @@ class DetectionPostProcessor(
         val nmsResult = classAwareNms(thresholded)
         rejected.addAll(nmsResult.rejected)
 
-        val accepted = mutableListOf<Detection>()
-        for (det in nmsResult.accepted) {
-            val reason = rejectionReason(det, frameWidth, frameHeight)
-            if (reason == null) {
-                accepted.add(det)
-            } else {
-                rejected.add(RejectedDetection(det, reason))
-            }
-        }
+        val trackable = mutableListOf<Detection>()
+val seedable = mutableListOf<Detection>()
 
-        if (config.debug) {
+for (det in nmsResult.accepted) {
+    val hardReason = hardRejectionReason(det, frameWidth, frameHeight)
+    if (hardReason != null) {
+        rejected.add(RejectedDetection(det, hardReason))
+        continue
+    }
+
+    // Always allow the detection to reach the tracker; only gate whether it may seed a new track.
+    trackable.add(det)
+
+    val geomReason = geometrySeedRejectionReason(det, frameWidth, frameHeight)
+    if (geomReason == null) {
+        seedable.add(det)
+    } else {
+        // Keep as trackable but mark as non-seedable for debug / forensics.
+        rejected.add(RejectedDetection(det, "nonSeedable:$geomReason"))
+    }
+}
+if (config.debug) {
             Log.d(
                 "DetectionPostProcessor",
-                "counts raw=${raw.size} threshold=${thresholded.size} nms=${nmsResult.accepted.size} accepted=${accepted.size}"
+                "counts raw=${raw.size} threshold=${thresholded.size} nms=${nmsResult.accepted.size} trackable=${trackable.size} seedable=${seedable.size}"
             )
         }
 
@@ -127,38 +140,13 @@ class DetectionPostProcessor(
         )
     }
 
-    private fun rejectionReason(det: Detection, frameW: Float, frameH: Float): String? {
+    private fun hardRejectionReason(det: Detection, frameW: Float, frameH: Float): String? {
         if (frameW <= 0f || frameH <= 0f) return "invalidFrame"
         val b = det.box
         val areaRatio = b.area / (frameW * frameH)
         if (areaRatio < config.minAreaRatio || areaRatio > config.maxAreaRatio) return "minArea"
         val aspect = if (b.h > 0f) b.w / b.h else Float.POSITIVE_INFINITY
         if (aspect < config.minAspect || aspect > config.maxAspect) return "aspect"
-
-        // --- Geometry sanity filters (glitch suppression) ---
-        val widthRatio = b.w / frameW
-        val heightRatio = b.h / frameH
-        val bottomY = max(b.y1, b.y2)
-        val bottomYRatio = bottomY / frameH
-
-        // "Airborne" big boxes: bottom edge too high while being large.
-        if (config.airborneBigEnabled) {
-            if (bottomYRatio < config.airborneBottomYMax &&
-                (areaRatio >= config.airborneMinAreaRatio || heightRatio >= config.airborneMinHeightRatio)
-            ) {
-                return "airborneBig"
-            }
-        }
-
-        // Full-width / near full-width glitches (often horizon/stripe artifacts).
-        if (config.fullWidthEnabled) {
-            if (widthRatio >= config.fullWidthHardRatio) return "fullWidthHard"
-            if (widthRatio >= config.fullWidthRatio) {
-                // Reject wide boxes that look like a stripe or have suspiciously low height.
-                if (heightRatio <= config.fullWidthMaxHeightRatio) return "fullWidth"
-                if (heightRatio <= config.fullWidthThinMaxHeightRatio && aspect >= config.fullWidthWideAspectMin) return "fullWidthStripe"
-            }
-        }
 
         val cx = b.cx / frameW
         val cy = b.cy / frameH
@@ -172,7 +160,47 @@ class DetectionPostProcessor(
             val containment = roiContainmentRatio(b, roi, frameW, frameH)
             if (containment < config.roiMinContainment) return "outsideROI"
         }
-        return null
+        
+
+/**
+ * Geometry sanity filters used ONLY to decide whether a detection may seed a new track.
+ *
+ * Important: these MUST NOT remove detections from the tracking pipeline, otherwise we break
+ * occlusion handling / estimated bbox continuity when a valid target grows or deforms.
+ */
+private fun geometrySeedRejectionReason(det: Detection, frameW: Float, frameH: Float): String? {
+    if (frameW <= 0f || frameH <= 0f) return "invalidFrame"
+    val b = det.box
+    val areaRatio = b.area / (frameW * frameH)
+
+    val widthRatio = b.w / frameW
+    val heightRatio = b.h / frameH
+    val bottomY = max(b.y1, b.y2)
+    val bottomYRatio = bottomY / frameH
+
+    // "Airborne" big boxes: bottom edge too high while being large.
+    if (config.airborneBigEnabled) {
+        if (bottomYRatio < config.airborneBottomYMax &&
+            (areaRatio >= config.airborneMinAreaRatio || heightRatio >= config.airborneMinHeightRatio)
+        ) {
+            return "airborneBig"
+        }
+    }
+
+    // Full-width / near full-width glitches (often horizon/stripe artifacts).
+    if (config.fullWidthEnabled) {
+        if (widthRatio >= config.fullWidthHardRatio) return "fullWidthHard"
+        if (widthRatio >= config.fullWidthRatio) {
+            if (heightRatio <= config.fullWidthMaxHeightRatio) return "fullWidth"
+            val aspect = if (b.h > 0f) b.w / b.h else Float.POSITIVE_INFINITY
+            if (heightRatio <= config.fullWidthThinMaxHeightRatio && aspect >= config.fullWidthWideAspectMin) {
+                return "fullWidthStripe"
+            }
+        }
+    }
+    return null
+}
+return null
     }
 
     private fun RectNorm.sanitized(): RectNorm {

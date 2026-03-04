@@ -539,7 +539,7 @@ if (AppPreferences.debugOverlay) {
 
             val tPostNs = SystemClock.elapsedRealtimeNanos()
             val post = postProcessor.process(softRoiFiltered, frameW, frameH)
-            flog("counts raw=${post.counts.raw} thr=${post.counts.threshold} nms=${post.counts.nms} accepted=${post.counts.filters} (roiSoft=${softRoiFiltered.size})")
+            flog("counts raw=${post.counts.raw} thr=${post.counts.threshold} nms=${post.counts.nms} trackable=${post.counts.trackable} seedable=${post.counts.seedable} (roiSoft=${softRoiFiltered.size})")
 
             if (AppPreferences.debugOverlay) {
                 flog(
@@ -548,7 +548,7 @@ if (AppPreferences.debugOverlay) {
                 )
             }
 
-            val tracked = tracker.update(post.accepted, tsMs = tsMs, bottomOccluded = bottomOccludedStable)
+            val tracked = tracker.update(post.trackable, post.seedable, tsMs = tsMs, bottomOccluded = bottomOccludedStable)
             val bestTrack = selectLockedTarget(tracked, frameW, frameH, roiTrap, tsMs)
 
             if (bestTrack == null) {

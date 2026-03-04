@@ -57,16 +57,16 @@ class TemporalTracker(
     // Reuse buffer to avoid per-frame allocations (growth is rare).
     private var matchedFlags = BooleanArray(0)
 
-    fun update(detections: List<Detection>, tsMs: Long = -1L, bottomOccluded: Boolean = false): List<TrackedDetection> {
+    fun update(trackableDetections: List<Detection>, seedableDetections: List<Detection>, tsMs: Long = -1L, bottomOccluded: Boolean = false): List<TrackedDetection> {
         frameCounter += 1
         lastSwitchReason = SwitchReason.NONE
         lastOcclusionMatchUsed = false
         lastRejectedNewWideCount = 0
-        if (matchedFlags.size < detections.size) {
-            matchedFlags = BooleanArray(max(detections.size, matchedFlags.size * 2))
+        if (matchedFlags.size < trackableDetections.size) {
+            matchedFlags = BooleanArray(max(trackableDetections.size, matchedFlags.size * 2))
         }
         // Reset only the used prefix.
-        for (i in 0 until detections.size) matchedFlags[i] = false
+        for (i in 0 until trackableDetections.size) matchedFlags[i] = false
 
         // Track update: prefer temporal continuity. Allow label changes inside VEHICLE group
         // to avoid lock drops when the detector toggles car/truck/unknown.
@@ -76,9 +76,9 @@ class TemporalTracker(
             val prevBox = track.detection.box
             val prevLabel = track.detection.label
 
-            for (i in 0 until detections.size) {
+            for (i in 0 until trackableDetections.size) {
                 if (matchedFlags[i]) continue
-                val det = detections[i]
+                val det = trackableDetections[i]
                 if (!isCompatible(prevLabel, det.label)) continue
 
                 val iouVal = iou(prevBox, det.box)
@@ -97,7 +97,7 @@ class TemporalTracker(
             }
 
             if (bestIdx >= 0) {
-                val best = detections[bestIdx]
+                val best = trackableDetections[bestIdx]
                 matchedFlags[bestIdx] = true
                 track.detection = blend(track.detection, best)
                 track.consecutive += 1
@@ -109,24 +109,29 @@ class TemporalTracker(
             }
         }
 
-        // New tracks for unmatched detections.
-        for (i in 0 until detections.size) {
-            if (!matchedFlags[i]) {
-                val det = detections[i]
-                if (rejectNewWideDetections) {
-                    val h = det.box.h
-                    val w = det.box.w
-                    // Reject only if it's clearly wide; minor jitter around 1.0 is allowed.
-                    if (h > 0f && (w / h) >= newWideAspectMin) {
-                        lastRejectedNewWideCount += 1
-                        continue
-                    }
-                }
-                tracks.add(Track(nextId++, det, 1, 0))
-            }
-        }
+        
+// Create NEW tracks only from detections that are allowed to seed (sanity filters apply here).
+val matchedDetections = HashSet<Detection>(trackableDetections.size)
+for (i in 0 until trackableDetections.size) {
+    if (matchedFlags[i]) matchedDetections.add(trackableDetections[i])
+}
 
-        tracks.removeAll { it.misses > maxMisses }
+for (det in seedableDetections) {
+    if (matchedDetections.contains(det)) continue
+
+    if (rejectNewWideDetections) {
+        val h = det.box.h
+        val w = det.box.w
+        // Reject only if it's clearly wide; minor jitter around 1.0 is allowed.
+        if (h > 0f && (w / h) >= newWideAspectMin) {
+            lastRejectedNewWideCount += 1
+            continue
+        }
+    }
+    tracks.add(Track(nextId++, det, 1, 0))
+}
+
+tracks.removeAll { it.misses > maxMisses }
         updateLockState(tsMs)
 
         return tracks.map {

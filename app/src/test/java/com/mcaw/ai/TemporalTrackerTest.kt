@@ -15,20 +15,20 @@ class TemporalTrackerTest {
         var ts = 0L
 
         repeat(10) {
-            tracker.update(listOf(det(100f, 100f, 220f, 260f)), tsMs = ts)
+            tracker.update(listOf(det(100f, 100f, 220f, 260f)), listOf(det(100f, 100f, 220f, 260f)), tsMs = ts)
             ts += 33L
         }
         val lockId = tracker.getLockedTrackId()
         assertTrue(lockId != null)
 
         repeat(3) {
-            tracker.update(emptyList(), tsMs = ts)
+            tracker.update(emptyList(), emptyList(), tsMs = ts)
             ts += 33L
         }
         assertEquals(lockId, tracker.getLockedTrackId())
         assertTrue(tracker.isLockGraceActive(ts))
 
-        tracker.update(listOf(det(102f, 102f, 222f, 262f)), tsMs = ts)
+        tracker.update(listOf(det(102f, 102f, 222f, 262f)), listOf(det(102f, 102f, 222f, 262f)), tsMs = ts)
         assertEquals(lockId, tracker.getLockedTrackId())
         assertEquals(0, tracker.getLockedMissFrames())
     }
@@ -39,16 +39,16 @@ class TemporalTrackerTest {
         var ts = 0L
 
         repeat(5) {
-            tracker.update(listOf(det(100f, 100f, 220f, 260f)), tsMs = ts)
+            tracker.update(listOf(det(100f, 100f, 220f, 260f)), listOf(det(100f, 100f, 220f, 260f)), tsMs = ts)
             ts += 40L
         }
         val firstLock = tracker.getLockedTrackId()
 
         repeat(4) {
-            tracker.update(emptyList(), tsMs = ts)
+            tracker.update(emptyList(), emptyList(), tsMs = ts)
             ts += 80L
         }
-        tracker.update(listOf(det(360f, 110f, 500f, 300f, score = 0.98f)), tsMs = ts)
+        tracker.update(listOf(det(360f, 110f, 500f, 300f, score = 0.98f)), listOf(det(360f, 110f, 500f, 300f, score = 0.98f)), tsMs = ts)
 
         assertTrue(tracker.getLockedTrackId() != null)
         assertTrue(tracker.getLockedTrackId() != firstLock)
@@ -60,7 +60,7 @@ class TemporalTrackerTest {
         var ts = 0L
 
         repeat(6) {
-            tracker.update(listOf(det(100f, 100f, 220f, 260f, score = 0.90f)), tsMs = ts)
+            tracker.update(listOf(det(100f, 100f, 220f, 260f, score = 0.90f)), listOf(det(100f, 100f, 220f, 260f, score = 0.90f)), tsMs = ts)
             ts += 33L
         }
         val lockId = tracker.getLockedTrackId()
@@ -69,11 +69,64 @@ class TemporalTrackerTest {
             listOf(
                 det(102f, 100f, 222f, 260f, score = 0.90f),
                 det(300f, 90f, 430f, 280f, score = 0.99f)
-            ),
-            tsMs = ts
+            ), listOf(det(100f, 100f, 220f, 260f)), listOf(det(100f, 100f, 220f, 260f)), tsMs = ts)
+            ts += 33L
+        }
+        val lockId = tracker.getLockedTrackId()
+        assertTrue(lockId != null)
+
+        repeat(3) {
+            tracker.update(emptyList(), emptyList(), tsMs = ts)
+            ts += 33L
+        }
+        assertEquals(lockId, tracker.getLockedTrackId())
+        assertTrue(tracker.isLockGraceActive(ts))
+
+        tracker.update(listOf(det(102f, 102f, 222f, 262f)), listOf(det(102f, 102f, 222f, 262f)), tsMs = ts)
+        assertEquals(lockId, tracker.getLockedTrackId())
+        assertEquals(0, tracker.getLockedMissFrames())
+    }
+
+    @Test
+    fun lockGrace_expiresAndSwitchesToNewTarget() {
+        val tracker = TemporalTracker(lockGraceMs = 200L, lockGraceMaxMissFrames = 3)
+        var ts = 0L
+
+        repeat(5) {
+            tracker.update(listOf(det(100f, 100f, 220f, 260f)), listOf(det(100f, 100f, 220f, 260f)), tsMs = ts)
+            ts += 40L
+        }
+        val firstLock = tracker.getLockedTrackId()
+
+        repeat(4) {
+            tracker.update(emptyList(), emptyList(), tsMs = ts)
+            ts += 80L
+        }
+        tracker.update(listOf(det(360f, 110f, 500f, 300f, score = 0.98f)), listOf(det(360f, 110f, 500f, 300f, score = 0.98f)), tsMs = ts)
+
+        assertTrue(tracker.getLockedTrackId() != null)
+        assertTrue(tracker.getLockedTrackId() != firstLock)
+    }
+
+    @Test
+    fun switchConfirmation_ignoresSingleFrameSpike() {
+        val tracker = TemporalTracker(switchConfirmFrames = 3, switchMargin = 0.08f)
+        var ts = 0L
+
+        repeat(6) {
+            tracker.update(listOf(det(100f, 100f, 220f, 260f, score = 0.90f)), listOf(det(100f, 100f, 220f, 260f, score = 0.90f)), tsMs = ts)
+            ts += 33L
+        }
+        val lockId = tracker.getLockedTrackId()
+
+        tracker.update(
+            listOf(
+                det(102f, 100f, 222f, 260f, score = 0.90f),
+                det(300f, 90f, 430f, 280f, score = 0.99f)
+            ), tsMs = ts
         )
         ts += 33L
-        tracker.update(listOf(det(104f, 100f, 224f, 260f, score = 0.90f)), tsMs = ts)
+        tracker.update(listOf(det(104f, 100f, 224f, 260f, score = 0.90f)), listOf(det(104f, 100f, 224f, 260f, score = 0.90f)), tsMs = ts)
 
         assertEquals(lockId, tracker.getLockedTrackId())
     }
@@ -84,7 +137,7 @@ class TemporalTrackerTest {
         var ts = 0L
 
         repeat(6) {
-            tracker.update(listOf(det(100f, 100f, 220f, 260f, score = 0.90f)), tsMs = ts)
+            tracker.update(listOf(det(100f, 100f, 220f, 260f, score = 0.90f)), listOf(det(100f, 100f, 220f, 260f, score = 0.90f)), tsMs = ts)
             ts += 33L
         }
 
@@ -93,9 +146,28 @@ class TemporalTrackerTest {
                 listOf(
                     det(102f, 100f, 222f, 260f, score = 0.90f),
                     det(300f, 90f, 430f, 280f, score = 0.99f)
-                ),
-                tsMs = ts
-            )
+                ), listOf(det(104f, 100f, 224f, 260f, score = 0.90f)), listOf(det(104f, 100f, 224f, 260f, score = 0.90f)), tsMs = ts)
+
+        assertEquals(lockId, tracker.getLockedTrackId())
+    }
+
+    @Test
+    fun switchConfirmation_switchesAfterStableBetterCandidate() {
+        val tracker = TemporalTracker(switchConfirmFrames = 3, switchMargin = 0.08f)
+        var ts = 0L
+
+        repeat(6) {
+            tracker.update(listOf(det(100f, 100f, 220f, 260f, score = 0.90f)), listOf(det(100f, 100f, 220f, 260f, score = 0.90f)), tsMs = ts)
+            ts += 33L
+        }
+
+        repeat(3) {
+            tracker.update(
+                listOf(
+                    det(102f, 100f, 222f, 260f, score = 0.90f),
+                    det(300f, 90f, 430f, 280f, score = 0.99f)
+                ), tsMs = ts
+        )
             ts += 33L
         }
 
@@ -108,14 +180,12 @@ class TemporalTrackerTest {
         var ts = 0L
 
         repeat(4) {
-            tracker.update(listOf(det(100f, 120f, 240f, 320f)), tsMs = ts)
+            tracker.update(listOf(det(100f, 120f, 240f, 320f)), listOf(det(100f, 120f, 240f, 320f)), tsMs = ts)
             ts += 33L
         }
         val lockId = tracker.getLockedTrackId()
 
-        tracker.update(
-            listOf(det(110f, 170f, 236f, 350f)),
-            tsMs = ts,
+        tracker.update(listOf(det(110f, 170f, 236f, 350f)), listOf(det(110f, 170f, 236f, 350f)), tsMs = ts,
             bottomOccluded = true
         )
 
@@ -129,13 +199,11 @@ class TemporalTrackerTest {
         var ts = 0L
 
         repeat(4) {
-            tracker.update(listOf(det(100f, 120f, 130f, 150f, score = 0.95f)), tsMs = ts)
+            tracker.update(listOf(det(100f, 120f, 130f, 150f, score = 0.95f)), listOf(det(100f, 120f, 130f, 150f, score = 0.95f)), tsMs = ts)
             ts += 33L
         }
 
-        tracker.update(
-            listOf(det(112f, 142f, 138f, 168f, score = 0.95f)),
-            tsMs = ts,
+        tracker.update(listOf(det(112f, 142f, 138f, 168f, score = 0.95f)), listOf(det(112f, 142f, 138f, 168f, score = 0.95f)), tsMs = ts,
             bottomOccluded = true
         )
 
@@ -148,7 +216,7 @@ class TemporalTrackerTest {
         val tracker = TemporalTracker()
         val wide = Detection(box = Box(10f, 10f, 210f, 90f), score = 0.95f, label = "car") // W/H ~2.5
 
-        val out = tracker.update(listOf(wide), tsMs = 0L)
+        val out = tracker.update(listOf(wide), listOf(wide), tsMs = 0L)
 
         assertEquals(0, out.size)
         assertEquals(1, tracker.getLastRejectedNewWideCount())

@@ -22,8 +22,9 @@ class DetectionPostProcessorTest {
         )
 
         val res = pp.process(listOf(det), frameW, frameH)
-        assertEquals(0, res.accepted.size)
-        assertTrue(res.rejected.any { it.reason == "airborneBig" })
+        assertEquals(1, res.trackable.size)
+        assertEquals(0, res.seedable.size)
+        assertTrue(res.rejected.any { it.reason == "nonSeedable:airborneBig" })
     }
 
     @Test
@@ -39,7 +40,8 @@ class DetectionPostProcessorTest {
         )
 
         val res = pp.process(listOf(det), frameW, frameH)
-        assertEquals(0, res.accepted.size)
-        assertTrue(res.rejected.any { it.reason == "fullWidthHard" })
+        assertEquals(1, res.trackable.size)
+        assertEquals(0, res.seedable.size)
+        assertTrue(res.rejected.any { it.reason == "nonSeedable:fullWidthHard" })
     }
 }
