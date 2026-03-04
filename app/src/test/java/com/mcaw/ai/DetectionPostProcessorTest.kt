@@ -42,7 +42,7 @@ class DetectionPostProcessorTest {
         val res = pp.process(listOf(det), frameW, frameH)
         assertEquals(1, res.trackable.size)
         assertEquals(0, res.seedable.size)
-        assertTrue(res.rejected.any { it.reason == "nonSeedable:fullWidthHard" })
+        assertTrue(res.rejected.any { it.reason == "nonSeedable:hugeBox" })
     }
 
     @Test
