@@ -1002,12 +1002,19 @@ if (AppPreferences.debugOverlay) {
             }
             val suppressSteadyGapHard = steadySuppressActive
 
+            // Standing detection is primarily ego-motion (speed + stability) with hysteresis.
+            // Product rule: we only ACT on standing by suppressing alerts when speed source is reliable (GPS/BLE).
+            // If GPS/BLE is not available, we keep existing behavior (no extra suppression).
             val speedStableNow = speedEmaValid && speedDeltaEmaValid && speedEmaMps < RiskEngine.STAND_SPEED_MPS && speedDeltaEmaMps < 0.12f
             standingStableCount = if (speedStableNow) (standingStableCount + 1) else 0
 
-            val standingEnter = riderSpeedKnown && approachEmaMps <= RiskEngine.APPROACH_EPS_MPS
-            val standingStableNeed = if (imuCalmProxy) (RiskEngine.K_STABLE - 1).coerceAtLeast(1) else RiskEngine.K_STABLE
-            standingEnterCount = if (standingEnter && standingStableCount >= standingStableNeed) (standingEnterCount + 1) else 0
+            val speedSourceReliableForStanding = (riderSpeedSourceOrdinal == SpeedProvider.Source.GPS.ordinal || riderSpeedSourceOrdinal == SpeedProvider.Source.BLE.ordinal) &&
+                riderSpeedAgeMs <= 4000L && riderSpeedConfidence >= 0.45f
+
+            // Standing state uses only ego-motion stability (no target/approach gate; crossing traffic must not block standing).
+            // Suppression is applied only when speed source is reliable (see standingSuppressActive below).
+            val standingEnter = riderSpeedKnown && speedStableNow
+            standingEnterCount = if (standingEnter && standingStableCount >= RiskEngine.K_STABLE) (standingEnterCount + 1) else 0
             val standingRelease = riderSpeedKnown && riderSpeedMps > RiskEngine.CREEP_SPEED_MPS
             standingReleaseCount = if (standingRelease) (standingReleaseCount + 1) else 0
             if (!standingState && standingEnterCount >= 1) {
@@ -1019,6 +1026,9 @@ if (AppPreferences.debugOverlay) {
                 standingReleaseCount = 0
                 standingStableCount = 0
             }
+
+            // Variant B (final): suppress alerts only when we are confident that ego is standing, based on reliable GPS/BLE speed.
+            val standingSuppressActive = standingState && speedSourceReliableForStanding
 
             val occlusionCandidate = bottomOccluded && roiContainment < 0.5f
             val occlusionConfirmed = occlusionConfirmedForFusion
@@ -1059,7 +1069,7 @@ if (AppPreferences.debugOverlay) {
                 ((RiskEngine.DIST_CLOSE_M - closeDistM) / denom).coerceIn(0f, 1f)
             } else 0f
             val occlCloseEligible = bottomOccluded && occlusionConfirmedForFusion && occlClose > 0f &&
-                !coreOut.suppressRecedingHard && !coreOut.suppressSteadyGapHard && !standingState &&
+                !coreOut.suppressRecedingHard && !coreOut.suppressSteadyGapHard && !standingSuppressActive &&
                 (riskApproachMps >= 0.8f || brakeCue.active || imu.brakeConfidence >= 0.65f)
 
             // Distance confidence for RiskEngine: down-weight untrusted distance sources (esp. occlusion fallbacks).
@@ -1091,7 +1101,7 @@ if (AppPreferences.debugOverlay) {
         suppressRecedingObject = recedingStable,
         suppressRecedingHard = coreOut.suppressRecedingHard,
         suppressSteadyGapHard = coreOut.suppressSteadyGapHard,
-        suppressStanding = standingState,
+        suppressStanding = standingSuppressActive,
         disableTtcApproachWeight = coreOut.suppressRecedingHard,
         qualityWeight = qualityWeight,
         riderSpeedMps = riderSpeedMps,
