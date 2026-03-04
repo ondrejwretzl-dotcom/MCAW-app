@@ -106,27 +106,28 @@ class DetectionPostProcessor(
         rejected.addAll(nmsResult.rejected)
 
         val trackable = mutableListOf<Detection>()
-val seedable = mutableListOf<Detection>()
+        val seedable = mutableListOf<Detection>()
 
-for (det in nmsResult.accepted) {
-    val hardReason = hardRejectionReason(det, frameWidth, frameHeight)
-    if (hardReason != null) {
-        rejected.add(RejectedDetection(det, hardReason))
-        continue
-    }
+        for (det in nmsResult.accepted) {
+            val hardReason = hardRejectionReason(det, frameWidth, frameHeight)
+            if (hardReason != null) {
+                rejected.add(RejectedDetection(det, hardReason))
+                continue
+            }
 
-    // Always allow the detection to reach the tracker; only gate whether it may seed a new track.
-    trackable.add(det)
+            // Always allow the detection to reach the tracker; only gate whether it may seed a new track.
+            trackable.add(det)
 
-    val geomReason = geometrySeedRejectionReason(det, frameWidth, frameHeight)
-    if (geomReason == null) {
-        seedable.add(det)
-    } else {
-        // Keep as trackable but mark as non-seedable for debug / forensics.
-        rejected.add(RejectedDetection(det, "nonSeedable:$geomReason"))
-    }
-}
-if (config.debug) {
+            val geomReason = geometrySeedRejectionReason(det, frameWidth, frameHeight)
+            if (geomReason == null) {
+                seedable.add(det)
+            } else {
+                // Keep as trackable but mark as non-seedable for debug / forensics.
+                rejected.add(RejectedDetection(det, "nonSeedable:$geomReason"))
+            }
+        }
+
+        if (config.debug) {
             Log.d(
                 "DetectionPostProcessor",
                 "counts raw=${raw.size} threshold=${thresholded.size} nms=${nmsResult.accepted.size} trackable=${trackable.size} seedable=${seedable.size}"
@@ -134,9 +135,16 @@ if (config.debug) {
         }
 
         return Result(
-            accepted = accepted,
+            trackable = trackable,
+            seedable = seedable,
             rejected = rejected,
-            counts = Counts(raw.size, thresholded.size, nmsResult.accepted.size, accepted.size)
+            counts = Counts(
+                raw = raw.size,
+                threshold = thresholded.size,
+                nms = nmsResult.accepted.size,
+                trackable = trackable.size,
+                seedable = seedable.size
+            )
         )
     }
 
@@ -160,47 +168,46 @@ if (config.debug) {
             val containment = roiContainmentRatio(b, roi, frameW, frameH)
             if (containment < config.roiMinContainment) return "outsideROI"
         }
-        
-
-/**
- * Geometry sanity filters used ONLY to decide whether a detection may seed a new track.
- *
- * Important: these MUST NOT remove detections from the tracking pipeline, otherwise we break
- * occlusion handling / estimated bbox continuity when a valid target grows or deforms.
- */
-private fun geometrySeedRejectionReason(det: Detection, frameW: Float, frameH: Float): String? {
-    if (frameW <= 0f || frameH <= 0f) return "invalidFrame"
-    val b = det.box
-    val areaRatio = b.area / (frameW * frameH)
-
-    val widthRatio = b.w / frameW
-    val heightRatio = b.h / frameH
-    val bottomY = max(b.y1, b.y2)
-    val bottomYRatio = bottomY / frameH
-
-    // "Airborne" big boxes: bottom edge too high while being large.
-    if (config.airborneBigEnabled) {
-        if (bottomYRatio < config.airborneBottomYMax &&
-            (areaRatio >= config.airborneMinAreaRatio || heightRatio >= config.airborneMinHeightRatio)
-        ) {
-            return "airborneBig"
-        }
+        return null
     }
 
-    // Full-width / near full-width glitches (often horizon/stripe artifacts).
-    if (config.fullWidthEnabled) {
-        if (widthRatio >= config.fullWidthHardRatio) return "fullWidthHard"
-        if (widthRatio >= config.fullWidthRatio) {
-            if (heightRatio <= config.fullWidthMaxHeightRatio) return "fullWidth"
-            val aspect = if (b.h > 0f) b.w / b.h else Float.POSITIVE_INFINITY
-            if (heightRatio <= config.fullWidthThinMaxHeightRatio && aspect >= config.fullWidthWideAspectMin) {
-                return "fullWidthStripe"
+    /**
+     * Geometry sanity filters used ONLY to decide whether a detection may seed a new track.
+     *
+     * Important: these MUST NOT remove detections from the tracking pipeline, otherwise we break
+     * occlusion handling / estimated bbox continuity when a valid target grows or deforms.
+     */
+    private fun geometrySeedRejectionReason(det: Detection, frameW: Float, frameH: Float): String? {
+        if (frameW <= 0f || frameH <= 0f) return "invalidFrame"
+        val b = det.box
+        val areaRatio = b.area / (frameW * frameH)
+
+        val widthRatio = b.w / frameW
+        val heightRatio = b.h / frameH
+        val bottomY = max(b.y1, b.y2)
+        val bottomYRatio = bottomY / frameH
+
+        // "Airborne" big boxes: bottom edge too high while being large.
+        if (config.airborneBigEnabled) {
+            if (bottomYRatio < config.airborneBottomYMax &&
+                (areaRatio >= config.airborneMinAreaRatio || heightRatio >= config.airborneMinHeightRatio)
+            ) {
+                return "airborneBig"
             }
         }
-    }
-    return null
-}
-return null
+
+        // Full-width / near full-width glitches (often horizon/stripe artifacts).
+        if (config.fullWidthEnabled) {
+            if (widthRatio >= config.fullWidthHardRatio) return "fullWidthHard"
+            if (widthRatio >= config.fullWidthRatio) {
+                if (heightRatio <= config.fullWidthMaxHeightRatio) return "fullWidth"
+                val aspect = if (b.h > 0f) b.w / b.h else Float.POSITIVE_INFINITY
+                if (heightRatio <= config.fullWidthThinMaxHeightRatio && aspect >= config.fullWidthWideAspectMin) {
+                    return "fullWidthStripe"
+                }
+            }
+        }
+        return null
     }
 
     private fun RectNorm.sanitized(): RectNorm {

@@ -1300,7 +1300,7 @@ sendOverlayUpdate(
 if (AppPreferences.debugOverlay) {
                 Log.d(
                     "DetectionAnalyzer",
-                    "pipeline raw=${post.counts.raw} thr=${post.counts.threshold} nms=${post.counts.nms} filters=${post.counts.filters} tracks=${tracked.size} gate=${tracked.count { it.alertGatePassed }}"
+                    "pipeline raw=${post.counts.raw} thr=${post.counts.threshold} nms=${post.counts.nms} trackable=${post.counts.trackable} seedable=${post.counts.seedable} tracks=${tracked.size} gate=${tracked.count { it.alertGatePassed }}"
                 )
                 post.rejected.take(5).forEach {
                     Log.d(
