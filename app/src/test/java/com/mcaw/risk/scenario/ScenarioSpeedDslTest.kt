@@ -16,7 +16,7 @@ class ScenarioSpeedDslTest {
             doc = ScenarioDoc(
                 purpose = "test",
                 riskIfBroken = "test",
-                expected = ExpectedBehaviorDoc(alertLevelMax = 0, expectedState = "SAFE"),
+                expected = ExpectedBehaviorDoc(expectedAlertLevelMax = 0, expectedRiskState = "SAFE", constraintWindow = "nikdy"),
             ),
             config = ScenarioConfig(hz = 10, riderSpeedMps = 10f),
             expectations = emptyList(),
@@ -50,7 +50,7 @@ class ScenarioSpeedDslTest {
             doc = ScenarioDoc(
                 purpose = "test",
                 riskIfBroken = "test",
-                expected = ExpectedBehaviorDoc(alertLevelMax = 0, expectedState = "SAFE"),
+                expected = ExpectedBehaviorDoc(expectedAlertLevelMax = 0, expectedRiskState = "SAFE", constraintWindow = "nikdy"),
             ),
             config = ScenarioConfig(hz = 10, riderSpeedMps = 10f, riderSpeedConfidence = 0.9f),
             expectations = emptyList(),

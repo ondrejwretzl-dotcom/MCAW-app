@@ -19,7 +19,7 @@ class ScenarioReportWriterTest {
             doc = ScenarioDoc(
                 purpose = "test",
                 riskIfBroken = "test",
-                expected = ExpectedBehaviorDoc(alertLevelMax = 0, expectedState = "SAFE"),
+                expected = ExpectedBehaviorDoc(expectedAlertLevelMax = 0, expectedRiskState = "SAFE", constraintWindow = "nikdy"),
             ),
             config = ScenarioConfig(),
             expectations = emptyList(),
@@ -36,7 +36,7 @@ class ScenarioReportWriterTest {
             doc = ScenarioDoc(
                 purpose = "test",
                 riskIfBroken = "test",
-                expected = ExpectedBehaviorDoc(alertLevelMax = 0, expectedState = "SAFE"),
+                expected = ExpectedBehaviorDoc(expectedAlertLevelMax = 0, expectedRiskState = "SAFE", constraintWindow = "nikdy"),
             ),
             config = ScenarioConfig(),
             expectations = emptyList(),
