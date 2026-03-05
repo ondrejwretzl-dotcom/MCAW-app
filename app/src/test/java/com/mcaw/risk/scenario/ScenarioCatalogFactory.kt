@@ -199,7 +199,7 @@ object ScenarioCatalogFactory {
                 expectedState = "SAFE",
                 constraintWindowSec = 8f,
                 allowedTransitions = "Žádné (SAFE pouze)",
-                regressionType = RegressionType.FalsePositive,
+                regressionType = RegressionType.FALSE_POSITIVE,
                 severity = Severity.HIGH,
                 criticalParams = listOf(
                     "risk.orangeOn",
@@ -255,7 +255,7 @@ object ScenarioCatalogFactory {
                 expectedState = "CRITICAL",
                 constraintWindowSec = 10f,
                 allowedTransitions = "SAFE→CAUTION→CRITICAL (bez nadměrného blikání)",
-                regressionType = RegressionType.FalseNegative,
+                regressionType = RegressionType.FALSE_NEGATIVE,
                 severity = Severity.HIGH,
                 criticalParams = listOf(
                     "risk.orangeOn",
@@ -319,7 +319,7 @@ object ScenarioCatalogFactory {
                 expectedState = "CAUTION/CRITICAL",
                 constraintWindowSec = 12f,
                 allowedTransitions = "Bez nadměrného blikání; ORANGE musí přijít, pokud kinematika trvá.",
-                regressionType = RegressionType.Stabilita,
+                regressionType = RegressionType.STABILITY,
                 severity = Severity.MED,
                 criticalParams = listOf(
                     "risk.orangeOn",
@@ -379,7 +379,7 @@ object ScenarioCatalogFactory {
                 expectedState = "SAFE",
                 constraintWindowSec = 12f,
                 allowedTransitions = "Žádné (SAFE pouze)",
-                regressionType = RegressionType.FalsePositive,
+                regressionType = RegressionType.FALSE_POSITIVE,
                 severity = Severity.HIGH,
                 criticalParams = listOf(
                     "risk.orangeOn",
@@ -427,7 +427,7 @@ object ScenarioCatalogFactory {
                 expectedState = "CRITICAL",
                 constraintWindowSec = 8f,
                 allowedTransitions = "SAFE→CAUTION→CRITICAL (bez nadměrného blikání)",
-                regressionType = RegressionType.FalseNegative,
+                regressionType = RegressionType.FALSE_NEGATIVE,
                 severity = Severity.HIGH,
                 criticalParams = listOf(
                     "risk.orangeOn",
@@ -493,7 +493,7 @@ object ScenarioCatalogFactory {
                 expectedState = "SAFE",
                 constraintWindowSec = 12f,
                 allowedTransitions = "Žádné (SAFE pouze)",
-                regressionType = RegressionType.FalsePositive,
+                regressionType = RegressionType.FALSE_POSITIVE,
                 severity = Severity.MED,
                 criticalParams = listOf(
                     "roi.contain.low",
@@ -544,7 +544,7 @@ object ScenarioCatalogFactory {
                 expectedState = "CAUTION",
                 constraintWindowSec = 10f,
                 allowedTransitions = "SAFE→CAUTION (bez blikání)",
-                regressionType = RegressionType.Stabilita,
+                regressionType = RegressionType.STABILITY,
                 severity = Severity.MED,
                 criticalParams = listOf(
                     "risk.orangeOn",
@@ -606,7 +606,7 @@ object ScenarioCatalogFactory {
                 expectedState = "CRITICAL",
                 constraintWindowSec = 9f,
                 allowedTransitions = "SAFE→CAUTION→CRITICAL (bez nadměrného blikání)",
-                regressionType = RegressionType.FalseNegative,
+                regressionType = RegressionType.FALSE_NEGATIVE,
                 severity = Severity.HIGH,
                 criticalParams = listOf(
                     "risk.orangeOn",
@@ -672,7 +672,7 @@ object ScenarioCatalogFactory {
                 expectedState = "CAUTION/SAFE",
                 constraintWindowSec = 11f,
                 allowedTransitions = "SAFE↔CAUTION (bez RED)",
-                regressionType = RegressionType.Stabilita,
+                regressionType = RegressionType.STABILITY,
                 severity = Severity.MED,
                 criticalParams = listOf(
                     "risk.distDynamic",
@@ -795,7 +795,7 @@ object ScenarioCatalogFactory {
                 expectedState = "CAUTION",
                 constraintWindowSec = 10f,
                 allowedTransitions = "SAFE→CAUTION (bez RED při TTC NaN)",
-                regressionType = RegressionType.Stabilita,
+                regressionType = RegressionType.STABILITY,
                 severity = Severity.HIGH,
                 criticalParams = listOf(
                     "risk.orangeOn",
@@ -858,7 +858,7 @@ object ScenarioCatalogFactory {
                 expectedState = "CAUTION",
                 constraintWindowSec = 10f,
                 allowedTransitions = "SAFE→CAUTION (stabilně)",
-                regressionType = RegressionType.Stabilita,
+                regressionType = RegressionType.STABILITY,
                 severity = Severity.MED,
                 criticalParams = listOf(
                     "risk.orangeOn",
@@ -918,7 +918,7 @@ object ScenarioCatalogFactory {
                 expectedState = "SAFE",
                 constraintWindowSec = 7f,
                 allowedTransitions = "Žádné (SAFE pouze)",
-                regressionType = RegressionType.FalsePositive,
+                regressionType = RegressionType.FALSE_POSITIVE,
                 severity = Severity.HIGH,
                 criticalParams = listOf(
                     "suppress.receding.epsMps",
@@ -967,7 +967,7 @@ object ScenarioCatalogFactory {
                 expectedState = "SAFE",
                 constraintWindowSec = 6f,
                 allowedTransitions = "Žádné (SAFE pouze)",
-                regressionType = RegressionType.FalsePositive,
+                regressionType = RegressionType.FALSE_POSITIVE,
                 severity = Severity.HIGH,
                 criticalParams = listOf(
                     "risk.orangeOn",
@@ -1016,7 +1016,7 @@ object ScenarioCatalogFactory {
                 expectedState = "CAUTION",
                 constraintWindowSec = 6f,
                 allowedTransitions = "SAFE→CAUTION po potvrzení approach (bez blikání)",
-                regressionType = RegressionType.Stabilita,
+                regressionType = RegressionType.STABILITY,
                 severity = Severity.MED,
                 criticalParams = listOf(
                     "suppress.approach.epsMps",
@@ -1075,7 +1075,7 @@ object ScenarioCatalogFactory {
                 expectedState = "CAUTION",
                 constraintWindowSec = 9f,
                 allowedTransitions = "SAFE→CAUTION (bez RED bez strong TTC)",
-                regressionType = RegressionType.FalseNegative,
+                regressionType = RegressionType.FALSE_NEGATIVE,
                 severity = Severity.MED,
                 criticalParams = listOf(
                     "ema.alphaApproach",
@@ -1117,7 +1117,7 @@ object ScenarioCatalogFactory {
                 expectedState = "SAFE",
                 constraintWindowSec = 7f,
                 allowedTransitions = "Žádné (SAFE pouze)",
-                regressionType = RegressionType.FalsePositive,
+                regressionType = RegressionType.FALSE_POSITIVE,
                 severity = Severity.MED,
                 criticalParams = listOf(
                     "suppress.receding.epsMps",
@@ -1149,7 +1149,7 @@ object ScenarioCatalogFactory {
             expectedState = "CAUTION",
             constraintWindowSec = 6f,
             allowedTransitions = "SAFE→CAUTION (stabilně)",
-            regressionType = RegressionType.Stabilita,
+            regressionType = RegressionType.STABILITY,
             severity = Severity.MED,
             criticalParams = listOf(
                 "risk.orangeOn",
@@ -1177,7 +1177,7 @@ object ScenarioCatalogFactory {
             expectedState = "CAUTION",
             constraintWindowSec = 10f,
             allowedTransitions = "SAFE→CAUTION (stabilně)",
-            regressionType = RegressionType.Stabilita,
+            regressionType = RegressionType.STABILITY,
             severity = Severity.LOW,
             criticalParams = listOf(
                 "risk.orangeOn",
@@ -1201,7 +1201,7 @@ object ScenarioCatalogFactory {
             expectedState = "SAFE",
             constraintWindowSec = 7f,
             allowedTransitions = "Žádné (SAFE pouze)",
-            regressionType = RegressionType.FalsePositive,
+            regressionType = RegressionType.FALSE_POSITIVE,
             severity = Severity.MED,
             criticalParams = listOf(
                 "suppress.receding.epsMps",

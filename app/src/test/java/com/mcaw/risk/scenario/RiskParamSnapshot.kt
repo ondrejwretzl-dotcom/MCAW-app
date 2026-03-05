@@ -41,8 +41,8 @@ object RiskParamSnapshot {
             "thr.dist.redM" to fmt3(d.distRed),
 
             // Approach speed
-            "thr.approach.orangeMps" to fmt3(d.approachOrange),
-            "thr.approach.redMps" to fmt3(d.approachRed),
+            "thr.approach.orangeMps" to fmt3(d.relOrange),
+            "thr.approach.redMps" to fmt3(d.relRed),
 
             // Risk hysteresis
             "thr.risk.orangeOn" to fmt3(d.orangeOn),
@@ -51,9 +51,9 @@ object RiskParamSnapshot {
             "thr.risk.redOff" to fmt3(d.redOff),
 
             // Combo guard
-            "guard.redCombo.slopeThr" to fmt3(d.redComboSlopeThr),
-            "guard.redCombo.strongK" to fmt3(d.redComboStrongK),
-            "guard.redCombo.midK" to fmt3(d.redComboMidK),
+            "guard.redCombo.slopeThr" to fmt3(d.slopeThr),
+            "guard.redCombo.strongK" to fmt3(d.strongK),
+            "guard.redCombo.midK" to fmt3(d.midK),
 
             // Dynamic distance settings (gate)
             "dynDist.enabled" to dynamicDistanceEnabled.toString(),
