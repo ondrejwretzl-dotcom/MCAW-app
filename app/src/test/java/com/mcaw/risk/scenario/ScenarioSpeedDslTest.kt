@@ -13,7 +13,11 @@ class ScenarioSpeedDslTest {
             title = "dsl accel",
             domain = Domain.CITY,
             vehicle = Vehicle.CAR,
-            notes = "",
+            doc = ScenarioDoc(
+                purpose = "test",
+                riskIfBroken = "test",
+                expected = ExpectedBehaviorDoc(alertLevelMax = 0, expectedState = "SAFE"),
+            ),
             config = ScenarioConfig(hz = 10, riderSpeedMps = 10f),
             expectations = emptyList(),
             segments = listOf(
@@ -43,7 +47,11 @@ class ScenarioSpeedDslTest {
             title = "dsl explicit",
             domain = Domain.CITY,
             vehicle = Vehicle.CAR,
-            notes = "",
+            doc = ScenarioDoc(
+                purpose = "test",
+                riskIfBroken = "test",
+                expected = ExpectedBehaviorDoc(alertLevelMax = 0, expectedState = "SAFE"),
+            ),
             config = ScenarioConfig(hz = 10, riderSpeedMps = 10f, riderSpeedConfidence = 0.9f),
             expectations = emptyList(),
             segments = listOf(

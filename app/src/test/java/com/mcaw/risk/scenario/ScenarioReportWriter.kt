@@ -36,8 +36,19 @@ object ScenarioReportWriter {
         }
         sb.append("\n")
 
-        sb.append("## Popis situace\n")
-        sb.append(s.notes.trim()).append("\n\n")
+        sb.append("## Spec (co tento test hlídá)\n")
+        sb.append("- **Účel:** ").append(s.doc.purpose).append("\n")
+        sb.append("- **Riziko při rozbití:** ").append(s.doc.riskIfBroken).append("\n")
+        sb.append("- **Typ regrese:** ").append(s.doc.regressionType).append(" | **Závažnost:** ").append(s.doc.severity).append("\n")
+        sb.append("- **Očekávání (shrnutí):** maxLevel=").append(s.doc.expected.alertLevelMax)
+            .append(", state=").append(s.doc.expected.expectedState)
+        s.doc.expected.constraintWindowSec?.let { sb.append(", okno=").append(fmt(it)).append("s") }
+        sb.append("\n")
+        sb.append("- **Povolené přechody:** ").append(s.doc.expected.allowedTransitions).append("\n")
+        if (s.doc.notes.isNotBlank()) {
+            sb.append("- **Pozn.:** ").append(s.doc.notes).append("\n")
+        }
+        sb.append("\n")
 
         sb.append("## Konfigurace scénáře (efektivní vstupy)\n")
         sb.append("- effectiveMode: **").append(s.config.effectiveMode).append("**\n")
@@ -58,6 +69,18 @@ object ScenarioReportWriter {
             .append(" redOn=").append(fmt(d.redOn)).append(" redOff=").append(fmt(d.redOff)).append("\n")
         sb.append("- RED combo guard: slopeThr=").append(fmt(d.slopeThr)).append(" strongK=").append(fmt(d.strongK)).append(" midK=").append(fmt(d.midK)).append("\n\n")
 
+        sb.append("## Kritické parametry (co může změnit ORANGE/RED)\n")
+        val crit = RiskParamSnapshot.fmtCriticalParams(s.doc.criticalParams, d)
+        if (crit.isEmpty()) {
+            sb.append("- (Neuvedeno)\n\n")
+        } else {
+            sb.append("| klíč | hodnota (z kódu) |\n|---|---|\n")
+            for ((k, v) in crit) {
+                sb.append("|").append(k).append("|").append(v).append("|\n")
+            }
+            sb.append("\n")
+        }
+
         sb.append("## Očekávání\n")
         for ((idx, v) in run.verdicts.withIndex()) {
             sb.append(idx + 1).append(") ").append(if (v.ok) "✅" else "❌")
@@ -65,6 +88,47 @@ object ScenarioReportWriter {
             sb.append("   - ").append(v.details).append("\n")
         }
         sb.append("\n")
+
+        sb.append("## Proč (diagnostika při FAIL)\n")
+        if (pass) {
+            sb.append("- (Scénář prošel – diagnostika není potřeba.)\n\n")
+        } else {
+            val maxLevel = run.levels.maxOrNull() ?: 0
+            val firstOrange = firstTimeAtOrAbove(run, 1)
+            val firstRed = firstTimeAtOrAbove(run, 2)
+            val lastEvent = run.events.lastOrNull { it.type == "ALERT_ENTER" || it.type == "ALERT_EXIT" }
+
+            sb.append("- **Aktuální:** maxLevel=").append(maxLevel)
+                .append(", firstORANGE=").append(fmtNullable(firstOrange))
+                .append("s, firstRED=").append(fmtNullable(firstRed)).append("s\n")
+            sb.append("- **Očekávané:** maxLevel<=").append(s.doc.expected.alertLevelMax)
+                .append(", state=").append(s.doc.expected.expectedState).append("\n")
+
+            val firstFail = failed.firstOrNull()
+            if (firstFail != null) {
+                sb.append("- **První nesplněné pravidlo:** ").append(firstFail.rule).append("\n")
+                sb.append("  - detail: ").append(firstFail.details).append("\n")
+            }
+
+            val enter = run.events.firstOrNull { it.type == "ALERT_ENTER" && it.level > s.doc.expected.alertLevelMax }
+            if (enter != null) {
+                sb.append("- **Trigger event:** t=").append(fmt(enter.tSec)).append("s level=").append(enter.level)
+                    .append(" risk=").append(fmt(enter.risk)).append(" reason=")
+                    .append(RiskEngine.formatReasonShort(enter.reasonBits)).append("\n")
+                val dist = enter.extra["distM"] as? Float
+                val rel = enter.extra["relMps"] as? Float
+                val ttc = enter.extra["ttcSec"] as? Float
+                val slope = enter.extra["ttcSlope"] as? Float
+                sb.append("  - vstupy: dist=").append(fmt(dist)).append("m rel=").append(fmt(rel)).append("m/s ttc=").append(fmt(ttc)).append("s slope=").append(fmt(slope)).append("\n")
+                sb.append("  - prahy: orangeOn=").append(fmt(d.orangeOn)).append(" redOn=").append(fmt(d.redOn)).append("\n")
+            } else if (lastEvent != null) {
+                sb.append("- **Poslední přechod alertu:** t=").append(fmt(lastEvent.tSec)).append("s ").append(lastEvent.type)
+                    .append(" level=").append(lastEvent.level)
+                    .append(" reason=").append(RiskEngine.formatReasonShort(lastEvent.reasonBits)).append("\n")
+            }
+
+            sb.append("\n")
+        }
 
         sb.append("## Klíčové přechody alertů\n")
         sb.append("| t (s) | událost | level | risk | důvod | segment | dist(m) | rel(m/s) | ttc(s) | slope | roi | qW |\n")
@@ -107,10 +171,22 @@ object ScenarioReportWriter {
         sb.append("\n")
 
         sb.append("## Poznámky pro ladění\n")
-        sb.append("- Report je dual-use: je čitelný pro PO, ale obsahuje i prahy odvozené z kódu a zkrácené důvody (reason bits) pro ladění.\n")
-        sb.append("- Soubor JSONL obsahuje strukturované eventy a je vhodný pro grep/parsing (regrese).\n")
+        sb.append("- Report je dual-use: stručný pro člověka, ale obsahuje prahy odvozené z kódu a reason bits pro audit.\n")
+        sb.append("- Pokud upravíte některý z \"kritických parametrů\", očekávejte změnu ORANGE/RED a aktualizujte baseline vědomě.\n")
+        sb.append("- JSONL eventy jsou strojově čitelné a kompatibilní se simulátorem (sim) i log_analyzer exportem.\n")
 
         file.writeText(sb.toString())
+    }
+
+    private fun firstTimeAtOrAbove(run: ScenarioRun, level: Int): Float? {
+        for (i in run.levels.indices) {
+            if (run.levels[i] >= level) return run.frames.getOrNull(i)?.tSec
+        }
+        return null
+    }
+
+    private fun fmtNullable(v: Float?): String {
+        return if (v == null) "—" else fmt(v)
     }
 
     fun writeFrameTraceJsonl(run: ScenarioRun, file: File) {

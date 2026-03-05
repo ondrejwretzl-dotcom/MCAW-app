@@ -16,7 +16,11 @@ class ScenarioReportWriterTest {
             title = "Engine scenario",
             domain = Domain.CITY,
             vehicle = Vehicle.CAR,
-            notes = "notes",
+            doc = ScenarioDoc(
+                purpose = "test",
+                riskIfBroken = "test",
+                expected = ExpectedBehaviorDoc(alertLevelMax = 0, expectedState = "SAFE"),
+            ),
             config = ScenarioConfig(),
             expectations = emptyList(),
             segments = listOf(
@@ -29,7 +33,11 @@ class ScenarioReportWriterTest {
             title = "E2E scenario",
             domain = Domain.CITY,
             vehicle = Vehicle.CAR,
-            notes = "notes",
+            doc = ScenarioDoc(
+                purpose = "test",
+                riskIfBroken = "test",
+                expected = ExpectedBehaviorDoc(alertLevelMax = 0, expectedState = "SAFE"),
+            ),
             config = ScenarioConfig(),
             expectations = emptyList(),
             segments = listOf(

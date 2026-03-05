@@ -8,11 +8,67 @@ interface ScenarioMeta {
     val title: String
     val domain: Domain
     val vehicle: Vehicle
-    val notes: String
+    /**
+     * Scénářová dokumentace (CZ): účel, očekávání, kritické parametry.
+     *
+     * Pozn.: je to kontrakt regresních testů. Pokud se změní parametry uvedené v [doc.criticalParams],
+     * je pravděpodobné, že se změní i výsledek (ORANGE/RED) – a test musí buď projít
+     * nebo být vědomě re-baselineovaný.
+     */
+    val doc: ScenarioDoc
     val config: ScenarioConfig
     val expectations: List<Expectation>
     fun segmentsForReport(): List<SegmentForReport>
 }
+
+/**
+ * MCAW Scenario Spec v1 – dokumentace scénáře (povinná pro regression katalog).
+ */
+data class ScenarioDoc(
+    /** Krátce proč scénář existuje (1–2 věty). */
+    val purpose: String,
+    /** Co se v reálném UX stane, když se scénář rozbije. */
+    val riskIfBroken: String,
+    /** Očekávané chování (human readable + pro index). */
+    val expected: ExpectedBehaviorDoc,
+    /** Klasifikace regrese (pro index/triage). */
+    val regressionType: RegressionType = RegressionType.NEUvedeno,
+    /** Dopad do praxe (triage). */
+    val severity: Severity = Severity.MED,
+    /**
+     * Seznam klíčů parametrů, které mohou měnit výsledek (ORANGE/RED) – viz [RiskParamSnapshot].
+     *
+     * Pravidlo: uvádět jen relevantní (typicky 4–10).
+     */
+    val criticalParams: List<String> = emptyList(),
+    /** Volitelné poznámky (krátké). */
+    val notes: String = ""
+)
+
+data class ExpectedBehaviorDoc(
+    /** Max. alert level, který je v tomto scénáři přípustný (0/1/2). */
+    val alertLevelMax: Int,
+    /** Očekávaný risk state (SAFE/CAUTION/CRITICAL). */
+    val expectedState: String,
+    /** Jak dlouho / v jakém okně musí očekávání platit. */
+    val constraintWindowSec: Float? = null,
+    /** Povolené přechody (text). */
+    val allowedTransitions: String = "—",
+    /** Reason whitelist (volitelné). */
+    val reasonWhitelist: List<String> = emptyList(),
+    /** Reason blacklist (volitelné). */
+    val reasonBlacklist: List<String> = emptyList()
+)
+
+enum class RegressionType {
+    FalsePositive,
+    FalseNegative,
+    Stabilita,
+    Vykon,
+    NEUvedeno
+}
+
+enum class Severity { LOW, MED, HIGH }
 
 data class SegmentForReport(
     val name: String,
@@ -37,7 +93,7 @@ data class EngineOnlyScenario(
     override val title: String,
     override val domain: Domain,
     override val vehicle: Vehicle,
-    override val notes: String,
+    override val doc: ScenarioDoc,
     override val config: ScenarioConfig,
     override val expectations: List<Expectation>,
     val segments: List<EngineOnlySegment>
@@ -52,7 +108,7 @@ data class E2eScenario(
     override val title: String,
     override val domain: Domain,
     override val vehicle: Vehicle,
-    override val notes: String,
+    override val doc: ScenarioDoc,
     override val config: ScenarioConfig,
     override val expectations: List<Expectation>,
     val segments: List<E2eSegment>

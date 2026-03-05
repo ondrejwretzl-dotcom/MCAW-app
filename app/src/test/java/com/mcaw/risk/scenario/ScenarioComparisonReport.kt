@@ -17,6 +17,10 @@ object ScenarioComparisonReport {
         val scenarioId: String,
         val domain: String,
         val vehicle: String,
+        val regressionType: String,
+        val severity: String,
+        val expectedMaxLevel: Int,
+        val expectedState: String,
         val pass: Boolean,
         val maxLevel: Int,
         val firstOrangeSec: Float?,
@@ -25,7 +29,8 @@ object ScenarioComparisonReport {
         val maxTransitionsWindow: Int,
         val orangeCount: Int,
         val redCount: Int,
-        val topReasonIds: List<Int>
+        val topReasonIds: List<Int>,
+        val topReasonShort: String?
     )
 
     data class DiffEntry(
@@ -79,10 +84,20 @@ object ScenarioComparisonReport {
                 .take(5)
                 .map { it.first }
 
+            val topReasonShort = run.events
+                .asSequence()
+                .filter { it.type == "ALERT_ENTER" }
+                .maxByOrNull { it.risk }
+                ?.let { com.mcaw.risk.RiskEngine.formatReasonShort(it.reasonBits) }
+
             ScenarioSummary(
                 scenarioId = run.scenario.id,
                 domain = run.scenario.domain.name,
                 vehicle = run.scenario.vehicle.name,
+                regressionType = run.scenario.doc.regressionType.name,
+                severity = run.scenario.doc.severity.name,
+                expectedMaxLevel = run.scenario.doc.expected.alertLevelMax,
+                expectedState = run.scenario.doc.expected.expectedState,
                 pass = run.verdicts.all { it.ok },
                 maxLevel = maxLevel,
                 firstOrangeSec = firstOrangeSec,
@@ -91,7 +106,8 @@ object ScenarioComparisonReport {
                 maxTransitionsWindow = maxTransitionsWindow,
                 orangeCount = orangeCount,
                 redCount = redCount,
-                topReasonIds = topReasonIds
+                topReasonIds = topReasonIds,
+                topReasonShort = topReasonShort
             )
         }
     }
@@ -100,7 +116,7 @@ object ScenarioComparisonReport {
         outFile.parentFile?.mkdirs()
         val sb = StringBuilder(32_000)
         sb.append("{\n")
-        sb.append("  \"version\": 1,\n")
+        sb.append("  \"version\": 2,\n")
         sb.append("  \"scenarios\": [\n")
         for ((idx, s) in summary.withIndex()) {
             if (idx > 0) sb.append(",\n")
@@ -108,6 +124,10 @@ object ScenarioComparisonReport {
             sb.append("\"scenarioId\":\"").append(escape(s.scenarioId)).append("\"")
             sb.append(",\"domain\":\"").append(escape(s.domain)).append("\"")
             sb.append(",\"vehicle\":\"").append(escape(s.vehicle)).append("\"")
+            sb.append(",\"regressionType\":\"").append(escape(s.regressionType)).append("\"")
+            sb.append(",\"severity\":\"").append(escape(s.severity)).append("\"")
+            sb.append(",\"expectedMaxLevel\":").append(s.expectedMaxLevel)
+            sb.append(",\"expectedState\":\"").append(escape(s.expectedState)).append("\"")
             sb.append(",\"pass\":").append(if (s.pass) "true" else "false")
             sb.append(",\"maxLevel\":").append(s.maxLevel)
             sb.append(",\"firstOrangeSec\":").append(fmtNullable(s.firstOrangeSec))
@@ -122,6 +142,7 @@ object ScenarioComparisonReport {
                 sb.append(id)
             }
             sb.append("]")
+            sb.append(",\"topReasonShort\":").append(if (s.topReasonShort == null) "null" else "\"${escape(s.topReasonShort)}\"")
             sb.append("}")
         }
         sb.append("\n  ]\n")
@@ -589,6 +610,23 @@ object ScenarioComparisonReport {
 
             append("""
               </div>
+              <script>
+                (function() {
+                  function applyFilter(suiteKey, q) {
+                    const query = (q || '').trim().toLowerCase();
+                    const rows = document.querySelectorAll('tr[data-suite="' + suiteKey + '"]');
+                    rows.forEach(function(r) {
+                      const hay = (r.getAttribute('data-filter') || '');
+                      r.style.display = (query.length === 0 || hay.indexOf(query) >= 0) ? '' : 'none';
+                    });
+                  }
+                  const inputs = document.querySelectorAll('input.filterInput');
+                  inputs.forEach(function(inp) {
+                    const suite = inp.getAttribute('data-suite');
+                    inp.addEventListener('input', function() { applyFilter(suite, inp.value); });
+                  });
+                })();
+              </script>
             </body>
             </html>
             """.trimIndent())
@@ -637,8 +675,14 @@ object ScenarioComparisonReport {
         sb.append("<div class=\"card unchanged\"><div class=\"label\">UNCHANGED</div><div class=\"value\">$unchanged</div></div>")
         sb.append("</div>")
 
+        sb.append("<div style='display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin: 8px 0 12px;'>")
+        sb.append("<label class='muted' style='font-weight:600;'>Filtr:</label>")
+        sb.append("<input class='filterInput' data-suite='").append(escapeHtml(reportSubDir)).append("' placeholder='ID / doména / typ regrese / reason…' style='padding:8px 10px; border:1px solid var(--line); border-radius:10px; min-width: 320px;' />")
+        sb.append("<span class='muted'>Tip: napište např. <code>FalsePositive</code> nebo <code>CRITICAL</code>.</span>")
+        sb.append("</div>")
+
         sb.append("<div class=\"table-wrap\"><table><thead><tr>")
-        sb.append("<th>Scénář</th><th>Doména</th><th>Vozidlo</th><th>Result</th><th>Diff</th><th>Δ ORANGE</th><th>Δ RED</th><th>Δ TRANS</th><th>Artefakty</th>")
+        sb.append("<th>Scénář</th><th>Doména</th><th>Vozidlo</th><th>Spec</th><th>Result</th><th>Diff</th><th>Δ ORANGE</th><th>Δ RED</th><th>Δ TRANS</th><th>Top reason</th><th>Artefakty</th>")
         sb.append("</tr></thead><tbody>")
 
         for (s in summary.sortedBy { it.scenarioId }) {
@@ -653,21 +697,26 @@ object ScenarioComparisonReport {
                 else -> "unchanged"
             }
 
-            sb.append("<tr>")
+            val spec = "${escapeHtml(s.regressionType)}/${escapeHtml(s.severity)} exp<=${s.expectedMaxLevel} ${escapeHtml(s.expectedState)}"
+            sb.append("<tr data-suite='").append(escapeHtml(reportSubDir)).append("' data-filter='")
+                .append(escapeHtml((s.scenarioId + " " + s.domain + " " + s.vehicle + " " + s.regressionType + " " + s.severity + " " + s.expectedState + " " + (s.topReasonShort ?: "")).lowercase()))
+                .append("'>")
             sb.append("<td class=\"scenario\">").append(escapeHtml(s.scenarioId)).append("</td>")
             sb.append("<td>").append(escapeHtml(s.domain)).append("</td>")
             sb.append("<td>").append(escapeHtml(s.vehicle)).append("</td>")
+            sb.append("<td>").append(spec).append("<br><span class='muted'>act max=").append(s.maxLevel).append("</span></td>")
             sb.append("<td><span class=\"chip ").append(resultClass).append("\">").append(resultText).append("</span></td>")
             sb.append("<td><span class=\"chip ").append(diffClass).append("\">").append(escapeHtml(diffStatus)).append("</span></td>")
             sb.append("<td>").append(fmtNullable(d?.deltaFirstOrangeSec)).append("</td>")
             sb.append("<td>").append(fmtNullable(d?.deltaFirstRedSec)).append("</td>")
             sb.append("<td>").append(d?.deltaTransitions ?: 0).append("</td>")
+            sb.append("<td>").append(escapeHtml(s.topReasonShort ?: "—")).append("</td>")
             sb.append("<td class=\"links\"><a href='${reportsRelativePath}/${reportSubDir}/${s.scenarioId}.md'>MD</a> · <a href='${reportsRelativePath}/${reportSubDir}/${s.scenarioId}.jsonl'>JSONL</a></td>")
             sb.append("</tr>")
         }
 
         if (summary.isEmpty()) {
-            sb.append("<tr><td colspan=\"9\" class=\"muted\">Žádná data pro tuto sadu testů.</td></tr>")
+            sb.append("<tr><td colspan=\"11\" class=\"muted\">Žádná data pro tuto sadu testů.</td></tr>")
         }
 
         sb.append("</tbody></table></div>")
@@ -751,10 +800,21 @@ object ScenarioComparisonReport {
         val reasonBlock = Regex("\"topReasonIds\"\\s*:\\s*\\[(.*?)\\]").find(obj)?.groupValues?.get(1).orEmpty()
         val topReasonIds = reasonBlock.split(',').mapNotNull { it.trim().toIntOrNull() }
 
+        // v2 fields (optional for backward compatibility)
+        val regressionType = str("regressionType") ?: "NEUvedeno"
+        val severity = str("severity") ?: "MED"
+        val expectedMaxLevel = int("expectedMaxLevel") ?: 0
+        val expectedState = str("expectedState") ?: "—"
+        val topReasonShort = str("topReasonShort")
+
         return ScenarioSummary(
             scenarioId = scenarioId,
             domain = domain,
             vehicle = vehicle,
+            regressionType = regressionType,
+            severity = severity,
+            expectedMaxLevel = expectedMaxLevel,
+            expectedState = expectedState,
             pass = pass,
             maxLevel = maxLevel,
             firstOrangeSec = firstOrangeSec,
@@ -763,7 +823,8 @@ object ScenarioComparisonReport {
             maxTransitionsWindow = maxTransitionsWindow,
             orangeCount = orangeCount,
             redCount = redCount,
-            topReasonIds = topReasonIds
+            topReasonIds = topReasonIds,
+            topReasonShort = topReasonShort
         )
     }
 

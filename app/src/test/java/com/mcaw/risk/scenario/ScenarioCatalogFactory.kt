@@ -22,6 +22,34 @@ object ScenarioCatalogFactory {
 
     const val CATALOG_VERSION = "2026-02-28"
 
+    private fun doc(
+        purpose: String,
+        riskIfBroken: String,
+        alertLevelMax: Int,
+        expectedState: String,
+        constraintWindowSec: Float? = null,
+        allowedTransitions: String = "—",
+        regressionType: RegressionType = RegressionType.NEUvedeno,
+        severity: Severity = Severity.MED,
+        criticalParams: List<String> = emptyList(),
+        notes: String = ""
+    ): ScenarioDoc {
+        return ScenarioDoc(
+            purpose = purpose.trim(),
+            riskIfBroken = riskIfBroken.trim(),
+            expected = ExpectedBehaviorDoc(
+                alertLevelMax = alertLevelMax,
+                expectedState = expectedState,
+                constraintWindowSec = constraintWindowSec,
+                allowedTransitions = allowedTransitions,
+            ),
+            regressionType = regressionType,
+            severity = severity,
+            criticalParams = criticalParams,
+            notes = notes.trim()
+        )
+    }
+
     fun createDefaultCatalog(): ScenarioCatalogEngineOnly = createEngineOnlyCatalog()
 
     fun createEngineOnlyCatalog(): ScenarioCatalogEngineOnly {
@@ -72,7 +100,21 @@ object ScenarioCatalogFactory {
             title = "E2E sensitivity: ttcInvalidHoldMs observable",
             domain = Domain.CITY,
             vehicle = Vehicle.CAR,
-            notes = "Only for sensitivity tests. Slow closing disables ttcFromDist; TTC invalid window should be bridged by ttcInvalidHoldMs.",
+            doc = doc(
+                purpose = "Citlivostní scénář pro viditelné chování ttcInvalidHoldMs (není produktová regrese).",
+                riskIfBroken = "Pokud se bridge invalid TTC rozbije, engine může zbytečně blikat nebo naopak zpozdit varování.",
+                alertLevelMax = 2,
+                expectedState = "—",
+                regressionType = RegressionType.NEUvedeno,
+                severity = Severity.LOW,
+                criticalParams = listOf(
+                    "ema.alphaApproach",
+                    "ema.alphaRel",
+                    "risk.orangeOn",
+                    "risk.redOn"
+                ),
+                notes = "Pouze pro E2ePipelineSensitivityTest. Pomalé přibližování vypíná ttcFromDist gate; okno invalid TTC se musí držet pomocí hold/bridge." 
+            ),
             config = ScenarioConfig(effectiveMode = 1, hz = hz, riderSpeedMps = 10f, qualityWeight = 0.95f),
             expectations = emptyList(),
             segments = listOf(
@@ -145,12 +187,24 @@ object ScenarioCatalogFactory {
             title = "Město: průjezd kolem zaparkovaných aut na okraji ROI",
             domain = Domain.CITY,
             vehicle = Vehicle.CAR,
-            notes = """
-                Jízda kolem řady zaparkovaných aut na okraji ROI.
-                Objekt může vypadat velký, ale má téměř nulové přibližování.
-
-                Očekávání: žádné ORANGE/RED (kritický anti-false-alarm scénář pro důvěru uživatele).
-            """.trimIndent(),
+            doc = doc(
+                purpose = "Anti-false-alarm: průjezd kolem zaparkovaných aut na okraji ROI (velký objekt, téměř nulové přibližování).",
+                riskIfBroken = "Falešné ORANGE/RED při běžné jízdě ve městě → ztráta důvěry a vypínání systému.",
+                alertLevelMax = 0,
+                expectedState = "SAFE",
+                constraintWindowSec = 8f,
+                allowedTransitions = "Žádné (SAFE pouze)",
+                regressionType = RegressionType.FalsePositive,
+                severity = Severity.HIGH,
+                criticalParams = listOf(
+                    "risk.orangeOn",
+                    "risk.ttcOrange",
+                    "risk.relOrange",
+                    "roi.contain.low",
+                    "suppress.approach.epsMps"
+                ),
+                notes = "Objekt může působit blízko (velká bbox), ale rel rychlost je nízká. ROI je hraniční (váha), ne hard gate."
+            ),
             config = ScenarioConfig(
                 effectiveMode = 1,
                 hz = 10,
@@ -189,12 +243,26 @@ object ScenarioCatalogFactory {
             title = "Město: dojezd do kolony (rychlé přibližování)",
             domain = Domain.CITY,
             vehicle = Vehicle.CAR,
-            notes = """
-                Dojezd do tvořící se kolony. Přibližování zůstává vysoké a TTC klesá pod ttcRed.
-
-                Očekávání: nejdřív ORANGE, poté RED.
-                Pozn.: pokud by RED nenastal, je potřeba v reportu ověřit, zda ho neblokoval combo guard (allowRed=false).
-            """.trimIndent(),
+            doc = doc(
+                purpose = "Dojezd do kolony: přibližování je vysoké a TTC spadne do kritické oblasti.",
+                riskIfBroken = "False negative (pozdní nebo chybějící ORANGE/RED) → ztráta prediktivní funkce a reálné riziko kolize.",
+                alertLevelMax = 2,
+                expectedState = "CRITICAL",
+                constraintWindowSec = 10f,
+                allowedTransitions = "SAFE→CAUTION→CRITICAL (bez nadměrného blikání)",
+                regressionType = RegressionType.FalseNegative,
+                severity = Severity.HIGH,
+                criticalParams = listOf(
+                    "risk.orangeOn",
+                    "risk.redOn",
+                    "risk.ttcOrange",
+                    "risk.ttcRed",
+                    "risk.redCombo.slopeThr",
+                    "risk.redCombo.strongK",
+                    "risk.relRed"
+                ),
+                notes = "Pokud RED nenastane, musí být z reportu jasné, zda to blokuje guard/hystereze, nebo je špatně kinematika (TTC/rel)."
+            ),
             config = ScenarioConfig(
                 effectiveMode = 1,
                 hz = 10,
@@ -239,13 +307,25 @@ object ScenarioCatalogFactory {
             title = "Tunel: pokles kvality obrazu + pokračující přibližování",
             domain = Domain.TUNNEL,
             vehicle = Vehicle.CAR,
-            notes = """
-                Vjezd do tunelu: qualityWeight rychle klesne, poté se částečně obnoví. Přibližování pokračuje.
-
-                Očekávání: varování je stabilní (bez cvakání). RED se může zpozdit kvůli konzervativním prahům,
-                ale musí nastat, pokud kritické přibližování trvá dostatečně dlouho.
-                Pokud nenastane, report musí ukázat, jestli problém byl v kinematice scénáře, nebo v guard/hysterezi engine.
-            """.trimIndent(),
+            doc = doc(
+                purpose = "Tunel: qualityWeight krátce padá, ale kinematika je stále nebezpečná (přibližování pokračuje).",
+                riskIfBroken = "Nesmyslné cvakání/kolísání alertů při změně kvality obrazu → UX nestabilita. Nebo zpoždění varování.",
+                alertLevelMax = 2,
+                expectedState = "CAUTION/CRITICAL",
+                constraintWindowSec = 12f,
+                allowedTransitions = "Bez nadměrného blikání; ORANGE musí přijít, pokud kinematika trvá.",
+                regressionType = RegressionType.Stabilita,
+                severity = Severity.MED,
+                criticalParams = listOf(
+                    "risk.orangeOn",
+                    "risk.orangeOff",
+                    "risk.ttcOrange",
+                    "risk.relOrange",
+                    "risk.redOn",
+                    "risk.redOff"
+                ),
+                notes = "Pokud se RED zpozdí, je to ok jen tehdy, když konzervativní prahy/quality to vysvětlují. Report musí ukázat trigger (riskScore vs threshold)."
+            ),
             config = ScenarioConfig(
                 effectiveMode = 1,
                 hz = 10,
@@ -287,10 +367,22 @@ object ScenarioCatalogFactory {
             title = "Dálnice: stabilní odstup (bez alertů)",
             domain = Domain.HIGHWAY,
             vehicle = Vehicle.CAR,
-            notes = """
-                Jízda po dálnici se stabilním odstupem a nízkým přibližováním.
-                Scénář brání falešným alarmům a hlídá stabilitu.
-            """.trimIndent(),
+            doc = doc(
+                purpose = "Anti-false-alarm: stabilní odstup na dálnici (rel nízké, TTC vysoké).",
+                riskIfBroken = "Falešné ORANGE při stabilním následování → uživatel systém ignoruje/vypíná.",
+                alertLevelMax = 0,
+                expectedState = "SAFE",
+                constraintWindowSec = 12f,
+                allowedTransitions = "Žádné (SAFE pouze)",
+                regressionType = RegressionType.FalsePositive,
+                severity = Severity.HIGH,
+                criticalParams = listOf(
+                    "risk.orangeOn",
+                    "risk.relOrange",
+                    "risk.ttcOrange",
+                    "risk.orangeOff"
+                )
+            ),
             config = ScenarioConfig(
                 effectiveMode = 2, // sport/highway
                 hz = 10,
@@ -323,12 +415,25 @@ object ScenarioCatalogFactory {
             title = "Dálnice: náhlé brzdění vozidla vpředu",
             domain = Domain.HIGHWAY,
             vehicle = Vehicle.CAR,
-            notes = """
-                Situace na dálnici, kdy vozidlo vpředu prudce brzdí.
-                Modelujeme ji rychlým poklesem TTC a vysokým přibližováním. BrakeCue je aktivní.
-
-                Očekávání: ORANGE rychle, poté RED po potvrzení (combo guard splněn).
-            """.trimIndent(),
+            doc = doc(
+                purpose = "Dálnice: prudké brzdění vpředu (brake cue), rychlý pokles TTC a vysoké přibližování.",
+                riskIfBroken = "False negative / pozdní varování při reálném brzdění vpředu.",
+                alertLevelMax = 2,
+                expectedState = "CRITICAL",
+                constraintWindowSec = 8f,
+                allowedTransitions = "SAFE→CAUTION→CRITICAL (bez nadměrného blikání)",
+                regressionType = RegressionType.FalseNegative,
+                severity = Severity.HIGH,
+                criticalParams = listOf(
+                    "risk.orangeOn",
+                    "risk.redOn",
+                    "risk.ttcRed",
+                    "risk.relRed",
+                    "risk.redCombo.slopeThr",
+                    "risk.redCombo.strongK",
+                    "risk.redCombo.midK"
+                )
+            ),
             config = ScenarioConfig(
                 effectiveMode = 2,
                 hz = 10,
@@ -376,10 +481,21 @@ object ScenarioCatalogFactory {
             title = "Okreska: zatáčka + protijedoucí mimo ROI",
             domain = Domain.RURAL,
             vehicle = Vehicle.CAR,
-            notes = """
-                Zatáčka na okresce. Protijedoucí vozidlo se objeví mimo střed / nízké ROI containment.
-                Relativní přibližování není relevantní pro kolizi v našem pruhu.
-            """.trimIndent(),
+            doc = doc(
+                purpose = "Anti-false-alarm: protijedoucí objekt mimo náš corridor (nízké ROI containment).",
+                riskIfBroken = "Falešné ORANGE v zatáčkách proti protijedoucím → UX chaos.",
+                alertLevelMax = 0,
+                expectedState = "SAFE",
+                constraintWindowSec = 12f,
+                allowedTransitions = "Žádné (SAFE pouze)",
+                regressionType = RegressionType.FalsePositive,
+                severity = Severity.MED,
+                criticalParams = listOf(
+                    "roi.contain.low",
+                    "risk.orangeOn",
+                    "risk.relOrange"
+                )
+            ),
             config = ScenarioConfig(
                 effectiveMode = 1,
                 hz = 10,
@@ -416,12 +532,22 @@ object ScenarioCatalogFactory {
             title = "Motorka: motorka před motorkou v zatáčce",
             domain = Domain.RURAL,
             vehicle = Vehicle.MOTO,
-            notes = """
-                Motorkář jede za motorkou při náklonu v zatáčce.
-                Může vznikat jitter detekce a posun ROI; engine snižuje citlivost při velkém náklonu.
-
-                Očekávání: bez cvakání; ORANGE ve chvíli, kdy je přibližování skutečně významné.
-            """.trimIndent(),
+            doc = doc(
+                purpose = "Motorka v zatáčce: náklon snižuje citlivost, ale při reálném přibližování musí přijít ORANGE.",
+                riskIfBroken = "Buď falešné alarmy v zatáčkách (nestabilita), nebo naopak potlačení varování při přibližování.",
+                alertLevelMax = 1,
+                expectedState = "CAUTION",
+                constraintWindowSec = 10f,
+                allowedTransitions = "SAFE→CAUTION (bez blikání)",
+                regressionType = RegressionType.Stabilita,
+                severity = Severity.MED,
+                criticalParams = listOf(
+                    "risk.orangeOn",
+                    "risk.orangeOff",
+                    "risk.relOrange",
+                    "risk.ttcOrange"
+                )
+            ),
             config = ScenarioConfig(
                 effectiveMode = 1,
                 hz = 10,
@@ -468,10 +594,23 @@ object ScenarioCatalogFactory {
             title = "Motorka: náhlé brzdění vpředu",
             domain = Domain.CITY,
             vehicle = Vehicle.MOTO,
-            notes = """
-                Motorkář dojíždí pomalé/stojící vozidlo s náhlým brzděním vpředu.
-                Menší target + jitter nesmí zabránit kritickému varování.
-            """.trimIndent(),
+            doc = doc(
+                purpose = "Motorka: dojezd + náhlé brzdění vpředu. Menší target/jitter nesmí zabránit ORANGE/RED.",
+                riskIfBroken = "Chybějící RED v reálném dojezdu (FN) nebo extrémní flapping (UX).",
+                alertLevelMax = 2,
+                expectedState = "CRITICAL",
+                constraintWindowSec = 9f,
+                allowedTransitions = "SAFE→CAUTION→CRITICAL (bez nadměrného blikání)",
+                regressionType = RegressionType.FalseNegative,
+                severity = Severity.HIGH,
+                criticalParams = listOf(
+                    "risk.orangeOn",
+                    "risk.redOn",
+                    "risk.ttcRed",
+                    "risk.relRed",
+                    "risk.redCombo.slopeThr"
+                )
+            ),
             config = ScenarioConfig(
                 effectiveMode = 1,
                 hz = 10,
@@ -521,12 +660,23 @@ object ScenarioCatalogFactory {
             title = "Dynamická distance: zpomalování jezdce stabilizuje riziko",
             domain = Domain.CITY,
             vehicle = Vehicle.MOTO,
-            notes = """
-                Referenční scénář pro dynamické distance prahy: jezdec po hazardu intenzivně brzdí.
-                Rychlost je simulována z počáteční hodnoty a akcelerace (negativní po hazardu).
-
-                Očekávání: ORANGE může nastat, ale nemá vzniknout RED a přechody musí zůstat stabilní.
-            """.trimIndent(),
+            doc = doc(
+                purpose = "Reference pro dynamické distance prahy: po hazardu jezdec brzdí (speed klesá).",
+                riskIfBroken = "Pokud se při brzdění objevuje RED nebo flapping, dynamické prahy jsou moc agresivní/unstable.",
+                alertLevelMax = 1,
+                expectedState = "CAUTION/SAFE",
+                constraintWindowSec = 11f,
+                allowedTransitions = "SAFE↔CAUTION (bez RED)",
+                regressionType = RegressionType.Stabilita,
+                severity = Severity.MED,
+                criticalParams = listOf(
+                    "risk.distDynamic",
+                    "risk.distHeadwayOrangeSec",
+                    "risk.distHeadwayRedSec",
+                    "risk.redOn",
+                    "risk.redOff"
+                )
+            ),
             config = ScenarioConfig(
                 effectiveMode = 1,
                 hz = 10,
@@ -572,10 +722,22 @@ object ScenarioCatalogFactory {
             title = "Dynamická distance: akcelerace jezdce přinese dřívější ORANGE",
             domain = Domain.HIGHWAY,
             vehicle = Vehicle.CAR,
-            notes = """
-                Referenční scénář: po hazardu jezdec akceleruje (v0 + kladná akcelerace).
-                Při dynamických distance prazích má ORANGE přijít včas díky rostoucím dist thresholdům.
-            """.trimIndent(),
+            doc = doc(
+                purpose = "Reference pro dynamické distance: po hazardu jezdec akceleruje, ORANGE má přijít včas (dist prahy rostou).",
+                riskIfBroken = "Pozdní ORANGE při akceleraci (FN), nebo naopak RED v nekritické situaci (FP).",
+                alertLevelMax = 1,
+                expectedState = "CAUTION",
+                constraintWindowSec = 9f,
+                allowedTransitions = "SAFE→CAUTION (bez RED)",
+                regressionType = RegressionType.NEUvedeno,
+                severity = Severity.MED,
+                criticalParams = listOf(
+                    "risk.distDynamic",
+                    "risk.distHeadwayOrangeSec",
+                    "risk.orangeOn",
+                    "risk.ttcOrange"
+                )
+            ),
             config = ScenarioConfig(
                 effectiveMode = 2,
                 hz = 10,
@@ -621,13 +783,23 @@ object ScenarioCatalogFactory {
             title = "Regrese: TTC invalid, ale přibližování pokračuje",
             domain = Domain.CITY,
             vehicle = Vehicle.CAR,
-            notes = """
-                Anti-regression scénář pro případ, kdy se TTC během přibližování stane invalidním.
-                Přibližování (distance/REL) však pokračuje a ORANGE musí zůstat dosažitelné.
-
-                Očekávání: ORANGE musí nastat i bez strongTtc.
-                RED naopak bez strongTtc (TTC NaN) vznikat nemá.
-            """.trimIndent(),
+            doc = doc(
+                purpose = "Anti-regression: TTC se během přibližování stane invalidním, ale dist/rel dál indikují hazard.",
+                riskIfBroken = "Buď false negative (ORANGE nepřijde), nebo false RED při TTC=NaN.",
+                alertLevelMax = 1,
+                expectedState = "CAUTION",
+                constraintWindowSec = 10f,
+                allowedTransitions = "SAFE→CAUTION (bez RED při TTC NaN)",
+                regressionType = RegressionType.Stabilita,
+                severity = Severity.HIGH,
+                criticalParams = listOf(
+                    "risk.orangeOn",
+                    "risk.orangeOff",
+                    "risk.distOrange",
+                    "risk.relOrange",
+                    "risk.redOn"
+                )
+            ),
             config = ScenarioConfig(
                 effectiveMode = 1,
                 hz = 10,
@@ -674,10 +846,22 @@ object ScenarioCatalogFactory {
             title = "Regrese: V2 follow musí vstoupit do ORANGE bez flappingu",
             domain = Domain.HIGHWAY,
             vehicle = Vehicle.CAR,
-            notes = """
-                Následování pomalejšího vozidla se středním až vyšším přibližováním,
-                kde očekáváme včasný ORANGE bez přeskakování mezi levely.
-            """.trimIndent(),
+            doc = doc(
+                purpose = "Regrese: následování s kontrolovaným přibližováním musí dát ORANGE stabilně (bez flappingu).",
+                riskIfBroken = "Pokud ORANGE flappuje, UX je nepoužitelné. Pokud ORANGE nepřijde, je to FN.",
+                alertLevelMax = 1,
+                expectedState = "CAUTION",
+                constraintWindowSec = 10f,
+                allowedTransitions = "SAFE→CAUTION (stabilně)",
+                regressionType = RegressionType.Stabilita,
+                severity = Severity.MED,
+                criticalParams = listOf(
+                    "risk.orangeOn",
+                    "risk.orangeOff",
+                    "risk.ttcOrange",
+                    "risk.relOrange"
+                )
+            ),
             config = ScenarioConfig(
                 effectiveMode = 1,
                 hz = 10,
@@ -722,10 +906,22 @@ object ScenarioCatalogFactory {
             title = "Město: receding target musí být hard-suppressed",
             domain = Domain.CITY,
             vehicle = Vehicle.CAR,
-            notes = """
-                Cílená regrese pro receding hard suppress.
-                I při malé vzdálenosti a nízkém TTC distance roste (target se vzdaluje), proto level nesmí vstoupit nad 0.
-            """.trimIndent(),
+            doc = doc(
+                purpose = "Cílená regrese: target se vzdaluje (distance roste), i když je blízko a TTC může vypadat nízké.",
+                riskIfBroken = "Falešné ORANGE/RED při receding situaci (např. auto vpředu zrychlí) → zbytečné alarmy.",
+                alertLevelMax = 0,
+                expectedState = "SAFE",
+                constraintWindowSec = 7f,
+                allowedTransitions = "Žádné (SAFE pouze)",
+                regressionType = RegressionType.FalsePositive,
+                severity = Severity.HIGH,
+                criticalParams = listOf(
+                    "suppress.receding.epsMps",
+                    "suppress.receding.scale",
+                    "risk.orangeOn",
+                    "risk.relOrange"
+                )
+            ),
             config = ScenarioConfig(
                 effectiveMode = 1,
                 hz = 10,
@@ -759,10 +955,22 @@ object ScenarioCatalogFactory {
             title = "Dálnice: steady gap hard suppress po 1.2s stability",
             domain = Domain.HIGHWAY,
             vehicle = Vehicle.CAR,
-            notes = """
-                Scénář drží stabilní distance a téměř nulovou derivaci po více než 1.2s.
-                Očekávání: steady suppress aktivní => level zůstává 0 při stabilní mezeře a vysokém TTC.
-            """.trimIndent(),
+            doc = doc(
+                purpose = "Steady gap: stabilní distance + téměř nulová derivace po delší dobu ⇒ hard suppress (SAFE).",
+                riskIfBroken = "Falešné ORANGE při stabilní koloně / steady follow (i ve vyšší rychlosti).",
+                alertLevelMax = 0,
+                expectedState = "SAFE",
+                constraintWindowSec = 6f,
+                allowedTransitions = "Žádné (SAFE pouze)",
+                regressionType = RegressionType.FalsePositive,
+                severity = Severity.HIGH,
+                criticalParams = listOf(
+                    "risk.orangeOn",
+                    "risk.orangeOff",
+                    "suppress.approach.epsMps",
+                    "ema.alphaApproach"
+                )
+            ),
             config = ScenarioConfig(
                 effectiveMode = 2,
                 hz = 10,
@@ -796,10 +1004,22 @@ object ScenarioCatalogFactory {
             title = "Dálnice: steady suppress -> approach unsuppress po 300ms",
             domain = Domain.HIGHWAY,
             vehicle = Vehicle.CAR,
-            notes = """
-                První fáze drží steady suppress aktivní.
-                Poté distance konzistentně klesá tak, aby approach indication drželo >=300ms a suppress se vypnul.
-            """.trimIndent(),
+            doc = doc(
+                purpose = "Regrese pro přechod: steady suppress musí být vypnut (unsuppress) po potvrzeném přibližování (>=300ms).",
+                riskIfBroken = "Pokud suppress drží příliš dlouho → pozdní ORANGE (FN). Pokud se uvolní moc brzo → flapping.",
+                alertLevelMax = 1,
+                expectedState = "CAUTION",
+                constraintWindowSec = 6f,
+                allowedTransitions = "SAFE→CAUTION po potvrzení approach (bez blikání)",
+                regressionType = RegressionType.Stabilita,
+                severity = Severity.MED,
+                criticalParams = listOf(
+                    "suppress.approach.epsMps",
+                    "ema.alphaApproach",
+                    "risk.orangeOn",
+                    "risk.orangeOff"
+                )
+            ),
             config = ScenarioConfig(
                 effectiveMode = 2,
                 hz = 10,
@@ -843,7 +1063,21 @@ object ScenarioCatalogFactory {
                         title = "E2E: TTC height invalid window during closing",
             domain = Domain.CITY,
             vehicle = Vehicle.CAR,
-            notes = "Height TTC invalid krátce během přibližování nesmí oddálit ORANGE.",
+            doc = doc(
+                purpose = "E2E: krátké okno invalid TTC (height) během přibližování nesmí oddálit ORANGE.",
+                riskIfBroken = "Falešné zpoždění ORANGE kvůli krátkému výpadku TTC z height.",
+                alertLevelMax = 1,
+                expectedState = "CAUTION",
+                constraintWindowSec = 9f,
+                allowedTransitions = "SAFE→CAUTION (bez RED bez strong TTC)",
+                regressionType = RegressionType.FalseNegative,
+                severity = Severity.MED,
+                criticalParams = listOf(
+                    "ema.alphaApproach",
+                    "risk.orangeOn",
+                    "risk.orangeOff"
+                )
+            ),
             config = ScenarioConfig(hz = 10, riderSpeedMps = 14f, qualityWeight = 0.95f),
             expectations = listOf(
                 Expectation.MustEnterLevelBy(1, 1.5f, hazard, "ORANGE deadline"),
@@ -871,7 +1105,21 @@ object ScenarioCatalogFactory {
                         title = "E2E: receding warmup no blink",
             domain = Domain.CITY,
             vehicle = Vehicle.CAR,
-            notes = "Receding od t=0 nesmí zablikat ORANGE.",
+            doc = doc(
+                purpose = "E2E: receding od t=0 nesmí ani krátce zablikat ORANGE (warmup).",
+                riskIfBroken = "Falešné bliknutí ORANGE po startu / krátká detekce receding target.",
+                alertLevelMax = 0,
+                expectedState = "SAFE",
+                constraintWindowSec = 7f,
+                allowedTransitions = "Žádné (SAFE pouze)",
+                regressionType = RegressionType.FalsePositive,
+                severity = Severity.MED,
+                criticalParams = listOf(
+                    "suppress.receding.epsMps",
+                    "suppress.receding.scale",
+                    "risk.orangeOn"
+                )
+            ),
             config = ScenarioConfig(hz = 10, riderSpeedMps = 12f, qualityWeight = 1.0f),
             expectations = listOf(
                 Expectation.MustNotEnterLevel(1, "No ORANGE blink"),
@@ -889,7 +1137,21 @@ object ScenarioCatalogFactory {
         title = "E2E R1 TTC invalid during closing",
         domain = Domain.CITY,
         vehicle = Vehicle.CAR,
-        notes = "E2E raw inputs for invalid TTC hold while closing.",
+        doc = doc(
+            purpose = "E2E: TTC invalid okno během přibližování – pipeline nesmí hazard ztratit.",
+            riskIfBroken = "Pipeline při invalid TTC pustí SAFE (FN) nebo způsobí flapping.",
+            alertLevelMax = 1,
+            expectedState = "CAUTION",
+            constraintWindowSec = 6f,
+            allowedTransitions = "SAFE→CAUTION (stabilně)",
+            regressionType = RegressionType.Stabilita,
+            severity = Severity.MED,
+            criticalParams = listOf(
+                "risk.orangeOn",
+                "risk.orangeOff",
+                "ema.alphaApproach"
+            )
+        ),
         config = ScenarioConfig(effectiveMode = 1, hz = 10, riderSpeedMps = 14f, qualityWeight = 1.0f),
         expectations = listOf(Expectation.MustEnterLevelBy(level = 1, latestSecAfterHazard = 2.5f, hazardTimeSec = 2f, message = "Closing should continue through TTC invalid windows.")),
         segments = listOf(
@@ -903,7 +1165,20 @@ object ScenarioCatalogFactory {
         title = "E2E stable following orange",
         domain = Domain.HIGHWAY,
         vehicle = Vehicle.CAR,
-        notes = "E2E stable following with persistent approach.",
+        doc = doc(
+            purpose = "E2E: follow s persistent approach musí dosáhnout ORANGE (stabilně).",
+            riskIfBroken = "E2E pipeline/hold/deriv rozbije follow a ORANGE nepřijde nebo flappuje.",
+            alertLevelMax = 1,
+            expectedState = "CAUTION",
+            constraintWindowSec = 10f,
+            allowedTransitions = "SAFE→CAUTION (stabilně)",
+            regressionType = RegressionType.Stabilita,
+            severity = Severity.LOW,
+            criticalParams = listOf(
+                "risk.orangeOn",
+                "risk.orangeOff"
+            )
+        ),
         config = ScenarioConfig(effectiveMode = 2, hz = 10, riderSpeedMps = 24f, qualityWeight = 0.95f),
         expectations = listOf(Expectation.MustEnterLevelBy(level = 1, latestSecAfterHazard = 3.0f, hazardTimeSec = 2f, message = "Should reach ORANGE.")),
         segments = listOf(E2eSegment(0f, 10f, "follow", distM = { t -> 34f - 2.8f * t }, boxHeightPx = { t -> 65f + 6.5f * t }))
@@ -914,7 +1189,21 @@ object ScenarioCatalogFactory {
         title = "E2E receding must suppress immediately",
         domain = Domain.CITY,
         vehicle = Vehicle.CAR,
-        notes = "Distance grows from frame zero; no ORANGE blink expected.",
+        doc = doc(
+            purpose = "E2E: receding hard suppress od frame 0 (žádné ORANGE blink).",
+            riskIfBroken = "Falešné ORANGE u receding targetů (FP).",
+            alertLevelMax = 0,
+            expectedState = "SAFE",
+            constraintWindowSec = 7f,
+            allowedTransitions = "Žádné (SAFE pouze)",
+            regressionType = RegressionType.FalsePositive,
+            severity = Severity.MED,
+            criticalParams = listOf(
+                "suppress.receding.epsMps",
+                "suppress.receding.scale",
+                "risk.orangeOn"
+            )
+        ),
         config = ScenarioConfig(effectiveMode = 1, hz = 10, riderSpeedMps = 10f, qualityWeight = 1.0f),
         expectations = listOf(Expectation.MustNotEnterLevel(level = 1, message = "Receding should be hard-suppressed immediately.")),
         segments = listOf(E2eSegment(0f, 7f, "receding", distM = { t -> 4.0f + 1.1f * t }, boxHeightPx = { t -> (180f - 12f * t).coerceAtLeast(30f) }))
