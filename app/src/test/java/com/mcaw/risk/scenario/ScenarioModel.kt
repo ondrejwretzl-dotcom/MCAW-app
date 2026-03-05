@@ -42,7 +42,7 @@ data class EngineOnlyScenario(
     override val title: String,
     override val domain: Domain,
     override val vehicle: Vehicle,
-    override val notes: String,
+    override val notes: String = "",
     override val doc: ScenarioDoc? = null,
     override val criticalParams: List<CriticalParamRef> = emptyList(),
     override val config: ScenarioConfig,
@@ -59,7 +59,7 @@ data class E2eScenario(
     override val title: String,
     override val domain: Domain,
     override val vehicle: Vehicle,
-    override val notes: String,
+    override val notes: String = "",
     override val doc: ScenarioDoc? = null,
     override val criticalParams: List<CriticalParamRef> = emptyList(),
     override val config: ScenarioConfig,
@@ -149,8 +149,8 @@ data class ScenarioDoc(
     val purpose: String,
     val riskIfBroken: String,
     val expected: ExpectedBehaviorDoc,
-    val regressionType: RegressionType,
-    val severity: Severity
+    val regressionType: RegressionType = RegressionType.STABILITY,
+    val severity: Severity = Severity.MED
 )
 
 data class ExpectedBehaviorDoc(
