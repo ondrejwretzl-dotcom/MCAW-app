@@ -10,6 +10,7 @@ import { PlotsPanel } from './components/PlotsPanel';
 import { ResultsTable, TableRow } from './components/ResultsTable';
 import { MdPanel } from './components/MdPanel';
 import { WarningsPanel } from './components/WarnPanel';
+import { InfoTip, LabelWithInfo } from './components/InfoTip';
 
 import { ScenarioDoc, FrameRow, FrameIn, FrameOut, WhatIfConfig, Thresholds } from './lib/types';
 import { safeBaseName, mpsToKmh, clamp, downloadText, toCsv, round3 } from './lib/utils';
@@ -62,6 +63,94 @@ const CUSTOM_DEFAULTS: CustomEngineParams = {
   approachGateMin: 0.8,
   approachLow: 1.5,
   approachHigh: 4.5,
+};
+
+const PARAM_META: Record<keyof CustomEngineParams, { title: string; unit?: string; step: number; info: string; group: 'TTC' | 'Approach' }> = {
+  ttcInvalidHoldMs: {
+    title: 'Držení TTC při neplatné hodnotě',
+    unit: 'ms',
+    step: 10,
+    group: 'TTC',
+    info: 'Když TTC na chvíli „spadne“ (NaN/∞), engine může ještě krátce držet poslední platnou hodnotu.\n\n↑ Zvýšení: méně výpadků TTC → alerty mohou být stabilnější, ale mohou i déle „viset“, když TTC už není validní.\n↓ Snížení: rychlejší nulování TTC → méně falešných pokračujících alertů, ale více „dírek“ v TTC.',
+  },
+  ttcHeightHoldMs: {
+    title: 'Držení TTC z výšky (bbox) při šumu',
+    unit: 'ms',
+    step: 10,
+    group: 'TTC',
+    info: 'Krátké podržení TTC odvozeného z trendu velikosti objektu (výška v pixelech), aby se potlačil šum.\n\n↑ Zvýšení: hladší TTC (méně jitteru) → stabilnější alerty, ale větší zpoždění na náhlé zhoršení.\n↓ Snížení: rychlejší reakce → citlivější, ale může víc „cukát“ a dělat falešné špičky.',
+  },
+  smoothTtcMaxDropRate: {
+    title: 'Max rychlost poklesu TTC',
+    unit: 's/s',
+    step: 0.5,
+    group: 'TTC',
+    info: 'Limiter na to, jak rychle se smí TTC zhoršovat (klesat) mezi snímky.\n\n↑ Zvýšení: povolí rychlejší pokles TTC → alerty mohou přijít dřív při náhlém přiblížení.\n↓ Snížení: „brzdí“ pokles TTC → pozdější/klidnější alerty, ale riziko, že RED přijde pozdě.',
+  },
+  smoothTtcAlphaDrop: {
+    title: 'EMA váha při poklesu TTC',
+    unit: '',
+    step: 0.01,
+    group: 'TTC',
+    info: 'Jak agresivně EMA sleduje zhoršení TTC (pokles). 0 = hodně hladké, 1 = skoro bez filtru.\n\n↑ Zvýšení: rychlejší reakce na zhoršení → dřívější alerty.\n↓ Snížení: více filtrování → stabilnější, ale pozdější alerty.',
+  },
+  minGrowthRatio: {
+    title: 'Min růst objektu (poměr)',
+    unit: '',
+    step: 0.001,
+    group: 'TTC',
+    info: 'Minimální požadovaný růst velikosti objektu (poměr) pro „approach“ (přibližování) v TTC z obrazu.\n\n↑ Zvýšení: přísnější detekce přibližování → méně alertů / méně falešňáků, ale může přehlédnout pomalé přibližování.\n↓ Snížení: citlivější approach → více a dřívější alerty, ale vyšší riziko falešných.',
+  },
+  minDeltaHPx: {
+    title: 'Min změna výšky objektu',
+    unit: 'px',
+    step: 0.1,
+    group: 'TTC',
+    info: 'Minimální absolutní změna výšky bounding boxu (v pixelech), aby se bral růst jako „reálný“ a ne šum.\n\n↑ Zvýšení: ignoruje malé změny → stabilnější, ale méně citlivé (pozdější alerty).\n↓ Snížení: bere i malé změny → dřívější reakce, ale víc jitteru.',
+  },
+  ttcFromDistApproachGate: {
+    title: 'Přepínání TTC: distance vs. image',
+    unit: '',
+    step: 0.01,
+    group: 'TTC',
+    info: 'Jak moc se při nejistém přibližování opírat o TTC z distance/rel speed (když image TTC není jisté).\n\n↑ Zvýšení: více spoléhá na distance TTC → může zklidnit šum z obrazu, ale může být méně „prediktivní“ v některých scénách.\n↓ Snížení: více věří image TTC → dřívější reakce na cut-in/rychlé změny, ale větší citlivost na šum detekce.',
+  },
+
+  plateauBase: {
+    title: 'Distance plateau (základ)',
+    unit: '',
+    step: 0.01,
+    group: 'Approach',
+    info: 'Základní „plateau“ pro distance score: i při vzdálenosti > ORANGE threshold může distance ještě přispívat do rizika až do této hodnoty.\n\n↑ Zvýšení: distance přispívá víc i při větších vzdálenostech → dřívější ORANGE/RED.\n↓ Snížení: distance rychleji zhasíná → pozdější/klidnější alerty.',
+  },
+  plateauMax: {
+    title: 'Distance plateau (max při přibližování)',
+    unit: '',
+    step: 0.01,
+    group: 'Approach',
+    info: 'Maximální plateau při výrazném přibližování (vyšší approachSpeed).\n\n↑ Zvýšení: při rychlém dojíždění bude distance score agresivnější → dřívější alerty.\n↓ Snížení: i při dojíždění bude distance tlumená → méně citlivé.',
+  },
+  approachGateMin: {
+    title: 'Min approachSpeed pro navýšení plateaua',
+    unit: 'm/s',
+    step: 0.05,
+    group: 'Approach',
+    info: 'Pod touto relativní rychlostí (approachSpeed) se plateau nezvyšuje a zůstává na base.\n\n↑ Zvýšení: více scén se bere jako „nepřibližuje“ → méně/pozdější alerty.\n↓ Snížení: plateau se začne zvyšovat dřív → více/dřívější alerty.',
+  },
+  approachLow: {
+    title: 'ApproachLow',
+    unit: 'm/s',
+    step: 0.1,
+    group: 'Approach',
+    info: 'Spodní bod škálování: od této relativní rychlosti se začíná plynule zvedat plateau směrem k max.\n\n↑ Zvýšení: potřebuje větší dojíždění pro zvýšení plateaua → méně citlivé.\n↓ Snížení: zvýšení plateaua už při menším dojíždění → dřívější alerty.',
+  },
+  approachHigh: {
+    title: 'ApproachHigh',
+    unit: 'm/s',
+    step: 0.1,
+    group: 'Approach',
+    info: 'Horní bod škálování: od této relativní rychlosti už je plateau na max.\n\n↑ Zvýšení: max plateau až při vyšší rychlosti dojíždění → méně agresivní ve středních rychlostech.\n↓ Snížení: max plateau dřív → agresivnější/dřívější alerty.',
+  },
 };
 
 function validateCustomParams(p: CustomEngineParams): FieldErrors {
@@ -629,6 +718,7 @@ export function App() {
   return (
     <div style={{ padding: 18, fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, sans-serif', maxWidth: 1400, margin: '0 auto' }}>
       <h2 style={{ marginTop: 0 }}>MCAW Risk Simulator</h2>
+      <div style={{ marginTop: -6, marginBottom: 10, color: '#4b5563' }}>Ladicí UI pro scénáře a tuning prahů/filtrů. Info bubliny vysvětlují dopad na ORANGE/RED.</div>
       <div style={{ marginTop: -8, marginBottom: 10 }}>
         <span style={{ display: 'inline-block', background: '#111827', color: '#fff', padding: '4px 8px', borderRadius: 8, fontSize: 12, fontWeight: 700 }}>
           UI MARKER 2026-02-24
@@ -637,7 +727,10 @@ export function App() {
 
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
         <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          Data source
+          <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+            <span>Zdroj dat</span>
+            <InfoTip text="Vyber, odkud se berou vstupní framy: buď reálný log (frames.jsonl), nebo interní Scenario builder." />
+          </span>
           <select value={dataSource} onChange={(e) => setDataSource(e.target.value as DataSource)}>
             <option value="upload">Upload frames.jsonl</option>
             <option value="builder">Scenario builder</option>
@@ -645,12 +738,18 @@ export function App() {
         </label>
 
         <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          Use custom parameters
+          <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+            <span>Použít vlastní parametry</span>
+            <InfoTip text="Zapne ladicí (CUSTOM) režim: v Results uvidíš porovnání BASE vs. TUNED. Mění pouze výpočet v simulátoru, ne scénář." />
+          </span>
           <input type="checkbox" checked={useCustomParams} onChange={(e) => setUseCustomParams(e.target.checked)} />
         </label>
 
         <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          Dynamic distance (time-gap)
+          <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+            <span>Dynamická vzdálenost (time-gap)</span>
+            <InfoTip text="Když je zapnuto, distance threshold pro ORANGE/RED se odvozuje z rychlosti: distance ≈ v * gap. Vyšší gap = dřívější alerty." />
+          </span>
           <input
             type="checkbox"
             checked={whatIf.dynamicDistanceEnabled}
@@ -660,23 +759,35 @@ export function App() {
         </label>
 
         <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          orangeGap(s)
+          <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+            <span>ORANGE time-gap (s)</span>
+            <InfoTip text="Použije se jen když je zapnutá „Dynamická vzdálenost“.\n\n↑ Zvýšení: ORANGE distance = v * gap bude větší → ORANGE dřív.\n↓ Snížení: ORANGE později." />
+          </span>
           <input type="number" step={0.1} value={whatIf.orangeGapSec} onChange={(e) => setWhatIf({ ...whatIf, orangeGapSec: Number(e.target.value) })} style={{ width: 70 }} disabled={!useCustomParams} />
         </label>
         <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          redGap(s)
+          <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+            <span>RED time-gap (s)</span>
+            <InfoTip text="Použije se jen když je zapnutá „Dynamická vzdálenost“.\n\n↑ Zvýšení: RED distance = v * gap bude větší → RED dřív (agresivnější).\n↓ Snížení: RED později." />
+          </span>
           <input type="number" step={0.1} value={whatIf.redGapSec} onChange={(e) => setWhatIf({ ...whatIf, redGapSec: Number(e.target.value) })} style={{ width: 70 }} disabled={!useCustomParams} />
         </label>
 
         <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          orange clamp m
+          <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+            <span>ORANGE clamp (m)</span>
+            <InfoTip text="Min..max omezení pro dynamickou ORANGE vzdálenost (v*gap).\n\n↑ Min: ORANGE nikdy nebude blíž než tato vzdálenost → ORANGE dřív.\n↓ Min: ORANGE může být blíž → ORANGE později.\n↑ Max: ve vysoké rychlosti může ORANGE růst víc → ORANGE dřív.\n↓ Max: ORANGE se omezí shora → méně agresivní při vysoké rychlosti." />
+          </span>
           <input type="number" value={whatIf.distOrangeClampMinM} onChange={(e) => setWhatIf({ ...whatIf, distOrangeClampMinM: Number(e.target.value) })} style={{ width: 70 }} disabled={!useCustomParams} />
           <span>..</span>
           <input type="number" value={whatIf.distOrangeClampMaxM} onChange={(e) => setWhatIf({ ...whatIf, distOrangeClampMaxM: Number(e.target.value) })} style={{ width: 70 }} disabled={!useCustomParams} />
         </label>
 
         <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          red clamp m
+          <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+            <span>RED clamp (m)</span>
+            <InfoTip text="Min..max omezení pro dynamickou RED vzdálenost (v*gap).\n\n↑ Min: RED nikdy nebude blíž než tato vzdálenost → RED dřív (agresivnější).\n↓ Min: RED může být blíž → RED později.\n↑ Max: ve vysoké rychlosti může RED růst víc → RED dřív.\n↓ Max: RED se omezí shora → méně agresivní při vysoké rychlosti." />
+          </span>
           <input type="number" value={whatIf.distRedClampMinM} onChange={(e) => setWhatIf({ ...whatIf, distRedClampMinM: Number(e.target.value) })} style={{ width: 70 }} disabled={!useCustomParams} />
           <span>..</span>
           <input type="number" value={whatIf.distRedClampMaxM} onChange={(e) => setWhatIf({ ...whatIf, distRedClampMaxM: Number(e.target.value) })} style={{ width: 70 }} disabled={!useCustomParams} />
@@ -684,28 +795,68 @@ export function App() {
 
 
         {useCustomParams && (
-          <div style={{ border: '1px solid #d1d5db', borderRadius: 8, padding: 10, width: '100%', background: '#f9fafb' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-              <b>Engine Parameters</b>
-              <span style={{ background: '#7c3aed', color: 'white', borderRadius: 12, padding: '2px 8px', fontSize: 11 }}>CUSTOM</span>
+          <div style={{ border: '1px solid #d1d5db', borderRadius: 12, padding: 12, width: '100%', background: '#f9fafb' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                <b>Nastavení enginu (tuning)</b>
+                <span style={{ background: '#7c3aed', color: 'white', borderRadius: 12, padding: '2px 8px', fontSize: 11 }}>CUSTOM</span>
+              </div>
+              <span style={{ fontSize: 12, color: '#6b7280' }}>týká se jen výpočtu TUNED</span>
             </div>
-            <p style={{ marginTop: 0, color: '#4b5563' }}>Editable TTC stabilization and closing-gated plateau parameters.</p>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(180px, 1fr))', gap: 8 }}>
-              {(Object.keys(customParamsDraft) as Array<keyof CustomEngineParams>).map((k) => (
-                <label key={k} style={{ display: 'flex', flexDirection: 'column', fontSize: 12 }}>
-                  {k}
-                  <input
-                    type="number"
-                    step={k.includes('alpha') || k.includes('Ratio') || k.includes('plateau') || k.includes('approach') || k.includes('Delta') ? 0.01 : 1}
-                    value={customParamsDraft[k]}
-                    onChange={(e) => setCustomParamsDraft({ ...customParamsDraft, [k]: Number(e.target.value) })}
-                  />
-                  {customErrors[k] && <span style={{ color: '#dc2626' }}>{customErrors[k]}</span>}
-                </label>
-              ))}
+
+            <p style={{ marginTop: 0, marginBottom: 10, color: '#4b5563' }}>
+              Parametry jsou technické. Upravuj je pro ladění stability a načasování alertů (ORANGE/RED). Doporučení: měň po malých krocích a porovnávej BASE vs. TUNED.
+            </p>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(320px, 1fr))', gap: 12 }}>
+              <div style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, padding: 10 }}>
+                <div style={{ fontWeight: 700, marginBottom: 8 }}>TTC stabilizace</div>
+                <div style={{ display: 'grid', gap: 8 }}>
+                  {(Object.keys(customParamsDraft) as Array<keyof CustomEngineParams>)
+                    .filter((k) => PARAM_META[k].group === 'TTC')
+                    .map((k) => (
+                      <div key={k} style={{ display: 'grid', gridTemplateColumns: '1fr 110px', gap: 10, alignItems: 'center' }}>
+                        <LabelWithInfo label={<span>{PARAM_META[k].title}{PARAM_META[k].unit ? ` (${PARAM_META[k].unit})` : ''}</span>} info={PARAM_META[k].info} />
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                          <input
+                            type="number"
+                            step={PARAM_META[k].step}
+                            value={customParamsDraft[k]}
+                            onChange={(e) => setCustomParamsDraft({ ...customParamsDraft, [k]: Number(e.target.value) })}
+                            style={{ width: '100%' }}
+                          />
+                          {customErrors[k] && <span style={{ color: '#dc2626', fontSize: 11 }}>{customErrors[k]}</span>}
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+
+              <div style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, padding: 10 }}>
+                <div style={{ fontWeight: 700, marginBottom: 8 }}>Přibližování a distance plateau</div>
+                <div style={{ display: 'grid', gap: 8 }}>
+                  {(Object.keys(customParamsDraft) as Array<keyof CustomEngineParams>)
+                    .filter((k) => PARAM_META[k].group === 'Approach')
+                    .map((k) => (
+                      <div key={k} style={{ display: 'grid', gridTemplateColumns: '1fr 110px', gap: 10, alignItems: 'center' }}>
+                        <LabelWithInfo label={<span>{PARAM_META[k].title}{PARAM_META[k].unit ? ` (${PARAM_META[k].unit})` : ''}</span>} info={PARAM_META[k].info} />
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                          <input
+                            type="number"
+                            step={PARAM_META[k].step}
+                            value={customParamsDraft[k]}
+                            onChange={(e) => setCustomParamsDraft({ ...customParamsDraft, [k]: Number(e.target.value) })}
+                            style={{ width: '100%' }}
+                          />
+                          {customErrors[k] && <span style={{ color: '#dc2626', fontSize: 11 }}>{customErrors[k]}</span>}
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </div>
             </div>
           </div>
-        )}
+        )}        )}
 
         <button onClick={downloadCsv} disabled={!simulation || (useCustomParams && Object.keys(customErrors).length > 0)}>Download CSV</button>
       </div>
