@@ -856,7 +856,7 @@ export function App() {
               </div>
             </div>
           </div>
-        )}        )}
+        )}
 
         <button onClick={downloadCsv} disabled={!simulation || (useCustomParams && Object.keys(customErrors).length > 0)}>Download CSV</button>
       </div>
