@@ -19,7 +19,13 @@ class ScenarioReportWriterTest {
             doc = ScenarioDoc(
                 purpose = "test",
                 riskIfBroken = "test",
-                expected = ExpectedBehaviorDoc(expectedAlertLevelMax = 0, expectedRiskState = "SAFE", constraintWindow = "nikdy"),
+                expected = ExpectedBehaviorDoc(
+                    expectedAlertLevelMax = 0,
+                    expectedRiskState = "SAFE",
+                    constraintWindow = "nikdy"
+                ),
+                regressionType = RegressionType.STABILITY,
+                severity = Severity.MED
             ),
             config = ScenarioConfig(),
             expectations = emptyList(),
@@ -36,7 +42,13 @@ class ScenarioReportWriterTest {
             doc = ScenarioDoc(
                 purpose = "test",
                 riskIfBroken = "test",
-                expected = ExpectedBehaviorDoc(expectedAlertLevelMax = 0, expectedRiskState = "SAFE", constraintWindow = "nikdy"),
+                expected = ExpectedBehaviorDoc(
+                    expectedAlertLevelMax = 0,
+                    expectedRiskState = "SAFE",
+                    constraintWindow = "nikdy"
+                ),
+                regressionType = RegressionType.STABILITY,
+                severity = Severity.MED
             ),
             config = ScenarioConfig(),
             expectations = emptyList(),
@@ -57,9 +69,15 @@ class ScenarioReportWriterTest {
             val txtEngine = fileEngine.readText()
             val txtE2e = fileE2e.readText()
 
-            assertTrue(txtEngine.contains("segA"))
-            assertTrue(txtEngine.contains("segB"))
-            assertTrue(txtE2e.contains("e2eSeg"))
+            // Human-readable report structure checks (new intent of tests)
+            assertTrue("Engine report must contain section 'Účel testu'.", txtEngine.contains("## 1. Účel testu"))
+            assertTrue("Engine report must contain section 'Očekávání'.", txtEngine.contains("## 2. Očekávání"))
+            assertTrue("Engine report must contain section 'Analýza selhání'.", txtEngine.contains("## 7. Analýza selhání"))
+            assertTrue("Engine report must contain section 'Klíčové přechody alertů'.", txtEngine.contains("## 8. Klíčové přechody alertů"))
+
+            assertTrue("Engine report should include segment segA in 'Přehled segmentů'.", txtEngine.contains("segA"))
+            assertTrue("Engine report should include segment segB in 'Přehled segmentů'.", txtEngine.contains("segB"))
+            assertTrue("E2E report should include segment e2eSeg in 'Přehled segmentů'.", txtE2e.contains("e2eSeg"))
         } finally {
             fileEngine.delete()
             fileE2e.delete()
