@@ -3,68 +3,68 @@ package com.mcaw.risk.scenario
 import com.mcaw.risk.RiskEngine
 
 /**
- * Stabilní mapping pro "kritické parametry" v reportech scénářů.
+ * Minimal snapshot of "kritických" parametrů (odvozených z kódu), které typicky mění ORANGE/RED.
  *
- * Cíl:
- * - index.html a MD reporty musí umět vypsat hodnoty, které mění ORANGE/RED
- * - bez reflexe a bez zásahu do hot-path enginu
- * - klíče jsou stabilní stringy (používají se v katalogu scénářů)
+ * Zásada: nic nehádat – buď umíme hodnotu z kódu získat, nebo ji v reportu označíme jako N/A.
+ *
+ * Pozn.: pro testy používáme to samé, co používá runner: RiskEngine.debugDerivedThresholds(...)
  */
 object RiskParamSnapshot {
 
     /**
-     * Vrací hodnotu parametru jako string pro report.
-     *
-     * Pozn.: Používáme [RiskEngine.DerivedThresholds] (test-only) + const val z RiskEngine.
+     * Mapuje stabilní klíče -> čitelné hodnoty (string). Neznámé klíče vrací "N/A".
      */
-    fun valueFor(key: String, derived: RiskEngine.DerivedThresholds): String? {
-        return when (key) {
-            // --- Derived thresholds (z kódu, závisí na mode/quality/conserv) ---
-            "risk.ttcOrange" -> fmt(derived.ttcOrange) + " s"
-            "risk.ttcRed" -> fmt(derived.ttcRed) + " s"
-            "risk.distOrange" -> fmt(derived.distOrange) + " m"
-            "risk.distRed" -> fmt(derived.distRed) + " m"
-            "risk.relOrange" -> fmt(derived.relOrange) + " m/s"
-            "risk.relRed" -> fmt(derived.relRed) + " m/s"
-            "risk.orangeOn" -> fmt(derived.orangeOn)
-            "risk.orangeOff" -> fmt(derived.orangeOff)
-            "risk.redOn" -> fmt(derived.redOn)
-            "risk.redOff" -> fmt(derived.redOff)
-            "risk.redCombo.slopeThr" -> fmt(derived.slopeThr)
-            "risk.redCombo.strongK" -> fmt(derived.strongK)
-            "risk.redCombo.midK" -> fmt(derived.midK)
-            "risk.distDynamic" -> if (derived.distDynamic) "true" else "false"
-            "risk.distHeadwayOrangeSec" -> fmt(derived.distHeadwayOrangeSec) + " s"
-            "risk.distHeadwayRedSec" -> fmt(derived.distHeadwayRedSec) + " s"
+    fun snapshot(
+        engine: RiskEngine,
+        effectiveMode: Int,
+        qualityWeight: Float,
+        dynamicDistanceEnabled: Boolean,
+        dynamicDistanceOrangeSec: Float,
+        dynamicDistanceRedSec: Float
+    ): Map<String, String> {
+        val d = engine.debugDerivedThresholds(
+            effectiveMode = effectiveMode,
+            qualityWeight = qualityWeight,
+            dynamicDistanceEnabled = dynamicDistanceEnabled,
+            dynamicDistanceOrangeSec = dynamicDistanceOrangeSec,
+            dynamicDistanceRedSec = dynamicDistanceRedSec
+        )
 
-            // --- RiskEngine constants (stabilní napříč derived) ---
-            "suppress.receding.epsMps" -> fmt(RiskEngine.RECEDE_EPS_MPS) + " m/s"
-            "suppress.approach.epsMps" -> fmt(RiskEngine.APPROACH_EPS_MPS) + " m/s"
-            "suppress.stand.speedMps" -> fmt(RiskEngine.STAND_SPEED_MPS) + " m/s"
-            "suppress.creep.speedMps" -> fmt(RiskEngine.CREEP_SPEED_MPS) + " m/s"
-            "roi.contain.low" -> fmt(RiskEngine.ROI_CONTAIN_LOW)
-            "ego.offset.high" -> fmt(RiskEngine.EGO_OFFSET_HIGH)
-            "dist.closeM" -> fmt(RiskEngine.DIST_CLOSE_M) + " m"
-            "suppress.adjacentOvertake.scale" -> fmt(RiskEngine.S_ADJACENT_OVERTAKE)
-            "suppress.bottomTouchCandidate.scale" -> fmt(RiskEngine.S_BOTTOM_TOUCH_CANDIDATE)
-            "suppress.receding.scale" -> fmt(RiskEngine.S_RECEDING)
-            "ema.alphaRel" -> fmt(RiskEngine.EMA_ALPHA_REL)
-            "ema.alphaApproach" -> fmt(RiskEngine.EMA_ALPHA_APP)
-            "occl.kStable" -> RiskEngine.K_STABLE.toString()
-            "occl.kConfirm" -> RiskEngine.K_CONFIRM_OCCL.toString()
-            "occl.kRelease" -> RiskEngine.K_RELEASE.toString()
-            else -> null
-        }
+        // NOTE: DerivedThresholds je kontrakt test frameworku. Klíče níže jsou náš stabilní "Spec" kontrakt.
+        return linkedMapOf(
+            // TTC
+            "thr.ttc.orangeSec" to fmt3(d.ttcOrange),
+            "thr.ttc.redSec" to fmt3(d.ttcRed),
+
+            // Distance
+            "thr.dist.orangeM" to fmt3(d.distOrange),
+            "thr.dist.redM" to fmt3(d.distRed),
+
+            // Approach speed
+            "thr.approach.orangeMps" to fmt3(d.approachOrange),
+            "thr.approach.redMps" to fmt3(d.approachRed),
+
+            // Risk hysteresis
+            "thr.risk.orangeOn" to fmt3(d.orangeOn),
+            "thr.risk.orangeOff" to fmt3(d.orangeOff),
+            "thr.risk.redOn" to fmt3(d.redOn),
+            "thr.risk.redOff" to fmt3(d.redOff),
+
+            // Combo guard
+            "guard.redCombo.slopeThr" to fmt3(d.redComboSlopeThr),
+            "guard.redCombo.strongK" to fmt3(d.redComboStrongK),
+            "guard.redCombo.midK" to fmt3(d.redComboMidK),
+
+            // Dynamic distance settings (gate)
+            "dynDist.enabled" to dynamicDistanceEnabled.toString(),
+            "dynDist.orangeSec" to fmt3(dynamicDistanceOrangeSec),
+            "dynDist.redSec" to fmt3(dynamicDistanceRedSec)
+        )
     }
 
-    fun fmtCriticalParams(keys: List<String>, derived: RiskEngine.DerivedThresholds): List<Pair<String, String>> {
-        return keys.mapNotNull { k -> valueFor(k, derived)?.let { v -> k to v } }
-    }
+    fun valueOrNa(snapshot: Map<String, String>, key: String): String = snapshot[key] ?: "N/A"
 
-    private fun fmt(v: Float): String {
-        if (!v.isFinite()) return "NaN"
-        val s = String.format(java.util.Locale.US, "%.3f", v)
-        // strip trailing zeros
-        return s.trimEnd('0').trimEnd('.')
+    private fun fmt3(v: Float): String {
+        return if (v.isFinite()) String.format("%.3f", v) else "NaN"
     }
 }

@@ -8,67 +8,16 @@ interface ScenarioMeta {
     val title: String
     val domain: Domain
     val vehicle: Vehicle
-    /**
-     * Scénářová dokumentace (CZ): účel, očekávání, kritické parametry.
-     *
-     * Pozn.: je to kontrakt regresních testů. Pokud se změní parametry uvedené v [doc.criticalParams],
-     * je pravděpodobné, že se změní i výsledek (ORANGE/RED) – a test musí buď projít
-     * nebo být vědomě re-baselineovaný.
-     */
-    val doc: ScenarioDoc
+    /** Legacy text used by older reports. Keep for compatibility, but prefer [doc]. */
+    val notes: String
+    /** Structured CZ doc per MCAW Scenario Spec v1. If null, report will derive best-effort defaults. */
+    val doc: ScenarioDoc?
+    /** Param keys that materially influence ORANGE/RED behavior for this scenario. */
+    val criticalParams: List<CriticalParamRef>
     val config: ScenarioConfig
     val expectations: List<Expectation>
     fun segmentsForReport(): List<SegmentForReport>
 }
-
-/**
- * MCAW Scenario Spec v1 – dokumentace scénáře (povinná pro regression katalog).
- */
-data class ScenarioDoc(
-    /** Krátce proč scénář existuje (1–2 věty). */
-    val purpose: String,
-    /** Co se v reálném UX stane, když se scénář rozbije. */
-    val riskIfBroken: String,
-    /** Očekávané chování (human readable + pro index). */
-    val expected: ExpectedBehaviorDoc,
-    /** Klasifikace regrese (pro index/triage). */
-    val regressionType: RegressionType = RegressionType.NEUvedeno,
-    /** Dopad do praxe (triage). */
-    val severity: Severity = Severity.MED,
-    /**
-     * Seznam klíčů parametrů, které mohou měnit výsledek (ORANGE/RED) – viz [RiskParamSnapshot].
-     *
-     * Pravidlo: uvádět jen relevantní (typicky 4–10).
-     */
-    val criticalParams: List<String> = emptyList(),
-    /** Volitelné poznámky (krátké). */
-    val notes: String = ""
-)
-
-data class ExpectedBehaviorDoc(
-    /** Max. alert level, který je v tomto scénáři přípustný (0/1/2). */
-    val alertLevelMax: Int,
-    /** Očekávaný risk state (SAFE/CAUTION/CRITICAL). */
-    val expectedState: String,
-    /** Jak dlouho / v jakém okně musí očekávání platit. */
-    val constraintWindowSec: Float? = null,
-    /** Povolené přechody (text). */
-    val allowedTransitions: String = "—",
-    /** Reason whitelist (volitelné). */
-    val reasonWhitelist: List<String> = emptyList(),
-    /** Reason blacklist (volitelné). */
-    val reasonBlacklist: List<String> = emptyList()
-)
-
-enum class RegressionType {
-    FalsePositive,
-    FalseNegative,
-    Stabilita,
-    Vykon,
-    NEUvedeno
-}
-
-enum class Severity { LOW, MED, HIGH }
 
 data class SegmentForReport(
     val name: String,
@@ -93,7 +42,9 @@ data class EngineOnlyScenario(
     override val title: String,
     override val domain: Domain,
     override val vehicle: Vehicle,
-    override val doc: ScenarioDoc,
+    override val notes: String,
+    override val doc: ScenarioDoc? = null,
+    override val criticalParams: List<CriticalParamRef> = emptyList(),
     override val config: ScenarioConfig,
     override val expectations: List<Expectation>,
     val segments: List<EngineOnlySegment>
@@ -108,7 +59,9 @@ data class E2eScenario(
     override val title: String,
     override val domain: Domain,
     override val vehicle: Vehicle,
-    override val doc: ScenarioDoc,
+    override val notes: String,
+    override val doc: ScenarioDoc? = null,
+    override val criticalParams: List<CriticalParamRef> = emptyList(),
     override val config: ScenarioConfig,
     override val expectations: List<Expectation>,
     val segments: List<E2eSegment>
@@ -181,6 +134,53 @@ sealed class Expectation {
     data class MaxTransitionsInWindow(val maxTransitions: Int, val windowSec: Float, val message: String) : Expectation()
     data class MustNotAlertWhenTtcInvalidAndRelLow(val relMpsMax: Float, val message: String) : Expectation()
 }
+
+/**
+ * MCAW Scenario Spec v1 (CZ)
+ *
+ * Cíl: mít u každého scénáře stručně a auditovatelně:
+ * - proč existuje (purpose)
+ * - co se stane, když se rozbije (riskIfBroken)
+ * - jaké je očekávání (expected)
+ * - klasifikace regrese (regressionType/severity)
+ * - které parametry z kódu mohou změnit ORANGE/RED (criticalParams)
+ */
+data class ScenarioDoc(
+    val purpose: String,
+    val riskIfBroken: String,
+    val expected: ExpectedBehaviorDoc,
+    val regressionType: RegressionType,
+    val severity: Severity
+)
+
+data class ExpectedBehaviorDoc(
+    val expectedAlertLevelMax: Int,
+    val expectedRiskState: String,
+    /** Kdy musí očekávání platit. Příklad: "nikdy" / "po 1.2s stability" / "okno 6s" */
+    val constraintWindow: String
+)
+
+enum class RegressionType {
+    FALSE_POSITIVE,
+    FALSE_NEGATIVE,
+    STABILITY,
+    PERFORMANCE
+}
+
+enum class Severity {
+    LOW,
+    MED,
+    HIGH
+}
+
+/**
+ * Odkaz na parametr, který ovlivňuje výsledek (ORANGE/RED).
+ * key je stabilní kontrakt (používá se i v summary.json a index.html).
+ */
+data class CriticalParamRef(
+    val key: String,
+    val note: String = ""
+)
 
 data class SimFrame(
     val tSec: Float,

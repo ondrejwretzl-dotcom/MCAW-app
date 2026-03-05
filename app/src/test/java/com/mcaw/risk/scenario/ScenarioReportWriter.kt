@@ -13,75 +13,80 @@ object ScenarioReportWriter {
         val dt = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
 
         val pass = run.verdicts.all { it.ok }
-
         val failed = run.verdicts.filterNot { it.ok }
+        val doc = s.doc ?: deriveDocFromLegacy(s)
 
-        val sb = StringBuilder(16_000)
+        // Snapshot critical params from code. Keep deterministic: scenario default qualityWeight.
+        val dynEnabled = s.config.dynamicDistanceEnabled ?: com.mcaw.config.AppPreferences.dynamicDistanceThresholdEnabled
+        val dynRedSec = s.config.dynamicDistanceRedSec ?: com.mcaw.config.AppPreferences.dynamicDistanceRedSec
+        val dynOrangeSec = s.config.dynamicDistanceOrangeSec ?: com.mcaw.config.AppPreferences.dynamicDistanceOrangeSec
+        val engine = RiskEngine()
+        val snap = RiskParamSnapshot.snapshot(
+            engine = engine,
+            effectiveMode = s.config.effectiveMode,
+            qualityWeight = s.config.qualityWeight,
+            dynamicDistanceEnabled = dynEnabled,
+            dynamicDistanceOrangeSec = dynOrangeSec,
+            dynamicDistanceRedSec = dynRedSec
+        )
+
+        val expectedMaxLevel = doc.expected.expectedAlertLevelMax
+
+        val sb = StringBuilder(22_000)
         sb.append("# MCAW 2.0 – Report simulace scénáře\n\n")
         sb.append("- Vygenerováno: ").append(dt).append("\n")
         sb.append("- Scénář: **").append(s.id).append(" – ").append(s.title).append("**\n")
         sb.append("- Doména: ").append(s.domain).append(" | Vozidlo: ").append(s.vehicle).append("\n")
         sb.append("- Výsledek: ").append(if (pass) "✅ PROŠEL" else "❌ NEPROŠEL").append("\n\n")
 
-        sb.append("## Rychlé shrnutí\n")
-        if (pass) {
-            sb.append("- Scénář splnil všechna očekávání.\n")
-        } else {
-            sb.append("- Scénář **nesplnil** ").append(failed.size).append(" očekávání.\n")
-            sb.append("- Důvody (zkráceně):\n")
-            for (v in failed.take(3)) {
-                sb.append("  - ").append(shorten(v.details)).append("\n")
-            }
-            if (failed.size > 3) sb.append("  - …\n")
+        sb.append("## 1. Účel testu\n")
+        sb.append("- ").append(doc.purpose.trim()).append("\n")
+        sb.append("- Riziko při rozbití: ").append(doc.riskIfBroken.trim()).append("\n\n")
+
+        sb.append("## 2. Očekávání\n")
+        sb.append("| Položka | Očekávání |\n")
+        sb.append("|---|---|\n")
+        sb.append("| max alertLevel | ").append(doc.expected.expectedAlertLevelMax).append(" |\n")
+        sb.append("| riskState | ").append(doc.expected.expectedRiskState).append(" |\n")
+        sb.append("| okno platnosti | ").append(escapePipes(doc.expected.constraintWindow)).append(" |\n")
+        sb.append("| regrese | ").append(doc.regressionType).append(" |\n")
+        sb.append("| závažnost | ").append(doc.severity).append(" |\n\n")
+
+        sb.append("## 3. Vstupy scénáře\n")
+        sb.append("| Parametr | Hodnota |\n")
+        sb.append("|---|---:|\n")
+        sb.append("| effectiveMode | ").append(s.config.effectiveMode).append(" |\n")
+        sb.append("| hz | ").append(s.config.hz).append(" |\n")
+        sb.append("| riderSpeedMps | ").append(fmt(s.config.riderSpeedMps)).append(" |\n")
+        sb.append("| qualityWeight | ").append(fmt(s.config.qualityWeight)).append(" |\n")
+        sb.append("| roiContainment | ").append(fmt(s.config.roiContainment)).append(" |\n")
+        sb.append("| egoOffsetN | ").append(fmt(s.config.egoOffsetN)).append(" |\n")
+        sb.append("| leanDeg | ").append(if (s.config.leanDeg.isFinite()) fmt(s.config.leanDeg) else "NaN").append(" |\n")
+        sb.append("| approachSpeed source | ").append(if (s.config.deriveRelFromDistance) "derived_from_distance_ema" else "segment_legacy").append(" |\n\n")
+
+        sb.append("## 4. Kritické parametry RiskEngine\n")
+        sb.append("| Klíč | Hodnota (snapshot) | Poznámka |\n")
+        sb.append("|---|---:|---|\n")
+        val critical = if (s.criticalParams.isNotEmpty()) s.criticalParams else defaultCriticalParams()
+        for (p in critical) {
+            sb.append("|").append(escapePipes(p.key)).append("|")
+                .append(escapePipes(RiskParamSnapshot.valueOrNa(snap, p.key))).append("|")
+                .append(escapePipes(p.note)).append("|\n")
         }
         sb.append("\n")
 
-        sb.append("## Spec (co tento test hlídá)\n")
-        sb.append("- **Účel:** ").append(s.doc.purpose).append("\n")
-        sb.append("- **Riziko při rozbití:** ").append(s.doc.riskIfBroken).append("\n")
-        sb.append("- **Typ regrese:** ").append(s.doc.regressionType).append(" | **Závažnost:** ").append(s.doc.severity).append("\n")
-        sb.append("- **Očekávání (shrnutí):** maxLevel=").append(s.doc.expected.alertLevelMax)
-            .append(", state=").append(s.doc.expected.expectedState)
-        s.doc.expected.constraintWindowSec?.let { sb.append(", okno=").append(fmt(it)).append("s") }
-        sb.append("\n")
-        sb.append("- **Povolené přechody:** ").append(s.doc.expected.allowedTransitions).append("\n")
-        if (s.doc.notes.isNotBlank()) {
-            sb.append("- **Pozn.:** ").append(s.doc.notes).append("\n")
-        }
-        sb.append("\n")
+        sb.append("## 5. Skutečný výstup enginu\n")
+        val maxLevel = run.levels.maxOrNull() ?: 0
+        val firstOrange = run.events.firstOrNull { it.type == "ALERT_ENTER" && it.level >= 1 }
+        val firstRed = run.events.firstOrNull { it.type == "ALERT_ENTER" && it.level >= 2 }
+        sb.append("| Field | Hodnota |\n")
+        sb.append("|---|---|\n")
+        sb.append("| maxLevel | ").append(maxLevel).append(" |\n")
+        sb.append("| firstOrangeSec | ").append(firstOrange?.tSec?.let { fmt(it) } ?: "—").append(" |\n")
+        sb.append("| firstRedSec | ").append(firstRed?.tSec?.let { fmt(it) } ?: "—").append(" |\n")
+        sb.append("| topReason (first enter) | ").append(firstOrange?.let { RiskEngine.formatReasonShort(it.reasonBits) } ?: "—").append(" |\n\n")
 
-        sb.append("## Konfigurace scénáře (efektivní vstupy)\n")
-        sb.append("- effectiveMode: **").append(s.config.effectiveMode).append("**\n")
-        sb.append("- hz: ").append(s.config.hz).append("\n")
-        sb.append("- riderSpeedMps: ").append(fmt(s.config.riderSpeedMps)).append("\n")
-        sb.append("- qualityWeight (default): ").append(fmt(s.config.qualityWeight)).append("\n")
-        sb.append("- roiContainment (default): ").append(fmt(s.config.roiContainment)).append("\n")
-        sb.append("- egoOffsetN (default): ").append(fmt(s.config.egoOffsetN)).append("\n")
-        sb.append("- leanDeg (default): ").append(if (s.config.leanDeg.isFinite()) fmt(s.config.leanDeg) else "NaN").append("\n")
-        sb.append("- approachSpeed source: ").append(if (s.config.deriveRelFromDistance) "derived_from_distance_ema" else "segment_legacy").append("\n\n")
-
-        sb.append("## Prahy enginu (odvozeno z kódu)\n")
-        val d = run.derived
-        sb.append("- TTC: ORANGE=").append(fmt(d.ttcOrange)).append("s RED=").append(fmt(d.ttcRed)).append("s\n")
-        sb.append("- Vzdálenost: ORANGE=").append(fmt(d.distOrange)).append("m RED=").append(fmt(d.distRed)).append("m\n")
-        sb.append("- Přibližování: ORANGE=").append(fmt(d.relOrange)).append("m/s RED=").append(fmt(d.relRed)).append("m/s\n")
-        sb.append("- Hystereze risku: orangeOn=").append(fmt(d.orangeOn)).append(" orangeOff=").append(fmt(d.orangeOff))
-            .append(" redOn=").append(fmt(d.redOn)).append(" redOff=").append(fmt(d.redOff)).append("\n")
-        sb.append("- RED combo guard: slopeThr=").append(fmt(d.slopeThr)).append(" strongK=").append(fmt(d.strongK)).append(" midK=").append(fmt(d.midK)).append("\n\n")
-
-        sb.append("## Kritické parametry (co může změnit ORANGE/RED)\n")
-        val crit = RiskParamSnapshot.fmtCriticalParams(s.doc.criticalParams, d)
-        if (crit.isEmpty()) {
-            sb.append("- (Neuvedeno)\n\n")
-        } else {
-            sb.append("| klíč | hodnota (z kódu) |\n|---|---|\n")
-            for ((k, v) in crit) {
-                sb.append("|").append(k).append("|").append(v).append("|\n")
-            }
-            sb.append("\n")
-        }
-
-        sb.append("## Očekávání\n")
+        sb.append("## 6. Kontroly (expectations)\n")
         for ((idx, v) in run.verdicts.withIndex()) {
             sb.append(idx + 1).append(") ").append(if (v.ok) "✅" else "❌")
                 .append(" **").append(v.rule).append("**\n")
@@ -89,48 +94,53 @@ object ScenarioReportWriter {
         }
         sb.append("\n")
 
-        sb.append("## Proč (diagnostika při FAIL)\n")
+        sb.append("## 7. Analýza selhání\n")
         if (pass) {
-            sb.append("- (Scénář prošel – diagnostika není potřeba.)\n\n")
+            sb.append("- OK (žádné selhání).\n\n")
         } else {
-            val maxLevel = run.levels.maxOrNull() ?: 0
-            val firstOrange = firstTimeAtOrAbove(run, 1)
-            val firstRed = firstTimeAtOrAbove(run, 2)
-            val lastEvent = run.events.lastOrNull { it.type == "ALERT_ENTER" || it.type == "ALERT_EXIT" }
+            val primary = failed.first()
+            sb.append("- Neplatí: ").append(primary.rule).append("\n")
+            sb.append("- Detail: ").append(primary.details).append("\n")
+            sb.append("- Očekávání: maxLevel ≤ ").append(expectedMaxLevel).append("\n")
+            sb.append("- Skutečnost: maxLevel = ").append(maxLevel).append("\n")
 
-            sb.append("- **Aktuální:** maxLevel=").append(maxLevel)
-                .append(", firstORANGE=").append(fmtNullable(firstOrange))
-                .append("s, firstRED=").append(fmtNullable(firstRed)).append("s\n")
-            sb.append("- **Očekávané:** maxLevel<=").append(s.doc.expected.alertLevelMax)
-                .append(", state=").append(s.doc.expected.expectedState).append("\n")
+            val trigger = run.events.firstOrNull { it.type == "ALERT_ENTER" && it.level > expectedMaxLevel }
+            if (trigger != null) {
+                val dist = trigger.extra["distM"] as? Float
+                val rel = trigger.extra["relMps"] as? Float
+                val ttc = trigger.extra["ttcSec"] as? Float
+                val slope = trigger.extra["ttcSlope"] as? Float
+                val roi = trigger.extra["roi"] as? Float
+                val qW = trigger.extra["qW"] as? Float
 
-            val firstFail = failed.firstOrNull()
-            if (firstFail != null) {
-                sb.append("- **První nesplněné pravidlo:** ").append(firstFail.rule).append("\n")
-                sb.append("  - detail: ").append(firstFail.details).append("\n")
+                sb.append("\nTrigger (první porušení):\n")
+                sb.append("- tSec=").append(fmt(trigger.tSec))
+                    .append(" level=").append(trigger.level)
+                    .append(" risk=").append(fmt(trigger.risk))
+                    .append(" reason=").append(RiskEngine.formatReasonShort(trigger.reasonBits))
+                    .append("\n")
+                sb.append("- distM=").append(fmt(dist))
+                    .append(" relMps=").append(fmt(rel))
+                    .append(" ttcSec=").append(fmt(ttc))
+                    .append(" slope=").append(fmt(slope))
+                    .append(" roi=").append(fmt(roi))
+                    .append(" qW=").append(fmt(qW))
+                    .append("\n")
+
+                // Threshold cue (explicit numbers)
+                sb.append("\nPrahy relevantní k triggeru:\n")
+                sb.append("- thr.ttc.orangeSec=").append(RiskParamSnapshot.valueOrNa(snap, "thr.ttc.orangeSec"))
+                    .append(" thr.ttc.redSec=").append(RiskParamSnapshot.valueOrNa(snap, "thr.ttc.redSec")).append("\n")
+                sb.append("- thr.dist.orangeM=").append(RiskParamSnapshot.valueOrNa(snap, "thr.dist.orangeM"))
+                    .append(" thr.dist.redM=").append(RiskParamSnapshot.valueOrNa(snap, "thr.dist.redM")).append("\n")
+                sb.append("- thr.approach.orangeMps=").append(RiskParamSnapshot.valueOrNa(snap, "thr.approach.orangeMps"))
+                    .append(" thr.approach.redMps=").append(RiskParamSnapshot.valueOrNa(snap, "thr.approach.redMps")).append("\n")
             }
-
-            val enter = run.events.firstOrNull { it.type == "ALERT_ENTER" && it.level > s.doc.expected.alertLevelMax }
-            if (enter != null) {
-                sb.append("- **Trigger event:** t=").append(fmt(enter.tSec)).append("s level=").append(enter.level)
-                    .append(" risk=").append(fmt(enter.risk)).append(" reason=")
-                    .append(RiskEngine.formatReasonShort(enter.reasonBits)).append("\n")
-                val dist = enter.extra["distM"] as? Float
-                val rel = enter.extra["relMps"] as? Float
-                val ttc = enter.extra["ttcSec"] as? Float
-                val slope = enter.extra["ttcSlope"] as? Float
-                sb.append("  - vstupy: dist=").append(fmt(dist)).append("m rel=").append(fmt(rel)).append("m/s ttc=").append(fmt(ttc)).append("s slope=").append(fmt(slope)).append("\n")
-                sb.append("  - prahy: orangeOn=").append(fmt(d.orangeOn)).append(" redOn=").append(fmt(d.redOn)).append("\n")
-            } else if (lastEvent != null) {
-                sb.append("- **Poslední přechod alertu:** t=").append(fmt(lastEvent.tSec)).append("s ").append(lastEvent.type)
-                    .append(" level=").append(lastEvent.level)
-                    .append(" reason=").append(RiskEngine.formatReasonShort(lastEvent.reasonBits)).append("\n")
-            }
-
-            sb.append("\n")
+            sb.append("\nKlasifikace regrese:\n")
+            sb.append("- ").append(doc.regressionType).append(" (závažnost: ").append(doc.severity).append(")\n\n")
         }
 
-        sb.append("## Klíčové přechody alertů\n")
+        sb.append("## 8. Klíčové přechody alertů\n")
         sb.append("| t (s) | událost | level | risk | důvod | segment | dist(m) | rel(m/s) | ttc(s) | slope | roi | qW |\n")
         sb.append("|---:|---|---:|---:|---|---|---:|---:|---:|---:|---:|---:|\n")
 
@@ -163,31 +173,91 @@ object ScenarioReportWriter {
         }
         sb.append("\n")
 
-        sb.append("## Přehled segmentů\n")
+        sb.append("## 9. Přehled segmentů\n")
         for (seg in s.segmentsForReport().sortedBy { it.tFromSec }) {
             sb.append("- [").append(fmt(seg.tFromSec)).append("–").append(fmt(seg.tToSec)).append("s] ")
                 .append(seg.name).append(" – ").append(seg.name).append("\n")
         }
         sb.append("\n")
 
-        sb.append("## Poznámky pro ladění\n")
-        sb.append("- Report je dual-use: stručný pro člověka, ale obsahuje prahy odvozené z kódu a reason bits pro audit.\n")
-        sb.append("- Pokud upravíte některý z \"kritických parametrů\", očekávejte změnu ORANGE/RED a aktualizujte baseline vědomě.\n")
-        sb.append("- JSONL eventy jsou strojově čitelné a kompatibilní se simulátorem (sim) i log_analyzer exportem.\n")
+        sb.append("## 10. Poznámky\n")
+        sb.append("- Report je deterministický a auditovatelný: obsahuje snapshot prahů z kódu a trigger při FAIL.\n")
+        sb.append("- JSONL eventy jsou určené pro grep/parsing a baseline diff (CI).\n")
 
         file.writeText(sb.toString())
     }
 
-    private fun firstTimeAtOrAbove(run: ScenarioRun, level: Int): Float? {
-        for (i in run.levels.indices) {
-            if (run.levels[i] >= level) return run.frames.getOrNull(i)?.tSec
+    private fun deriveDocFromLegacy(s: ScenarioMeta): ScenarioDoc {
+        val group = s.id.firstOrNull()?.uppercaseChar()?.toString() ?: "?"
+        val expectedMaxLevel = deriveExpectedMaxLevel(s.expectations)
+        val expectedState = when (expectedMaxLevel) {
+            0 -> "SAFE"
+            1 -> "CAUTION"
+            else -> "CRITICAL"
         }
-        return null
+        val window = s.expectations.filterIsInstance<Expectation.MaxTransitionsInWindow>().firstOrNull()
+            ?.let { "okno ${fmt(it.windowSec)}s" }
+            ?: "nikdy"
+
+        val (type, sev) = when (group) {
+            "A" -> RegressionType.FALSE_POSITIVE to Severity.HIGH
+            "B" -> RegressionType.FALSE_NEGATIVE to Severity.HIGH
+            "C" -> RegressionType.FALSE_POSITIVE to Severity.HIGH
+            "D" -> RegressionType.FALSE_NEGATIVE to Severity.HIGH
+            "E" -> RegressionType.STABILITY to Severity.MED
+            else -> RegressionType.STABILITY to Severity.MED
+        }
+
+        val purpose = if (s.title.isNotBlank()) s.title.trim() else s.notes.trim().lineSequence().firstOrNull().orEmpty()
+        val riskIfBroken = when (type) {
+            RegressionType.FALSE_POSITIVE -> "Falešné varování (zhoršení UX / ztráta důvěry)"
+            RegressionType.FALSE_NEGATIVE -> "Pozdní/žádné varování (riziko kolize)"
+            RegressionType.STABILITY -> "Nestabilní přechody (blikání / cvakání ORANGE/RED)"
+            RegressionType.PERFORMANCE -> "Zhoršení výkonu (nežádoucí režie)"
+        }
+
+        return ScenarioDoc(
+            purpose = purpose,
+            riskIfBroken = riskIfBroken,
+            expected = ExpectedBehaviorDoc(
+                expectedAlertLevelMax = expectedMaxLevel,
+                expectedRiskState = expectedState,
+                constraintWindow = window
+            ),
+            regressionType = type,
+            severity = sev
+        )
     }
 
-    private fun fmtNullable(v: Float?): String {
-        return if (v == null) "—" else fmt(v)
+    private fun deriveExpectedMaxLevel(expectations: List<Expectation>): Int {
+        // Nejčastější kontrakt: "nesmí vstoupit do level X".
+        val mustNot = expectations.filterIsInstance<Expectation.MustNotEnterLevel>().map { it.level }
+        return when {
+            mustNot.contains(1) -> 0
+            mustNot.contains(2) -> 1
+            else -> 2
+        }
     }
+
+    private fun defaultCriticalParams(): List<CriticalParamRef> {
+        return listOf(
+            CriticalParamRef("thr.ttc.orangeSec"),
+            CriticalParamRef("thr.ttc.redSec"),
+            CriticalParamRef("thr.dist.orangeM"),
+            CriticalParamRef("thr.dist.redM"),
+            CriticalParamRef("thr.approach.orangeMps"),
+            CriticalParamRef("thr.approach.redMps"),
+            CriticalParamRef("thr.risk.orangeOn"),
+            CriticalParamRef("thr.risk.orangeOff"),
+            CriticalParamRef("thr.risk.redOn"),
+            CriticalParamRef("thr.risk.redOff"),
+            CriticalParamRef("guard.redCombo.slopeThr"),
+            CriticalParamRef("guard.redCombo.strongK"),
+            CriticalParamRef("guard.redCombo.midK")
+        )
+    }
+
+    private fun escapePipes(s: String): String = s.replace("|", "/")
 
     fun writeFrameTraceJsonl(run: ScenarioRun, file: File) {
         val sb = StringBuilder(64_000)

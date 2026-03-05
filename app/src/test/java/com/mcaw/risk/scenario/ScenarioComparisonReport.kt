@@ -15,13 +15,12 @@ object ScenarioComparisonReport {
 
     data class ScenarioSummary(
         val scenarioId: String,
+        val group: String,
         val domain: String,
         val vehicle: String,
-        val regressionType: String,
-        val severity: String,
+        val pass: Boolean,
         val expectedMaxLevel: Int,
         val expectedState: String,
-        val pass: Boolean,
         val maxLevel: Int,
         val firstOrangeSec: Float?,
         val firstRedSec: Float?,
@@ -30,7 +29,9 @@ object ScenarioComparisonReport {
         val orangeCount: Int,
         val redCount: Int,
         val topReasonIds: List<Int>,
-        val topReasonShort: String?
+        val topReasonShort: String,
+        val regressionType: String,
+        val severity: String
     )
 
     data class DiffEntry(
@@ -84,21 +85,28 @@ object ScenarioComparisonReport {
                 .take(5)
                 .map { it.first }
 
-            val topReasonShort = run.events
-                .asSequence()
-                .filter { it.type == "ALERT_ENTER" }
-                .maxByOrNull { it.risk }
-                ?.let { com.mcaw.risk.RiskEngine.formatReasonShort(it.reasonBits) }
+            val group = run.scenario.id.firstOrNull()?.uppercaseChar()?.toString() ?: "?"
+            val doc = run.scenario.doc
+            val expectedMaxLevel = doc?.expected?.expectedAlertLevelMax ?: deriveExpectedMaxLevel(run.scenario.expectations)
+            val expectedState = doc?.expected?.expectedRiskState ?: when (expectedMaxLevel) {
+                0 -> "SAFE"
+                1 -> "CAUTION"
+                else -> "CRITICAL"
+            }
+            val topReasonShort = run.events.firstOrNull { it.type == "ALERT_ENTER" && it.level >= 1 }
+                ?.let { RiskEngine.formatReasonShort(it.reasonBits) }
+                ?: "—"
+            val regressionType = doc?.regressionType?.name ?: guessRegressionType(group)
+            val severity = doc?.severity?.name ?: guessSeverity(group)
 
             ScenarioSummary(
                 scenarioId = run.scenario.id,
+                group = group,
                 domain = run.scenario.domain.name,
                 vehicle = run.scenario.vehicle.name,
-                regressionType = run.scenario.doc.regressionType.name,
-                severity = run.scenario.doc.severity.name,
-                expectedMaxLevel = run.scenario.doc.expected.alertLevelMax,
-                expectedState = run.scenario.doc.expected.expectedState,
                 pass = run.verdicts.all { it.ok },
+                expectedMaxLevel = expectedMaxLevel,
+                expectedState = expectedState,
                 maxLevel = maxLevel,
                 firstOrangeSec = firstOrangeSec,
                 firstRedSec = firstRedSec,
@@ -107,7 +115,9 @@ object ScenarioComparisonReport {
                 orangeCount = orangeCount,
                 redCount = redCount,
                 topReasonIds = topReasonIds,
-                topReasonShort = topReasonShort
+                topReasonShort = topReasonShort,
+                regressionType = regressionType,
+                severity = severity
             )
         }
     }
@@ -122,13 +132,12 @@ object ScenarioComparisonReport {
             if (idx > 0) sb.append(",\n")
             sb.append("    {")
             sb.append("\"scenarioId\":\"").append(escape(s.scenarioId)).append("\"")
+            sb.append(",\"group\":\"").append(escape(s.group)).append("\"")
             sb.append(",\"domain\":\"").append(escape(s.domain)).append("\"")
             sb.append(",\"vehicle\":\"").append(escape(s.vehicle)).append("\"")
-            sb.append(",\"regressionType\":\"").append(escape(s.regressionType)).append("\"")
-            sb.append(",\"severity\":\"").append(escape(s.severity)).append("\"")
+            sb.append(",\"pass\":").append(if (s.pass) "true" else "false")
             sb.append(",\"expectedMaxLevel\":").append(s.expectedMaxLevel)
             sb.append(",\"expectedState\":\"").append(escape(s.expectedState)).append("\"")
-            sb.append(",\"pass\":").append(if (s.pass) "true" else "false")
             sb.append(",\"maxLevel\":").append(s.maxLevel)
             sb.append(",\"firstOrangeSec\":").append(fmtNullable(s.firstOrangeSec))
             sb.append(",\"firstRedSec\":").append(fmtNullable(s.firstRedSec))
@@ -136,13 +145,15 @@ object ScenarioComparisonReport {
             sb.append(",\"maxTransitionsWindow\":").append(s.maxTransitionsWindow)
             sb.append(",\"orangeCount\":").append(s.orangeCount)
             sb.append(",\"redCount\":").append(s.redCount)
+            sb.append(",\"topReasonShort\":\"").append(escape(s.topReasonShort)).append("\"")
+            sb.append(",\"regressionType\":\"").append(escape(s.regressionType)).append("\"")
+            sb.append(",\"severity\":\"").append(escape(s.severity)).append("\"")
             sb.append(",\"topReasonIds\":[")
             s.topReasonIds.forEachIndexed { i, id ->
                 if (i > 0) sb.append(',')
                 sb.append(id)
             }
             sb.append("]")
-            sb.append(",\"topReasonShort\":").append(if (s.topReasonShort == null) "null" else "\"${escape(s.topReasonShort)}\"")
             sb.append("}")
         }
         sb.append("\n  ]\n")
@@ -159,6 +170,31 @@ object ScenarioComparisonReport {
         val objects = extractScenarioObjects(text)
         return objects.mapNotNull { obj ->
             parseSummaryObject(obj)
+        }
+    }
+
+    private fun deriveExpectedMaxLevel(expectations: List<Expectation>): Int {
+        val mustNot = expectations.filterIsInstance<Expectation.MustNotEnterLevel>().map { it.level }
+        return when {
+            mustNot.contains(1) -> 0
+            mustNot.contains(2) -> 1
+            else -> 2
+        }
+    }
+
+    private fun guessRegressionType(group: String): String {
+        return when (group) {
+            "A", "C" -> RegressionType.FALSE_POSITIVE.name
+            "B", "D" -> RegressionType.FALSE_NEGATIVE.name
+            "E" -> RegressionType.STABILITY.name
+            else -> RegressionType.STABILITY.name
+        }
+    }
+
+    private fun guessSeverity(group: String): String {
+        return when (group) {
+            "A", "B", "C", "D" -> Severity.HIGH.name
+            else -> Severity.MED.name
         }
     }
 
@@ -578,6 +614,33 @@ object ScenarioComparisonReport {
                   <a href="diff_summary_e2e.json">🧪 diff_summary_e2e.json</a>
                 </div>
 
+                <div class="card" style="margin: 10px 0 18px;">
+                  <div class="label">FILTR</div>
+                  <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:8px;">
+                    <input id="q" placeholder="ID (substring)…" style="padding:10px 12px; border:1px solid var(--line); border-radius:10px; min-width:240px;" />
+                    <select id="status" style="padding:10px 12px; border:1px solid var(--line); border-radius:10px;">
+                      <option value="">Status: vše</option>
+                      <option value="PASS">PASS</option>
+                      <option value="FAIL">FAIL</option>
+                    </select>
+                    <select id="rtype" style="padding:10px 12px; border:1px solid var(--line); border-radius:10px;">
+                      <option value="">Regrese: vše</option>
+                      <option value="FALSE_POSITIVE">FALSE_POSITIVE</option>
+                      <option value="FALSE_NEGATIVE">FALSE_NEGATIVE</option>
+                      <option value="STABILITY">STABILITY</option>
+                      <option value="PERFORMANCE">PERFORMANCE</option>
+                    </select>
+                    <select id="sev" style="padding:10px 12px; border:1px solid var(--line); border-radius:10px;">
+                      <option value="">Závažnost: vše</option>
+                      <option value="HIGH">HIGH</option>
+                      <option value="MED">MED</option>
+                      <option value="LOW">LOW</option>
+                    </select>
+                    <button id="clear" style="padding:10px 12px; border:1px solid var(--line); border-radius:10px; background:#fff; font-weight:700;">Vymazat</button>
+                  </div>
+                  <p class="muted" style="margin-top:10px;">Filtruje obě tabulky (ENGINE_ONLY i E2E) bez reloadu.</p>
+                </div>
+
                 <div class="global-kpis">
                   <div class="card ${if (gateBadge == "PASS") "pass" else "fail"}"><div class="label">COMBINED GATE</div><div class="value">$gateBadge</div></div>
                   <div class="card pass"><div class="label">PASS</div><div class="value">$combinedPass</div></div>
@@ -611,20 +674,33 @@ object ScenarioComparisonReport {
             append("""
               </div>
               <script>
-                (function() {
-                  function applyFilter(suiteKey, q) {
-                    const query = (q || '').trim().toLowerCase();
-                    const rows = document.querySelectorAll('tr[data-suite="' + suiteKey + '"]');
-                    rows.forEach(function(r) {
-                      const hay = (r.getAttribute('data-filter') || '');
-                      r.style.display = (query.length === 0 || hay.indexOf(query) >= 0) ? '' : 'none';
+                (function(){
+                  const q = document.getElementById('q');
+                  const status = document.getElementById('status');
+                  const rtype = document.getElementById('rtype');
+                  const sev = document.getElementById('sev');
+                  const clear = document.getElementById('clear');
+                  function norm(s){ return (s||'').toLowerCase().trim(); }
+                  function apply(){
+                    const qq = norm(q.value);
+                    const st = status.value;
+                    const rt = rtype.value;
+                    const sv = sev.value;
+                    document.querySelectorAll('tr[data-scenario]').forEach(tr=>{
+                      const id = norm(tr.getAttribute('data-scenario'));
+                      const p = tr.getAttribute('data-pass');
+                      const r = tr.getAttribute('data-rtype');
+                      const s = tr.getAttribute('data-sev');
+                      let ok = true;
+                      if (qq && !id.includes(qq)) ok = false;
+                      if (st && p !== st) ok = false;
+                      if (rt && r !== rt) ok = false;
+                      if (sv && s !== sv) ok = false;
+                      tr.style.display = ok ? '' : 'none';
                     });
                   }
-                  const inputs = document.querySelectorAll('input.filterInput');
-                  inputs.forEach(function(inp) {
-                    const suite = inp.getAttribute('data-suite');
-                    inp.addEventListener('input', function() { applyFilter(suite, inp.value); });
-                  });
+                  [q,status,rtype,sev].forEach(el=> el && el.addEventListener('input', apply));
+                  clear && clear.addEventListener('click', ()=>{ q.value=''; status.value=''; rtype.value=''; sev.value=''; apply(); });
                 })();
               </script>
             </body>
@@ -675,14 +751,8 @@ object ScenarioComparisonReport {
         sb.append("<div class=\"card unchanged\"><div class=\"label\">UNCHANGED</div><div class=\"value\">$unchanged</div></div>")
         sb.append("</div>")
 
-        sb.append("<div style='display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin: 8px 0 12px;'>")
-        sb.append("<label class='muted' style='font-weight:600;'>Filtr:</label>")
-        sb.append("<input class='filterInput' data-suite='").append(escapeHtml(reportSubDir)).append("' placeholder='ID / doména / typ regrese / reason…' style='padding:8px 10px; border:1px solid var(--line); border-radius:10px; min-width: 320px;' />")
-        sb.append("<span class='muted'>Tip: napište např. <code>FalsePositive</code> nebo <code>CRITICAL</code>.</span>")
-        sb.append("</div>")
-
         sb.append("<div class=\"table-wrap\"><table><thead><tr>")
-        sb.append("<th>Scénář</th><th>Doména</th><th>Vozidlo</th><th>Spec</th><th>Result</th><th>Diff</th><th>Δ ORANGE</th><th>Δ RED</th><th>Δ TRANS</th><th>Top reason</th><th>Artefakty</th>")
+        sb.append("<th>Scénář</th><th>G</th><th>Doména</th><th>Vozidlo</th><th>Expected</th><th>Actual</th><th>Top reason</th><th>Regrese</th><th>Závažnost</th><th>Result</th><th>Diff</th><th>Δ ORANGE</th><th>Δ RED</th><th>Δ TRANS</th><th>Artefakty</th>")
         sb.append("</tr></thead><tbody>")
 
         for (s in summary.sortedBy { it.scenarioId }) {
@@ -697,26 +767,30 @@ object ScenarioComparisonReport {
                 else -> "unchanged"
             }
 
-            val spec = "${escapeHtml(s.regressionType)}/${escapeHtml(s.severity)} exp<=${s.expectedMaxLevel} ${escapeHtml(s.expectedState)}"
-            sb.append("<tr data-suite='").append(escapeHtml(reportSubDir)).append("' data-filter='")
-                .append(escapeHtml((s.scenarioId + " " + s.domain + " " + s.vehicle + " " + s.regressionType + " " + s.severity + " " + s.expectedState + " " + (s.topReasonShort ?: "")).lowercase()))
-                .append("'>")
+            sb.append("<tr data-scenario=\"").append(escapeHtml(s.scenarioId)).append("\" data-pass=\"")
+                .append(if (s.pass) "PASS" else "FAIL").append("\" data-rtype=\"")
+                .append(escapeHtml(s.regressionType)).append("\" data-sev=\"")
+                .append(escapeHtml(s.severity)).append("\">")
             sb.append("<td class=\"scenario\">").append(escapeHtml(s.scenarioId)).append("</td>")
+            sb.append("<td>").append(escapeHtml(s.group)).append("</td>")
             sb.append("<td>").append(escapeHtml(s.domain)).append("</td>")
             sb.append("<td>").append(escapeHtml(s.vehicle)).append("</td>")
-            sb.append("<td>").append(spec).append("<br><span class='muted'>act max=").append(s.maxLevel).append("</span></td>")
+            sb.append("<td>").append("≤").append(s.expectedMaxLevel).append(" / ").append(escapeHtml(s.expectedState)).append("</td>")
+            sb.append("<td>").append(s.maxLevel).append("</td>")
+            sb.append("<td>").append(escapeHtml(s.topReasonShort)).append("</td>")
+            sb.append("<td>").append(escapeHtml(s.regressionType)).append("</td>")
+            sb.append("<td>").append(escapeHtml(s.severity)).append("</td>")
             sb.append("<td><span class=\"chip ").append(resultClass).append("\">").append(resultText).append("</span></td>")
             sb.append("<td><span class=\"chip ").append(diffClass).append("\">").append(escapeHtml(diffStatus)).append("</span></td>")
             sb.append("<td>").append(fmtNullable(d?.deltaFirstOrangeSec)).append("</td>")
             sb.append("<td>").append(fmtNullable(d?.deltaFirstRedSec)).append("</td>")
             sb.append("<td>").append(d?.deltaTransitions ?: 0).append("</td>")
-            sb.append("<td>").append(escapeHtml(s.topReasonShort ?: "—")).append("</td>")
             sb.append("<td class=\"links\"><a href='${reportsRelativePath}/${reportSubDir}/${s.scenarioId}.md'>MD</a> · <a href='${reportsRelativePath}/${reportSubDir}/${s.scenarioId}.jsonl'>JSONL</a></td>")
             sb.append("</tr>")
         }
 
         if (summary.isEmpty()) {
-            sb.append("<tr><td colspan=\"11\" class=\"muted\">Žádná data pro tuto sadu testů.</td></tr>")
+            sb.append("<tr><td colspan=\"15\" class=\"muted\">Žádná data pro tuto sadu testů.</td></tr>")
         }
 
         sb.append("</tbody></table></div>")
@@ -786,9 +860,16 @@ object ScenarioComparisonReport {
         }
 
         val scenarioId = str("scenarioId") ?: return null
+        val group = str("group") ?: (scenarioId.firstOrNull()?.uppercaseChar()?.toString() ?: "?")
         val domain = str("domain") ?: return null
         val vehicle = str("vehicle") ?: return null
         val pass = bool("pass") ?: return null
+        val expectedMaxLevel = int("expectedMaxLevel") ?: 2
+        val expectedState = str("expectedState") ?: when (expectedMaxLevel) {
+            0 -> "SAFE"
+            1 -> "CAUTION"
+            else -> "CRITICAL"
+        }
         val maxLevel = int("maxLevel") ?: 0
         val firstOrangeSec = flt("firstOrangeSec")
         val firstRedSec = flt("firstRedSec")
@@ -796,26 +877,21 @@ object ScenarioComparisonReport {
         val maxTransitionsWindow = int("maxTransitionsWindow") ?: 0
         val orangeCount = int("orangeCount") ?: 0
         val redCount = int("redCount") ?: 0
+        val topReasonShort = str("topReasonShort") ?: "—"
+        val regressionType = str("regressionType") ?: guessRegressionType(group)
+        val severity = str("severity") ?: guessSeverity(group)
 
         val reasonBlock = Regex("\"topReasonIds\"\\s*:\\s*\\[(.*?)\\]").find(obj)?.groupValues?.get(1).orEmpty()
         val topReasonIds = reasonBlock.split(',').mapNotNull { it.trim().toIntOrNull() }
 
-        // v2 fields (optional for backward compatibility)
-        val regressionType = str("regressionType") ?: "NEUvedeno"
-        val severity = str("severity") ?: "MED"
-        val expectedMaxLevel = int("expectedMaxLevel") ?: 0
-        val expectedState = str("expectedState") ?: "—"
-        val topReasonShort = str("topReasonShort")
-
         return ScenarioSummary(
             scenarioId = scenarioId,
+            group = group,
             domain = domain,
             vehicle = vehicle,
-            regressionType = regressionType,
-            severity = severity,
+            pass = pass,
             expectedMaxLevel = expectedMaxLevel,
             expectedState = expectedState,
-            pass = pass,
             maxLevel = maxLevel,
             firstOrangeSec = firstOrangeSec,
             firstRedSec = firstRedSec,
@@ -824,7 +900,9 @@ object ScenarioComparisonReport {
             orangeCount = orangeCount,
             redCount = redCount,
             topReasonIds = topReasonIds,
-            topReasonShort = topReasonShort
+            topReasonShort = topReasonShort,
+            regressionType = regressionType,
+            severity = severity
         )
     }
 
