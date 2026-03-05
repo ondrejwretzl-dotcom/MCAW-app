@@ -147,7 +147,7 @@ class TemporalTrackerTest {
 
     @Test
     fun rejectNewWideDetections_doesNotCreateNewTrack() {
-        val tracker = TemporalTracker()
+        val tracker = TemporalTracker(rejectNewWideDetections = true)
         val wide = Detection(box = Box(10f, 10f, 210f, 90f), score = 0.95f, label = "car")
 
         val out = tracker.update(listOf(wide), intArrayOf(0), tsMs = 0L)
