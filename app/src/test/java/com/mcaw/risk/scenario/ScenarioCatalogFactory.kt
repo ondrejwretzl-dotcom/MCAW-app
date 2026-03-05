@@ -29,7 +29,7 @@ object ScenarioCatalogFactory {
         expectedState: String,
         constraintWindowSec: Float? = null,
         allowedTransitions: String = "—",
-        regressionType: RegressionType = RegressionType.NEUvedeno,
+        regressionType: RegressionType = RegressionType.STABILITY,
         severity: Severity = Severity.MED,
         criticalParams: List<String> = emptyList(),
         notes: String = ""
@@ -38,16 +38,21 @@ object ScenarioCatalogFactory {
             purpose = purpose.trim(),
             riskIfBroken = riskIfBroken.trim(),
             expected = ExpectedBehaviorDoc(
-                alertLevelMax = alertLevelMax,
-                expectedState = expectedState,
-                constraintWindowSec = constraintWindowSec,
-                allowedTransitions = allowedTransitions,
+                expectedAlertLevelMax = alertLevelMax,
+                expectedRiskState = expectedState,
+                constraintWindow = buildConstraintWindow(constraintWindowSec, allowedTransitions)
             ),
             regressionType = regressionType,
-            severity = severity,
-            criticalParams = criticalParams,
-            notes = notes.trim()
+            severity = severity
         )
+    }
+
+
+
+    private fun buildConstraintWindow(constraintWindowSec: Float?, allowedTransitions: String): String {
+        val windowPart = constraintWindowSec?.let { "okno ${"%.1f".format(it)}s" } ?: "bez explicitního časového okna"
+        val transitionsPart = allowedTransitions.takeIf { it.isNotBlank() && it != "—" }
+        return if (transitionsPart != null) "$windowPart; $transitionsPart" else windowPart
     }
 
     fun createDefaultCatalog(): ScenarioCatalogEngineOnly = createEngineOnlyCatalog()
@@ -105,7 +110,7 @@ object ScenarioCatalogFactory {
                 riskIfBroken = "Pokud se bridge invalid TTC rozbije, engine může zbytečně blikat nebo naopak zpozdit varování.",
                 alertLevelMax = 2,
                 expectedState = "—",
-                regressionType = RegressionType.NEUvedeno,
+                regressionType = RegressionType.STABILITY,
                 severity = Severity.LOW,
                 criticalParams = listOf(
                     "ema.alphaApproach",
@@ -729,7 +734,7 @@ object ScenarioCatalogFactory {
                 expectedState = "CAUTION",
                 constraintWindowSec = 9f,
                 allowedTransitions = "SAFE→CAUTION (bez RED)",
-                regressionType = RegressionType.NEUvedeno,
+                regressionType = RegressionType.STABILITY,
                 severity = Severity.MED,
                 criticalParams = listOf(
                     "risk.distDynamic",

@@ -1,5 +1,6 @@
 package com.mcaw.risk.scenario
 
+import com.mcaw.risk.RiskEngine
 import java.io.File
 import kotlin.math.max
 
