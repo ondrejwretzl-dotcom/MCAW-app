@@ -22,6 +22,7 @@ export type McawConfig = {
 
 export type McawExpectation =
   | { type: 'MustEnterLevelBy'; level: number; latestSecAfterHazard: number; hazardTimeSec: number; message: string }
+  | { type: 'MustExitToLevelBy'; level: number; latestSecAfterStart: number; startTimeSec: number; message: string }
   | { type: 'MustNotEnterLevel'; level: number; message: string }
   | { type: 'MaxTransitionsInWindow'; maxTransitions: number; windowSec: number; message: string }
   | { type: 'MustNotAlertWhenTtcInvalidAndRelLow'; relMpsMax: number; message: string };
@@ -167,6 +168,8 @@ function expectationToKotlin(e: McawExpectation): string {
   switch (e.type) {
     case 'MustEnterLevelBy':
       return `MustEnterLevelBy(level=${e.level}, latestSecAfterHazard=${e.latestSecAfterHazard}, hazardTimeSec=${e.hazardTimeSec}, message=${JSON.stringify(e.message)})`;
+    case 'MustExitToLevelBy':
+      return `MustExitToLevelBy(level=${e.level}, latestSecAfterStart=${e.latestSecAfterStart}, startTimeSec=${e.startTimeSec}, message=${JSON.stringify(e.message)})`;
     case 'MustNotEnterLevel':
       return `MustNotEnterLevel(level=${e.level}, message=${JSON.stringify(e.message)})`;
     case 'MaxTransitionsInWindow':

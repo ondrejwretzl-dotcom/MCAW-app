@@ -130,6 +130,11 @@ data class E2eSegment(
 
 sealed class Expectation {
     data class MustEnterLevelBy(val level: Int, val latestSecAfterHazard: Float, val hazardTimeSec: Float, val message: String) : Expectation()
+    /**
+     * Exit requirement: after [startTimeSec], the run must reach level <= [level] within [latestSecAfterStart].
+     * Used for cases like "brief ORANGE at start is OK, but must suppress to SAFE quickly".
+     */
+    data class MustExitToLevelBy(val level: Int, val latestSecAfterStart: Float, val startTimeSec: Float, val message: String) : Expectation()
     data class MustNotEnterLevel(val level: Int, val message: String) : Expectation()
     data class MaxTransitionsInWindow(val maxTransitions: Int, val windowSec: Float, val message: String) : Expectation()
     data class MustNotAlertWhenTtcInvalidAndRelLow(val relMpsMax: Float, val message: String) : Expectation()

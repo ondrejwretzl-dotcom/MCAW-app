@@ -14,7 +14,7 @@ function nearestDuration(totalSec: number): 10 | 30 | 60 {
   return 60;
 }
 
-const EXP_TYPES: McawExpectation['type'][] = ['MustEnterLevelBy', 'MustNotEnterLevel', 'MaxTransitionsInWindow', 'MustNotAlertWhenTtcInvalidAndRelLow'];
+const EXP_TYPES: McawExpectation['type'][] = ['MustEnterLevelBy', 'MustExitToLevelBy', 'MustNotEnterLevel', 'MaxTransitionsInWindow', 'MustNotAlertWhenTtcInvalidAndRelLow'];
 
 export function BuilderPanel(props: {
   draft: ScenarioDraft;
@@ -47,6 +47,7 @@ export function BuilderPanel(props: {
   const setExpectationType = (idx: number, type: McawExpectation['type']) => {
     const base: Record<McawExpectation['type'], McawExpectation> = {
       MustEnterLevelBy: { type, level: 1, latestSecAfterHazard: 1.5, hazardTimeSec: 0, message: '' },
+      MustExitToLevelBy: { type, level: 0, latestSecAfterStart: 0.8, startTimeSec: 0, message: '' },
       MustNotEnterLevel: { type, level: 2, message: '' },
       MaxTransitionsInWindow: { type, maxTransitions: 2, windowSec: 3, message: '' },
       MustNotAlertWhenTtcInvalidAndRelLow: { type, relMpsMax: 0.2, message: '' },
@@ -167,6 +168,8 @@ export function BuilderPanel(props: {
                 {'level' in exp && <label title="Úroveň alertu (1=orange, 2=red).">level<input type="number" value={exp.level} onChange={(e) => updateExpectation(idx, { level: Number(e.target.value) } as any)} style={{ width: 70, marginLeft: 6 }} /></label>}
                 {'latestSecAfterHazard' in exp && <label title="Maximální čas od hazardTimeSec do vstupu do level. Doporučení: 1-2 s pro city.">latestSecAfterHazard<input type="number" step={0.1} value={exp.latestSecAfterHazard} onChange={(e) => updateExpectation(idx, { latestSecAfterHazard: Number(e.target.value) } as any)} style={{ width: 80, marginLeft: 6 }} /></label>}
                 {'hazardTimeSec' in exp && <label title="Čas, kdy nastává hazard trigger (sekundy od startu scénáře).">hazardTimeSec<input type="number" step={0.1} value={exp.hazardTimeSec} onChange={(e) => updateExpectation(idx, { hazardTimeSec: Number(e.target.value) } as any)} style={{ width: 80, marginLeft: 6 }} /></label>}
+                {'latestSecAfterStart' in exp && <label title="Maximální čas od startTimeSec do splnění 'exit' (návrat do level<=X).">latestSecAfterStart<input type="number" step={0.1} value={(exp as any).latestSecAfterStart} onChange={(e) => updateExpectation(idx, { latestSecAfterStart: Number(e.target.value) } as any)} style={{ width: 80, marginLeft: 6 }} /></label>}
+                {'startTimeSec' in exp && <label title="Čas, od kterého začne platit pravidlo 'exit'.">startTimeSec<input type="number" step={0.1} value={(exp as any).startTimeSec} onChange={(e) => updateExpectation(idx, { startTimeSec: Number(e.target.value) } as any)} style={{ width: 80, marginLeft: 6 }} /></label>}
                 {'maxTransitions' in exp && <label title="Maximální počet změn levelu v okně (anti-flapping).">maxTransitions<input type="number" value={exp.maxTransitions} onChange={(e) => updateExpectation(idx, { maxTransitions: Number(e.target.value) } as any)} style={{ width: 70, marginLeft: 6 }} /></label>}
                 {'windowSec' in exp && <label title="Délka okna pro počítání přechodů levelů (s).">windowSec<input type="number" step={0.1} value={exp.windowSec} onChange={(e) => updateExpectation(idx, { windowSec: Number(e.target.value) } as any)} style={{ width: 70, marginLeft: 6 }} /></label>}
                 {'relMpsMax' in exp && <label title="Maximální relativní rychlost pro pravidlo 'TT C invalid + low rel'. Doporučení 0.1-0.3 m/s.">relMpsMax<input type="number" step={0.1} value={exp.relMpsMax} onChange={(e) => updateExpectation(idx, { relMpsMax: Number(e.target.value) } as any)} style={{ width: 70, marginLeft: 6 }} /></label>}

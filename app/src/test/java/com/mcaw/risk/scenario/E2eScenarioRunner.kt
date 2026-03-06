@@ -173,6 +173,13 @@ object E2eScenarioRunner {
         }
         for (e in s.expectations) when (e) {
             is Expectation.MustEnterLevelBy -> out += Verdict(firstTimeAtOrAbove(e.level)?.let { it <= e.hazardTimeSec + e.latestSecAfterHazard + 1e-3f } == true, "MustEnterLevelBy(level=${e.level})", e.message)
+            is Expectation.MustExitToLevelBy -> {
+                val idx0 = frames.indexOfFirst { it.tSec + 1e-6f >= e.startTimeSec }
+                val first = if (idx0 >= 0) {
+                    (idx0 until frames.size).firstOrNull { levels[it] <= e.level }?.let { frames[it].tSec }
+                } else null
+                out += Verdict(first?.let { it <= e.startTimeSec + e.latestSecAfterStart + 1e-3f } == true, "MustExitToLevelBy(level<=${e.level})", e.message)
+            }
             is Expectation.MustNotEnterLevel -> out += Verdict(levels.none { it >= e.level }, "MustNotEnterLevel(level=${e.level})", e.message)
             is Expectation.MaxTransitionsInWindow -> out += Verdict(maxTransitions(e.windowSec) <= e.maxTransitions, "MaxTransitionsInWindow(max=${e.maxTransitions})", e.message)
             is Expectation.MustNotAlertWhenTtcInvalidAndRelLow -> out += Verdict(true, "MustNotAlertWhenTtcInvalidAndRelLow", e.message)

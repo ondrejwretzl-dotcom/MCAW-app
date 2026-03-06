@@ -106,7 +106,12 @@ export function generateFrames(draft: ScenarioDraft): FrameRow[] {
     }
     const riderSpeedMps = kmhToMps(Math.max(0, speedKmh));
 
-    const relMps = Math.max(0, evalProfile(seg.relMps, tRel, segDur));
+    // NOTE: relMps is *signed* in scenario authoring:
+    //  - positive = approaching/closing
+    //  - negative = receding (distance increasing)
+    // The pipeline/engine can still choose to take abs() for risk scoring,
+    // but we must preserve the sign for trend/suppress logic.
+    const relMps = evalProfile(seg.relMps, tRel, segDur);
     let distM = evalProfile(seg.distM, tRel, segDur);
 
     if (draft.relDrivenDistance) {

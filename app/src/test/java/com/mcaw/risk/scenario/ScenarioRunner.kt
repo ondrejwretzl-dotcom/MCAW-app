@@ -323,6 +323,15 @@ object ScenarioRunner {
             return if (idx >= 0) frames[idx].tSec else null
         }
 
+        fun firstTimeAtOrBelowFrom(level: Int, startTimeSec: Float): Float? {
+            val idx0 = frames.indexOfFirst { it.tSec + 1e-6f >= startTimeSec }
+            if (idx0 < 0) return null
+            for (i in idx0 until frames.size) {
+                if (levels[i] <= level) return frames[i].tSec
+            }
+            return null
+        }
+
         fun maxTransitions(windowSec: Float): Int {
             if (frames.isEmpty()) return 0
             var maxT = 0
@@ -365,6 +374,18 @@ object ScenarioRunner {
                     val ok = levels.none { it >= e.level }
                     val details = if (ok) "OK (nikdy nedošlo k level>=${e.level})." else "NESPLNĚNO (došlo k level>=${e.level})."
                     out.add(Verdict(ok, "MustNotEnterLevel(level=${e.level})", "${e.message} :: $details"))
+                }
+
+                is Expectation.MustExitToLevelBy -> {
+                    val first = firstTimeAtOrBelowFrom(level = e.level, startTimeSec = e.startTimeSec)
+                    val deadline = e.startTimeSec + e.latestSecAfterStart
+                    val ok = first != null && first <= deadline + 1e-3f
+                    val details = if (first == null) {
+                        "Nikdy nedošlo k level<=${e.level} po t>=${fmt(e.startTimeSec)}s (deadline t<=${fmt(deadline)}s)."
+                    } else {
+                        "Dosaženo v t=${fmt(first)}s; deadline t<=${fmt(deadline)}s (start t=${fmt(e.startTimeSec)}s)."
+                    }
+                    out.add(Verdict(ok, "MustExitToLevelBy(level<=${e.level})", "${e.message} :: $details"))
                 }
 
                 is Expectation.MaxTransitionsInWindow -> {
