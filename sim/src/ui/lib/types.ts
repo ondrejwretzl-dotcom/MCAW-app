@@ -8,6 +8,11 @@ export type FrameIn = {
   ttcHeightSec?: number;
   ttcDistSec?: number;
   ttcSlopeSecPerSec?: number;
+  relDerivValid?: boolean;
+  relSignedSampleMps?: number;
+  boxHeightPx?: number;
+  trackedPresent?: boolean;
+  occlConfirmed?: boolean;
   roiContainment?: number;
   egoOffsetN?: number;
   cutInActive?: boolean;

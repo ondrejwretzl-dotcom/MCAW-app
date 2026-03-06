@@ -273,6 +273,8 @@ object ScenarioReportWriter {
             sb.append(",\"distanceConfidence\":").append(fmt(e.input.distanceConfidence))
             sb.append(",\"approachSpeedMps\":").append(fmt(e.input.approachSpeedMps))
             sb.append(",\"ttcSec\":").append(fmt(e.input.ttcSec))
+            sb.append(",\"ttcHeightSec\":").append(fmt(e.input.ttcHeightSec))
+            sb.append(",\"ttcDistSec\":").append(fmt(e.input.ttcDistSec))
             sb.append(",\"ttcSlopeSecPerSec\":").append(fmt(e.input.ttcSlopeSecPerSec))
             sb.append(",\"roiContainment\":").append(fmt(e.input.roiContainment))
             sb.append(",\"egoOffsetN\":").append(fmt(e.input.egoOffsetN))
@@ -290,6 +292,16 @@ object ScenarioReportWriter {
             } else {
                 sb.append(",\"leanDeg\":null")
             }
+            sb.append(",\"boxHeightPx\":").append(fmt(e.input.boxHeightPx))
+            sb.append(",\"trackedPresent\":").append(if (e.input.trackedPresent) "true" else "false")
+            sb.append(",\"bottomOccluded\":").append(if (e.input.bottomOccluded) "true" else "false")
+            sb.append(",\"occlConfirmed\":").append(if (e.input.occlConfirmed) "true" else "false")
+            sb.append(",\"relDerivValid\":").append(if (e.input.relDerivValid) "true" else "false")
+            sb.append(",\"relSignedSampleMps\":").append(fmt(e.input.relSignedSampleMps))
+            sb.append(",\"relSignedEmaMps\":").append(fmt(e.input.relSignedEmaMps))
+            sb.append(",\"suppressRecedingHard\":").append(if (e.input.suppressRecedingHard) "true" else "false")
+            sb.append(",\"suppressSteadyGapHard\":").append(if (e.input.suppressSteadyGapHard) "true" else "false")
+            sb.append(",\"segmentLabel\":\"").append(escape(e.input.segmentLabel)).append("\"")
             sb.append("}")
 
             sb.append(",\"out\":{")

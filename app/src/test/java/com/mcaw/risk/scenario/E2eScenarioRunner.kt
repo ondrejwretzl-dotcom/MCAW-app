@@ -27,7 +27,8 @@ object E2eScenarioRunner {
         var prevTtcSec = Float.NaN
 
         for (f in frames) {
-            val relSignedSample = if (prevDist.isFinite()) (prevDist - f.distM) * s.config.hz else 0f
+            val relDerivValid = prevDist.isFinite()
+            val relSignedSample = if (relDerivValid) (prevDist - f.distM) * s.config.hz else 0f
             val out = core.update(
                 tsMs = f.tsMs,
                 distanceM = f.distM,
@@ -107,6 +108,8 @@ object E2eScenarioRunner {
                     distanceConfidence = distanceConfidence,
                     approachSpeedMps = rel,
                     ttcSec = out.ttcSec,
+                    ttcHeightSec = Float.NaN,
+                    ttcDistSec = if (rel > 0.05f) f.distM / rel else Float.NaN,
                     ttcSlopeSecPerSec = ttcSlope,
                     roiContainment = f.roiContainment,
                     egoOffsetN = f.egoOffsetN,
@@ -119,7 +122,17 @@ object E2eScenarioRunner {
                     riderSpeedMps = f.riderSpeedMps,
                     riderSpeedConfidence = f.riderSpeedConfidence,
                     egoBrakingConfidence = f.egoBrakingConfidence,
-                    leanDeg = f.leanDeg
+                    leanDeg = f.leanDeg,
+                    boxHeightPx = f.boxHeightPx,
+                    trackedPresent = f.trackedPresent,
+                    bottomOccluded = f.bottomOccluded,
+                    occlConfirmed = f.occlConfirmed,
+                    relDerivValid = relDerivValid,
+                    relSignedSampleMps = relSignedSample,
+                    relSignedEmaMps = out.relSignedEmaMps,
+                    suppressRecedingHard = out.suppressRecedingHard,
+                    suppressSteadyGapHard = out.suppressSteadyGapHard,
+                    segmentLabel = f.segLabel
                 ),
                 output = FrameTraceOutput(risk.level, risk.riskScore, risk.reasonBits)
             )

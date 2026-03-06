@@ -124,6 +124,8 @@ object ScenarioRunner {
                         distanceConfidence = distanceConfidence,
                         approachSpeedMps = rel,
                         ttcSec = f.ttcSec,
+                        ttcHeightSec = f.ttcSec,
+                        ttcDistSec = f.ttcSec,
                         ttcSlopeSecPerSec = f.ttcSlope,
                         roiContainment = f.roiContainment,
                         egoOffsetN = f.egoOffsetN,
@@ -136,7 +138,17 @@ object ScenarioRunner {
                         riderSpeedMps = f.riderSpeedMps,
                         riderSpeedConfidence = f.riderSpeedConfidence,
                         egoBrakingConfidence = f.egoBrakingConfidence,
-                        leanDeg = f.leanDeg
+                        leanDeg = f.leanDeg,
+                        boxHeightPx = f.boxHeightPx,
+                        trackedPresent = f.trackedPresent,
+                        bottomOccluded = f.bottomOccluded,
+                        occlConfirmed = f.occlConfirmed,
+                        relDerivValid = trendOut.relDerivValid,
+                        relSignedSampleMps = f.relMpsRaw,
+                        relSignedEmaMps = relSigned,
+                        suppressRecedingHard = trendOut.suppressRecedingHard,
+                        suppressSteadyGapHard = trendOut.suppressSteadyGapHard,
+                        segmentLabel = f.segLabel
                     ),
                     output = FrameTraceOutput(
                         level = r.level,

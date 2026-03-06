@@ -1068,9 +1068,12 @@ object ScenarioCatalogFactory {
 
     private fun e2eTtcHeightInvalidWindowDuringClosing(): E2eScenario {
         val hazard = 3.0f
+        val invalidFrom = hazard + 0.7f
+        val invalidTo = hazard + 1.2f
+        val closeEnd = hazard + 2.2f
         return E2eScenario(
             id = "E2E_TTC_HEIGHT_INVALID_WINDOW_DURING_CLOSING",
-                        title = "E2E: TTC height invalid window during closing",
+            title = "E2E: TTC height invalid window during closing",
             domain = Domain.CITY,
             vehicle = Vehicle.CAR,
             doc = doc(
@@ -1095,15 +1098,30 @@ object ScenarioCatalogFactory {
                 Expectation.MaxTransitionsInWindow(3, 5f, "Stable")
             ),
             segments = listOf(
-                E2eSegment(0f, hazard, "follow", distM = { 34f }, boxHeightPx = { 80f }),
+                E2eSegment(
+                    tFromSec = 0f,
+                    tToSec = hazard,
+                    label = "follow",
+                    distM = { 34f },
+                    boxHeightPx = { 80f }
+                ),
                 E2eSegment(
                     tFromSec = hazard,
+                    tToSec = closeEnd,
+                    label = "closing with height invalid window",
+                    distM = { t -> 34f - (t - hazard) * 7.0f },
+                    boxHeightPx = { t -> if (t in invalidFrom..invalidTo) 0f else 80f + (t - hazard) * 24f },
+                    bottomOccluded = { t -> t in invalidFrom..invalidTo },
+                    occlusionConfirmed = { t -> t in invalidFrom..invalidTo }
+                ),
+                E2eSegment(
+                    tFromSec = closeEnd,
                     tToSec = 9f,
-                    label = "closing",
-                    distM = { t -> max(7f, 34f - (t - hazard) * 5.4f) },
-                    boxHeightPx = { t -> if (t in (hazard + 0.7f)..(hazard + 1.2f)) 0f else 80f + (t - hazard) * 15f },
-                    bottomOccluded = { t -> t in (hazard + 0.7f)..(hazard + 1.2f) },
-                    occlusionConfirmed = { t -> t in (hazard + 0.7f)..(hazard + 1.2f) }
+                    label = "caution follow after bridge",
+                    distM = { t -> max(15.8f, 18.6f - (t - closeEnd) * 0.75f) },
+                    boxHeightPx = { t -> 132f + (t - closeEnd) * 2.5f },
+                    bottomOccluded = { false },
+                    occlusionConfirmed = { false }
                 )
             )
         )

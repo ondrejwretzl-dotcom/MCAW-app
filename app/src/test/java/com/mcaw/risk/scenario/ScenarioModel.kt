@@ -230,6 +230,8 @@ data class FrameTraceInput(
     val distanceConfidence: Float,
     val approachSpeedMps: Float,
     val ttcSec: Float,
+    val ttcHeightSec: Float = Float.NaN,
+    val ttcDistSec: Float = Float.NaN,
     val ttcSlopeSecPerSec: Float,
     val roiContainment: Float,
     val egoOffsetN: Float,
@@ -242,7 +244,17 @@ data class FrameTraceInput(
     val riderSpeedMps: Float,
     val riderSpeedConfidence: Float,
     val egoBrakingConfidence: Float,
-    val leanDeg: Float
+    val leanDeg: Float,
+    val boxHeightPx: Float = Float.NaN,
+    val trackedPresent: Boolean = true,
+    val bottomOccluded: Boolean = false,
+    val occlConfirmed: Boolean = false,
+    val relDerivValid: Boolean = false,
+    val relSignedSampleMps: Float = Float.NaN,
+    val relSignedEmaMps: Float = Float.NaN,
+    val suppressRecedingHard: Boolean = false,
+    val suppressSteadyGapHard: Boolean = false,
+    val segmentLabel: String = ""
 )
 
 data class FrameTraceOutput(val level: Int, val riskScore: Float, val reasonBits: Int)

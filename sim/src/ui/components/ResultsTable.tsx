@@ -1,11 +1,22 @@
 import React from 'react';
 import { round3 } from '../lib/utils';
+import { InfoTip } from './InfoTip';
 
 export type TableRow = {
   tSec: number;
   distanceM: number;
   relMps: number;
+  relSignedSampleMps?: number;
+  relDerivValid?: boolean;
   ttcSec: number;
+  ttcHeightSec?: number;
+  ttcDistSec?: number;
+  boxHeightPx?: number;
+  trackedPresent?: boolean;
+  bottomOccluded?: boolean;
+  occlConfirmed?: boolean;
+  suppressRecedingHard?: boolean;
+  suppressSteadyGapHard?: boolean;
   speedKmh: number;
 
   baseRisk: number;
@@ -46,24 +57,34 @@ export function ResultsTable(props: {
           <thead>
             <tr>
               {[
-                't(s)',
-                'dist(m)',
-                'rel(m/s)',
-                'ttc(s)',
-                'speed(km/h)',
-                'baseRisk',
-                'baseLvl',
-                'baseReason',
-                hasTuned ? 'tunedRisk' : '',
-                hasTuned ? 'tunedLvl' : '',
-                hasTuned ? 'tunedReason' : '',
-                hasTuned ? 'distOrangeM' : '',
-                hasTuned ? 'distRedM' : '',
-              ]
-                .filter(Boolean)
-                .map((h) => (
-                  <th key={h} style={{ textAlign: 'left', borderBottom: '1px solid #ddd', padding: '6px 8px', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fff', zIndex: 1 }}>
-                    {h}
+                { key: 'tSec', label: 't(s)', info: 'Čas snímku v sekundách od začátku scénáře.' },
+                { key: 'distanceM', label: 'dist(m)', info: 'Vzdálenost použitá do RiskEngine po případném vyhlazení.' },
+                { key: 'relMps', label: 'relEma(m/s)', info: 'EMA relativní rychlosti. Kladné = přibližování, záporné = vzdalování.' },
+                { key: 'relSignedSampleMps', label: 'relRaw(m/s)', info: 'Surový derivovaný vzorek relativní rychlosti z distance mezi snímky.' },
+                { key: 'relDerivValid', label: 'relValid', info: 'Zda je derivace REL už zahřátá a použitelná.' },
+                { key: 'ttcSec', label: 'ttcFused(s)', info: 'Finální TTC použitý do RiskEngine po fusion/bridge.' },
+                { key: 'ttcHeightSec', label: 'ttcHeight(s)', info: 'TTC z image trendu / výšky bboxu. Když je neplatné, bývá prázdné nebo NaN.' },
+                { key: 'ttcDistSec', label: 'ttcDist(s)', info: 'Pomocné TTC z distance a REL. U E2E slouží jako fallback / diagnostika.' },
+                { key: 'boxHeightPx', label: 'boxH(px)', info: 'Výška bboxu v pixelech. Nula / propad typicky znamená výpadek height TTC.' },
+                { key: 'trackedPresent', label: 'tracked', info: 'Zda tracker považuje target za přítomný.' },
+                { key: 'bottomOccluded', label: 'bottomOcc', info: 'Spodní část bboxu je okludovaná.' },
+                { key: 'occlConfirmed', label: 'occConf', info: 'Okluze je potvrzená stabilněji než jednorázový šum.' },
+                { key: 'suppressRecedingHard', label: 'supRec', info: 'Hard suppress pro vzdalující se target.' },
+                { key: 'suppressSteadyGapHard', label: 'supGap', info: 'Hard suppress pro stabilní mezeru / follow.' },
+                { key: 'speedKmh', label: 'speed(km/h)', info: 'Rychlost jezdce / ego vozidla.' },
+                { key: 'baseRisk', label: 'baseRisk', info: 'Risk score základního enginu.' },
+                { key: 'baseLevel', label: 'baseLvl', info: 'Alert level základního enginu.' },
+                { key: 'baseReasonBits', label: 'baseReason', info: 'Bitové reason ID základního enginu.' },
+                ...(hasTuned ? [
+                  { key: 'tunedRisk', label: 'tunedRisk', info: 'Risk score v CUSTOM režimu.' },
+                  { key: 'tunedLevel', label: 'tunedLvl', info: 'Alert level v CUSTOM režimu.' },
+                  { key: 'tunedReasonBits', label: 'tunedReason', info: 'Reason ID v CUSTOM režimu.' },
+                  { key: 'distOrangeM', label: 'distOrangeM', info: 'Efektivní ORANGE distance threshold v CUSTOM režimu.' },
+                  { key: 'distRedM', label: 'distRedM', info: 'Efektivní RED distance threshold v CUSTOM režimu.' },
+                ] : []),
+              ].map((h) => (
+                  <th key={h.key} style={{ textAlign: 'left', borderBottom: '1px solid #ddd', padding: '6px 8px', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fff', zIndex: 1 }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>{h.label}<InfoTip text={h.info} /></span>
                   </th>
                 ))}
             </tr>
@@ -74,7 +95,17 @@ export function ResultsTable(props: {
                 <td style={{ padding: '6px 8px' }}>{round3(r.tSec)}</td>
                 <td style={{ padding: '6px 8px' }}>{round3(r.distanceM)}</td>
                 <td style={{ padding: '6px 8px' }}>{Number.isFinite(r.relMps) ? round3(r.relMps) : "—"}</td>
+                <td style={{ padding: '6px 8px' }}>{r.relSignedSampleMps != null && Number.isFinite(r.relSignedSampleMps) ? round3(r.relSignedSampleMps) : "—"}</td>
+                <td style={{ padding: '6px 8px' }}>{r.relDerivValid == null ? '' : (r.relDerivValid ? 'Y' : 'N')}</td>
                 <td style={{ padding: '6px 8px' }}>{round3(r.ttcSec)}</td>
+                <td style={{ padding: '6px 8px' }}>{r.ttcHeightSec != null && Number.isFinite(r.ttcHeightSec) ? round3(r.ttcHeightSec) : "—"}</td>
+                <td style={{ padding: '6px 8px' }}>{r.ttcDistSec != null && Number.isFinite(r.ttcDistSec) ? round3(r.ttcDistSec) : "—"}</td>
+                <td style={{ padding: '6px 8px' }}>{r.boxHeightPx != null && Number.isFinite(r.boxHeightPx) ? round3(r.boxHeightPx) : "—"}</td>
+                <td style={{ padding: '6px 8px' }}>{r.trackedPresent == null ? '' : (r.trackedPresent ? 'Y' : 'N')}</td>
+                <td style={{ padding: '6px 8px' }}>{r.bottomOccluded == null ? '' : (r.bottomOccluded ? 'Y' : 'N')}</td>
+                <td style={{ padding: '6px 8px' }}>{r.occlConfirmed == null ? '' : (r.occlConfirmed ? 'Y' : 'N')}</td>
+                <td style={{ padding: '6px 8px' }}>{r.suppressRecedingHard == null ? '' : (r.suppressRecedingHard ? 'Y' : 'N')}</td>
+                <td style={{ padding: '6px 8px' }}>{r.suppressSteadyGapHard == null ? '' : (r.suppressSteadyGapHard ? 'Y' : 'N')}</td>
                 <td style={{ padding: '6px 8px' }}>{round3(r.speedKmh)}</td>
                 <td style={{ padding: '6px 8px' }}>{round3(r.baseRisk)}</td>
                 <td style={{ padding: '6px 8px' }}>{r.baseLevel}</td>
