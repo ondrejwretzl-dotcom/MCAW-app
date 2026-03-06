@@ -15,40 +15,40 @@ function Card({ title, lines }: { title: string; lines: string[] }) {
 }
 
 export function SummaryCards(props: {
-  baseFirstOrange?: number | null;
-  baseFirstRed?: number | null;
-  tunedFirstOrange?: number | null;
-  tunedFirstRed?: number | null;
+  referenceFirstOrange?: number | null;
+  referenceFirstRed?: number | null;
+  simulatedFirstOrange?: number | null;
+  simulatedFirstRed?: number | null;
   mismatchCount?: number | null;
-  hasKotlinOut?: boolean;
-  hasTuned: boolean;
+  hasReferenceOut?: boolean;
+  hasSimulated: boolean;
 }) {
-  const { baseFirstOrange, baseFirstRed, tunedFirstOrange, tunedFirstRed, mismatchCount, hasKotlinOut, hasTuned } = props;
+  const { referenceFirstOrange, referenceFirstRed, simulatedFirstOrange, simulatedFirstRed, mismatchCount, hasReferenceOut, hasSimulated } = props;
 
   return (
     <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 12 }}>
       <Card
-        title="Baseline"
+        title="Reference"
         lines={[
-          `first ORANGE: ${baseFirstOrange == null ? '—' : `${round3(baseFirstOrange)}s`}`,
-          `first RED: ${baseFirstRed == null ? '—' : `${round3(baseFirstRed)}s`}`,
+          `first ORANGE: ${referenceFirstOrange == null ? '—' : `${round3(referenceFirstOrange)}s`}`,
+          `first RED: ${referenceFirstRed == null ? '—' : `${round3(referenceFirstRed)}s`}`,
         ]}
       />
-      {hasTuned && (
+      {hasSimulated && (
         <Card
-          title="What-if"
+          title="Simulation"
           lines={[
-            `first ORANGE: ${tunedFirstOrange == null ? '—' : `${round3(tunedFirstOrange)}s`}`,
-            `first RED: ${tunedFirstRed == null ? '—' : `${round3(tunedFirstRed)}s`}`,
+            `first ORANGE: ${simulatedFirstOrange == null ? '—' : `${round3(simulatedFirstOrange)}s`}`,
+            `first RED: ${simulatedFirstRed == null ? '—' : `${round3(simulatedFirstRed)}s`}`,
           ]}
         />
       )}
-      {hasKotlinOut && (
+      {hasReferenceOut && (
         <Card
-          title="Golden compare"
+          title="Parity compare"
           lines={[
             `mismatches: ${mismatchCount == null ? '—' : mismatchCount}`,
-            mismatchCount === 0 ? '✅ engine matches Kotlin output' : '⚠ see diffs / table',
+            mismatchCount === 0 ? '✅ simulator default matches reference' : '⚠ see parity diffs in table',
           ]}
         />
       )}

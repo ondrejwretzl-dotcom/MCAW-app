@@ -50,28 +50,28 @@ export function PlotsPanel(props: {
   const riskData: any[] = [];
   {
     const { xs, ys } = sanitize(t, baseEma);
-    if (xs.length >= 2) riskData.push({ type: 'scatter', x: xs, y: ys, name: 'emaRisk (baseline)', mode: 'lines', connectgaps: true, showlegend: true });
+    if (xs.length >= 2) riskData.push({ type: 'scatter', x: xs, y: ys, name: 'emaRisk (reference)', mode: 'lines', connectgaps: true, showlegend: true });
   }
   if (baseRaw) {
     const { xs, ys } = sanitize(t, baseRaw);
-    if (xs.length >= 2) riskData.push({ type: 'scatter', x: xs, y: ys, name: 'rawRisk (baseline)', mode: 'lines', connectgaps: true, showlegend: true });
+    if (xs.length >= 2) riskData.push({ type: 'scatter', x: xs, y: ys, name: 'rawRisk (reference)', mode: 'lines', connectgaps: true, showlegend: true });
   }
   if (tunedEma) {
     const { xs, ys } = sanitize(t, tunedEma);
-    if (xs.length >= 2) riskData.push({ type: 'scatter', x: xs, y: ys, name: 'emaRisk (what-if)', mode: 'lines', line: { dash: 'dot' }, connectgaps: true, showlegend: true });
+    if (xs.length >= 2) riskData.push({ type: 'scatter', x: xs, y: ys, name: 'emaRisk (simulation)', mode: 'lines', line: { dash: 'dot' }, connectgaps: true, showlegend: true });
   }
   if (tunedRaw) {
     const { xs, ys } = sanitize(t, tunedRaw);
-    if (xs.length >= 2) riskData.push({ type: 'scatter', x: xs, y: ys, name: 'rawRisk (what-if)', mode: 'lines', line: { dash: 'dot' }, connectgaps: true, showlegend: true });
+    if (xs.length >= 2) riskData.push({ type: 'scatter', x: xs, y: ys, name: 'rawRisk (simulation)', mode: 'lines', line: { dash: 'dot' }, connectgaps: true, showlegend: true });
   }
 
   if (baseLevel) {
     const { xs, ys } = sanitize(t, baseLevel);
-    if (xs.length >= 2) riskData.push({ type: 'scatter', x: xs, y: ys, name: 'level (baseline)', mode: 'lines', yaxis: 'y2', connectgaps: true, showlegend: true });
+    if (xs.length >= 2) riskData.push({ type: 'scatter', x: xs, y: ys, name: 'level (reference)', mode: 'lines', yaxis: 'y2', connectgaps: true, showlegend: true });
   }
   if (tunedLevel) {
     const { xs, ys } = sanitize(t, tunedLevel);
-    if (xs.length >= 2) riskData.push({ type: 'scatter', x: xs, y: ys, name: 'level (what-if)', mode: 'lines', yaxis: 'y2', line: { dash: 'dot' }, connectgaps: true, showlegend: true });
+    if (xs.length >= 2) riskData.push({ type: 'scatter', x: xs, y: ys, name: 'level (simulation)', mode: 'lines', yaxis: 'y2', line: { dash: 'dot' }, connectgaps: true, showlegend: true });
   }
 
   const distanceSeries = inputSeries.find((s) => s.name === 'distance (m)');

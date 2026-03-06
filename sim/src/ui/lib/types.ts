@@ -37,6 +37,8 @@ export type FrameOut = {
   level: number;
   riskScore: number;
   reasonBits: number;
+  rawRisk?: number;
+  emaRisk?: number;
 };
 
 export type FrameRow = {

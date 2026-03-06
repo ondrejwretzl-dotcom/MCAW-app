@@ -168,7 +168,21 @@ object E2eScenarioRunner {
 
     private fun runExpectations(s: E2eScenario, frames: List<SimFrame>, levels: List<Int>): List<Verdict> {
         val out = ArrayList<Verdict>(s.expectations.size)
-        fun firstTimeAtOrAbove(level: Int): Float? = levels.indexOfFirst { it >= level }.takeIf { it >= 0 }?.let { frames[it].tSec }
+
+        fun firstTimeAtOrAbove(level: Int): Float? {
+            val idx = levels.indexOfFirst { it >= level }
+            return if (idx >= 0) frames[idx].tSec else null
+        }
+
+        fun firstTimeAtOrBelowFrom(level: Int, startTimeSec: Float): Float? {
+            val idx0 = frames.indexOfFirst { it.tSec + 1e-6f >= startTimeSec }
+            if (idx0 < 0) return null
+            for (i in idx0 until frames.size) {
+                if (levels[i] <= level) return frames[i].tSec
+            }
+            return null
+        }
+
         fun maxTransitions(windowSec: Float): Int {
             var maxT = 0
             for (i in frames.indices) {
@@ -177,24 +191,52 @@ object E2eScenarioRunner {
                 var t = 0
                 var j = i + 1
                 while (j < frames.size && frames[j].tSec - t0 <= windowSec) {
-                    if (levels[j] != last) { t++; last = levels[j] }
+                    if (levels[j] != last) {
+                        t++
+                        last = levels[j]
+                    }
                     j++
                 }
                 maxT = maxOf(maxT, t)
             }
             return maxT
         }
+
         for (e in s.expectations) when (e) {
-            is Expectation.MustEnterLevelBy -> out += Verdict(firstTimeAtOrAbove(e.level)?.let { it <= e.hazardTimeSec + e.latestSecAfterHazard + 1e-3f } == true, "MustEnterLevelBy(level=${e.level})", e.message)
-            is Expectation.MustExitToLevelBy -> {
-                val idx0 = frames.indexOfFirst { it.tSec + 1e-6f >= e.startTimeSec }
-                val first = if (idx0 >= 0) {
-                    (idx0 until frames.size).firstOrNull { levels[it] <= e.level }?.let { frames[it].tSec }
-                } else null
-                out += Verdict(first?.let { it <= e.startTimeSec + e.latestSecAfterStart + 1e-3f } == true, "MustExitToLevelBy(level<=${e.level})", e.message)
+            is Expectation.MustEnterLevelBy -> {
+                val first = firstTimeAtOrAbove(e.level)
+                val deadline = e.hazardTimeSec + e.latestSecAfterHazard
+                val maxLevel = levels.maxOrNull() ?: 0
+                val firstOrange = firstTimeAtOrAbove(1)
+                val firstRed = firstTimeAtOrAbove(2)
+                val ok = first != null && first <= deadline + 1e-3f
+                val details = if (first == null) {
+                    "Nikdy nedošlo k level>=${e.level} (deadline t<=${fmt(deadline)}s, hazard t=${fmt(e.hazardTimeSec)}s, maxLevel=$maxLevel, firstOrange=${firstOrange?.let { fmt(it) + "s" } ?: "n/a"}, firstRed=${firstRed?.let { fmt(it) + "s" } ?: "n/a"})."
+                } else {
+                    "Dosaženo v t=${fmt(first)}s; deadline t<=${fmt(deadline)}s (hazard t=${fmt(e.hazardTimeSec)}s, maxLevel=$maxLevel, firstOrange=${firstOrange?.let { fmt(it) + "s" } ?: "n/a"}, firstRed=${firstRed?.let { fmt(it) + "s" } ?: "n/a"})."
+                }
+                out += Verdict(ok, "MustEnterLevelBy(level=${e.level})", "${e.message} :: $details")
             }
-            is Expectation.MustNotEnterLevel -> out += Verdict(levels.none { it >= e.level }, "MustNotEnterLevel(level=${e.level})", e.message)
-            is Expectation.MaxTransitionsInWindow -> out += Verdict(maxTransitions(e.windowSec) <= e.maxTransitions, "MaxTransitionsInWindow(max=${e.maxTransitions})", e.message)
+            is Expectation.MustExitToLevelBy -> {
+                val first = firstTimeAtOrBelowFrom(level = e.level, startTimeSec = e.startTimeSec)
+                val deadline = e.startTimeSec + e.latestSecAfterStart
+                val ok = first != null && first <= deadline + 1e-3f
+                val details = if (first == null) {
+                    "Nikdy nedošlo k level<=${e.level} po t>=${fmt(e.startTimeSec)}s (deadline t<=${fmt(deadline)}s)."
+                } else {
+                    "Dosaženo v t=${fmt(first)}s; deadline t<=${fmt(deadline)}s (start t=${fmt(e.startTimeSec)}s)."
+                }
+                out += Verdict(ok, "MustExitToLevelBy(level<=${e.level})", "${e.message} :: $details")
+            }
+            is Expectation.MustNotEnterLevel -> {
+                val ok = levels.none { it >= e.level }
+                val details = if (ok) "OK (nikdy nedošlo k level>=${e.level})." else "NESPLNĚNO (došlo k level>=${e.level})."
+                out += Verdict(ok, "MustNotEnterLevel(level=${e.level})", "${e.message} :: $details")
+            }
+            is Expectation.MaxTransitionsInWindow -> {
+                val mx = maxTransitions(e.windowSec)
+                out += Verdict(mx <= e.maxTransitions, "MaxTransitionsInWindow(max=${e.maxTransitions})", "${e.message} :: maxTransitions=$mx")
+            }
             is Expectation.MustNotAlertWhenTtcInvalidAndRelLow -> out += Verdict(true, "MustNotAlertWhenTtcInvalidAndRelLow", e.message)
         }
         return out
@@ -221,4 +263,6 @@ object E2eScenarioRunner {
         }
         return mx
     }
+
+    private fun fmt(v: Float): String = String.format("%.2f", v)
 }

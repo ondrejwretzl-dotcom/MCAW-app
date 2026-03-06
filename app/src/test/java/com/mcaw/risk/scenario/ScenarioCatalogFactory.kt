@@ -1115,7 +1115,7 @@ object ScenarioCatalogFactory {
                     occlusionConfirmed = { t -> t in invalidFrom..invalidTo }
                 ),
                 E2eSegment(
-                    tFromSec = closeEnd,
+                    tFromSec = closeEnd + 0.1f,
                     tToSec = 9f,
                     label = "caution follow after bridge",
                     distM = { t -> max(15.8f, 18.6f - (t - closeEnd) * 0.75f) },

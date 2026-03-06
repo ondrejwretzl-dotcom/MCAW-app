@@ -306,7 +306,14 @@ function normalizeFrameEvent(it: any, base: string): { id: string; tSec: number;
     distanceM: toFiniteOrUndef(it.distanceM) ?? toFiniteOrUndef(it.distM) ?? 0,
     approachSpeedMps: toFiniteOrUndef(it.approachSpeedMps) ?? toFiniteOrUndef(it.approachSpeed) ?? toFiniteOrUndef(it.relV) ?? 0,
     ttcSec: toFiniteOrUndef(it.ttcSec) ?? toFiniteOrUndef(it.ttc) ?? 0,
+    ttcHeightSec: toFiniteOrUndef(it.ttcHeightSec),
+    ttcDistSec: toFiniteOrUndef(it.ttcDistSec),
     ttcSlopeSecPerSec: toFiniteOrUndef(it.ttcSlopeSecPerSec) ?? 0,
+    relDerivValid: it.relDerivValid == null ? undefined : Boolean(it.relDerivValid),
+    relSignedSampleMps: toFiniteOrUndef(it.relSignedSampleMps),
+    boxHeightPx: toFiniteOrUndef(it.boxHeightPx),
+    trackedPresent: it.trackedPresent == null ? undefined : Boolean(it.trackedPresent),
+    occlConfirmed: it.occlConfirmed == null ? undefined : Boolean(it.occlConfirmed),
     roiContainment: toFiniteOrUndef(it.roiContainment) ?? toFiniteOrUndef(it.roi) ?? 1,
     qualityWeight: toFiniteOrUndef(it.qualityWeight) ?? toFiniteOrUndef(it.quality) ?? 1,
     brakeCueActive: Boolean(it.brakeCueActive ?? it.brakeCue ?? false),
@@ -319,7 +326,11 @@ function normalizeFrameEvent(it: any, base: string): { id: string; tSec: number;
     riderSpeedMps: toFiniteOrUndef(it.riderSpeedMps),
     riderSpeedConfidence: toFiniteOrUndef(it.riderSpeedConfidence),
     leanDeg: it.leanDeg ?? null,
+    bottomOccluded: it.bottomOccluded == null ? undefined : Boolean(it.bottomOccluded),
+    suppressRecedingHard: it.suppressRecedingHard == null ? undefined : Boolean(it.suppressRecedingHard),
+    suppressSteadyGapHard: it.suppressSteadyGapHard == null ? undefined : Boolean(it.suppressSteadyGapHard),
   } as any;
+  (input as any).relSignedEmaMps = toFiniteOrUndef(it.relSignedEmaMps);
 
   const out: FrameOut | undefined =
     it.level !== undefined || it.riskScore !== undefined || it.reasonBits !== undefined
@@ -327,6 +338,8 @@ function normalizeFrameEvent(it: any, base: string): { id: string; tSec: number;
           level: toFiniteOrUndef(it.level) ?? 0,
           riskScore: toFiniteOrUndef(it.riskScore) ?? 0,
           reasonBits: toFiniteOrUndef(it.reasonBits) ?? 0,
+          rawRisk: toFiniteOrUndef(it.rawRisk),
+          emaRisk: toFiniteOrUndef(it.emaRisk),
         } as any)
       : undefined;
 
@@ -437,31 +450,39 @@ export function App() {
     const frames = activeFrames;
     if (frames.length === 0) return null;
 
-    const engBase = new RiskEngineRef();
-    const engTuned = new RiskEngineRef();
+    const engDefault = new RiskEngineRef();
+    const engCustom = new RiskEngineRef();
 
     const t: number[] = [];
-    const baseRisk: number[] = [];
-    const baseLevel: number[] = [];
-    const baseReason: number[] = [];
-    const baseRaw: number[] = [];
-    const baseEma: number[] = [];
+    const defaultRisk: number[] = [];
+    const defaultLevel: number[] = [];
+    const defaultReason: number[] = [];
+    const defaultRaw: number[] = [];
+    const defaultEma: number[] = [];
 
-    const tunedRisk: number[] = [];
-    const tunedLevel: number[] = [];
-    const tunedReason: number[] = [];
-    const tunedRaw: number[] = [];
-    const tunedEma: number[] = [];
-    const tunedDistOrange: number[] = [];
-    const tunedDistRed: number[] = [];
+    const referenceRisk: number[] = [];
+    const referenceLevel: number[] = [];
+    const referenceReason: number[] = [];
+    const referenceRaw: number[] = [];
+    const referenceEma: number[] = [];
+
+    const simulatedRisk: number[] = [];
+    const simulatedLevel: number[] = [];
+    const simulatedReason: number[] = [];
+    const simulatedRaw: number[] = [];
+    const simulatedEma: number[] = [];
+    const simulatedDistOrange: number[] = [];
+    const simulatedDistRed: number[] = [];
+
     const relDerivedMps: number[] = [];
     const relDerivedValid: boolean[] = [];
 
-    let baseThrFull: any = null;
-
+    let refThrFull: any = null;
     let mismatch = 0;
+    const hasReferenceOut = dataSource === 'upload' && frames.some((f) => !!f.outKotlin);
+
     const relState = new RelStabilityState();
-    const tunedTtcState: TtcTuneState = {
+    const customTtcState: TtcTuneState = {
       lastTsMs: -1,
       ttcHeightHeld: Number.NaN,
       ttcHeightHeldTsMs: -1,
@@ -473,8 +494,9 @@ export function App() {
 
     for (const fr of frames) {
       const input = fr.in;
+      const tsMs = Math.round(fr.tSec * 1000);
       const relFrame = relState.step({
-        tsMs: Math.round(fr.tSec * 1000),
+        tsMs,
         distanceM: Number(input.distanceM),
         hasBest: Boolean(input.hasBest ?? true),
         bestId: input.bestId === undefined ? undefined : Number(input.bestId),
@@ -482,10 +504,14 @@ export function App() {
         riderSpeedKnown: Number.isFinite(Number(input.riderSpeedMps)),
       });
 
-      relDerivedMps.push(Number(relFrame.relSignedEmaMps));
-      relDerivedValid.push(Boolean(relFrame.relDerivValid));
+      const relEma = Number((input as any).relSignedEmaMps);
+      const relValidFromInput = (input as any).relDerivValid == null ? undefined : Boolean((input as any).relDerivValid);
+      relDerivedMps.push(Number.isFinite(relEma) ? relEma : Number(relFrame.relSignedEmaMps));
+      relDerivedValid.push(relValidFromInput ?? Boolean(relFrame.relDerivValid));
 
-      const approachForRisk = Number(relFrame.relDerivValid ? Math.abs(relFrame.relSignedEmaMps) : Number(input.approachSpeedMps ?? 0));
+      const approachForRisk = Number((relValidFromInput ?? relFrame.relDerivValid)
+        ? Math.abs(Number.isFinite(relEma) ? relEma : relFrame.relSignedEmaMps)
+        : Number(input.approachSpeedMps ?? 0));
       const ttcHeightSec = Number(input.ttcHeightSec ?? input.ttcSec);
       const ttcDistSec = Number(input.ttcDistSec ?? input.ttcSec);
       const ttcFusion = fuseTtc(
@@ -505,8 +531,8 @@ export function App() {
         ttcSec: ttcFusion.ttcFused,
         ttcHeightSec,
         ttcDistSec,
-        suppressRecedingHard: relFrame.trendState === 2,
-        suppressSteadyGapHard: relFrame.steadySuppressActive,
+        suppressRecedingHard: (input as any).suppressRecedingHard ?? (relFrame.trendState === 2),
+        suppressSteadyGapHard: (input as any).suppressSteadyGapHard ?? relFrame.steadySuppressActive,
         effectiveMode: Number(input.effectiveMode ?? 1),
         roiContainment: Number(input.roiContainment ?? 1),
         egoOffsetN: Number(input.egoOffsetN ?? 0),
@@ -519,35 +545,42 @@ export function App() {
         brakeCueActive: !!input.brakeCueActive,
       };
 
-      const base = (engBase as any).evaluate(evalInput);
+      const defaultOut = (engDefault as any).evaluate(evalInput);
       const effectiveMode = Number(evalInput.effectiveMode ?? 1);
       const qualityWeight = Number(evalInput.qualityWeight ?? 1);
-      baseThrFull = baseThrFull ?? (engBase as any).debugDerivedThresholds(effectiveMode, qualityWeight);
+      refThrFull = refThrFull ?? (engDefault as any).debugDerivedThresholds(effectiveMode, qualityWeight);
 
       t.push(fr.tSec);
-      baseRisk.push(Number(base.riskScore ?? 0));
-      baseLevel.push(Number(base.level ?? 0));
-      baseReason.push(Number(base.reasonBits ?? 0));
-      baseRaw.push(Number(base.rawRisk ?? base.riskScore ?? 0));
-      baseEma.push(Number(base.emaRisk ?? base.riskScore ?? 0));
+      defaultRisk.push(Number(defaultOut.riskScore ?? 0));
+      defaultLevel.push(Number(defaultOut.level ?? 0));
+      defaultReason.push(Number(defaultOut.reasonBits ?? 0));
+      defaultRaw.push(Number(defaultOut.rawRisk ?? defaultOut.riskScore ?? 0));
+      defaultEma.push(Number(defaultOut.emaRisk ?? defaultOut.riskScore ?? 0));
+
+      const refOut = fr.outKotlin ?? defaultOut;
+      referenceRisk.push(Number(refOut.riskScore ?? 0));
+      referenceLevel.push(Number(refOut.level ?? 0));
+      referenceReason.push(Number(refOut.reasonBits ?? 0));
+      referenceRaw.push(Number((refOut as any).rawRisk ?? refOut.riskScore ?? 0));
+      referenceEma.push(Number((refOut as any).emaRisk ?? refOut.riskScore ?? 0));
 
       if (fr.outKotlin) {
-        if (Number(fr.outKotlin.level) !== Number(base.level) || Number(fr.outKotlin.reasonBits) !== Number(base.reasonBits)) {
+        if (Number(fr.outKotlin.level) !== Number(defaultOut.level) || Number(fr.outKotlin.reasonBits) !== Number(defaultOut.reasonBits)) {
           mismatch++;
         }
       }
 
+      let altOut: any = null;
+      let distO = Number.NaN;
+      let distR = Number.NaN;
       if (useCustomParams) {
-        let tuned = null as any;
-        let distO = NaN;
-        let distR = NaN;
         const tunedInput: FrameIn = { ...evalInput };
-        tunedInput.ttcSec = applyCustomTtcPipeline(tunedInput, approachForRisk, Math.round(fr.tSec * 1000), customParams, tunedTtcState);
+        tunedInput.ttcSec = applyCustomTtcPipeline(tunedInput, approachForRisk, tsMs, customParams, customTtcState);
 
         if (whatIf.dynamicDistanceEnabled) {
           const v = Number(evalInput.riderSpeedMps ?? 0);
           if (Number.isFinite(v) && v > 0.1) {
-            const thr = (engTuned as any).debugDerivedThresholds(effectiveMode, qualityWeight, undefined, {
+            const thr = (engCustom as any).debugDerivedThresholds(effectiveMode, qualityWeight, undefined, {
               dynamicDistanceEnabled: whatIf.dynamicDistanceEnabled,
               dynamicDistanceOrangeSec: whatIf.orangeGapSec,
               dynamicDistanceRedSec: whatIf.redGapSec,
@@ -567,7 +600,7 @@ export function App() {
               relOrange: thr.relOrange,
               relRed: thr.relRed,
             };
-            tuned = (engTuned as any).evaluate(tunedInput, override, {
+            altOut = (engCustom as any).evaluate(tunedInput, override, {
               dynamicDistanceEnabled: whatIf.dynamicDistanceEnabled,
               dynamicDistanceOrangeSec: whatIf.orangeGapSec,
               dynamicDistanceRedSec: whatIf.redGapSec,
@@ -578,7 +611,7 @@ export function App() {
               approachHigh: customParams.approachHigh,
             });
           } else {
-            tuned = (engTuned as any).evaluate(tunedInput, undefined, {
+            altOut = (engCustom as any).evaluate(tunedInput, undefined, {
               dynamicDistanceEnabled: whatIf.dynamicDistanceEnabled,
               dynamicDistanceOrangeSec: whatIf.orangeGapSec,
               dynamicDistanceRedSec: whatIf.redGapSec,
@@ -590,53 +623,56 @@ export function App() {
             });
           }
         } else {
-          tuned = (engTuned as any).evaluate(tunedInput, undefined, {
+          altOut = (engCustom as any).evaluate(tunedInput, undefined, {
             dynamicDistanceEnabled: whatIf.dynamicDistanceEnabled,
             dynamicDistanceOrangeSec: whatIf.orangeGapSec,
             dynamicDistanceRedSec: whatIf.redGapSec,
           });
         }
+      } else if (hasReferenceOut) {
+        altOut = defaultOut;
+      }
 
-        tunedRisk.push(Number(tuned.riskScore ?? 0));
-        tunedLevel.push(Number(tuned.level ?? 0));
-        tunedReason.push(Number(tuned.reasonBits ?? 0));
-        tunedRaw.push(Number(tuned.rawRisk ?? tuned.riskScore ?? 0));
-        tunedEma.push(Number(tuned.emaRisk ?? tuned.riskScore ?? 0));
-        tunedDistOrange.push(distO);
-        tunedDistRed.push(distR);
+      if (altOut) {
+        simulatedRisk.push(Number(altOut.riskScore ?? 0));
+        simulatedLevel.push(Number(altOut.level ?? 0));
+        simulatedReason.push(Number(altOut.reasonBits ?? 0));
+        simulatedRaw.push(Number(altOut.rawRisk ?? altOut.riskScore ?? 0));
+        simulatedEma.push(Number(altOut.emaRisk ?? altOut.riskScore ?? 0));
+        simulatedDistOrange.push(distO);
+        simulatedDistRed.push(distR);
       }
     }
 
-    // thresholds
-    const thr: Thresholds = {
-      ttcOrange: Number(baseThrFull?.ttcOrange ?? 3),
-      ttcRed: Number(baseThrFull?.ttcRed ?? 2),
-      distOrangeM: Number(baseThrFull?.distOrange ?? 15),
-      distRedM: Number(baseThrFull?.distRed ?? 8),
-      relOrange: Number(baseThrFull?.relOrange ?? 3),
-      relRed: Number(baseThrFull?.relRed ?? 5),
-      orangeOn: Number(baseThrFull?.orangeOn ?? 0.45),
-      orangeOff: Number(baseThrFull?.orangeOff ?? 0.39),
-      redOn: Number(baseThrFull?.redOn ?? 0.75),
-      redOff: Number(baseThrFull?.redOff ?? 0.7),
+    const thresholds: Thresholds = {
+      ttcOrange: Number(refThrFull?.ttcOrange ?? 3),
+      ttcRed: Number(refThrFull?.ttcRed ?? 2),
+      distOrangeM: Number(refThrFull?.distOrange ?? 15),
+      distRedM: Number(refThrFull?.distRed ?? 8),
+      relOrange: Number(refThrFull?.relOrange ?? 3),
+      relRed: Number(refThrFull?.relRed ?? 5),
+      orangeOn: Number(refThrFull?.orangeOn ?? 0.45),
+      orangeOff: Number(refThrFull?.orangeOff ?? 0.39),
+      redOn: Number(refThrFull?.redOn ?? 0.75),
+      redOff: Number(refThrFull?.redOff ?? 0.7),
     };
 
-    const baseTimes = computeFirstTimes(baseLevel, t);
-    const tunedTimes = useCustomParams ? computeFirstTimes(tunedLevel, t) : { firstOrange: null, firstRed: null };
+    const referenceTimes = computeFirstTimes(referenceLevel, t);
+    const simulatedTimes = simulatedLevel.length > 0 ? computeFirstTimes(simulatedLevel, t) : { firstOrange: null, firstRed: null };
+    const hasComparison = simulatedLevel.length > 0;
 
-    // Input series
     const speedKmh = frames.map((f) => mpsToKmh(Number(f.in.riderSpeedMps ?? 0)));
     const distM = frames.map((f) => Number(f.in.distanceM));
     const relMps = relDerivedMps.map((v, i) => (relDerivedValid[i] ? v : Number.NaN));
     const ttcSec = frames.map((f) => Number(f.in.ttcSec));
 
-    // Table rows
     const rows: TableRow[] = frames.map((f, i) => ({
       tSec: f.tSec,
       distanceM: Number(f.in.distanceM),
       relMps: relDerivedValid[i] ? Number(relDerivedMps[i]) : Number.NaN,
       relSignedSampleMps: Number((f.in as any).relSignedSampleMps),
       relDerivValid: Boolean((f.in as any).relDerivValid ?? relDerivedValid[i]),
+      relSignedEmaMps: Number((f.in as any).relSignedEmaMps),
       ttcSec: Number(f.in.ttcSec),
       ttcHeightSec: Number((f.in as any).ttcHeightSec),
       ttcDistSec: Number((f.in as any).ttcDistSec),
@@ -647,24 +683,24 @@ export function App() {
       suppressRecedingHard: (f.in as any).suppressRecedingHard == null ? undefined : Boolean((f.in as any).suppressRecedingHard),
       suppressSteadyGapHard: (f.in as any).suppressSteadyGapHard == null ? undefined : Boolean((f.in as any).suppressSteadyGapHard),
       speedKmh: mpsToKmh(Number(f.in.riderSpeedMps ?? 0)),
-      baseRisk: baseRisk[i],
-      baseLevel: baseLevel[i],
-      baseReasonBits: baseReason[i],
-      tunedRisk: useCustomParams ? tunedRisk[i] : undefined,
-      tunedLevel: useCustomParams ? tunedLevel[i] : undefined,
-      tunedReasonBits: useCustomParams ? tunedReason[i] : undefined,
-      distOrangeM: useCustomParams ? tunedDistOrange[i] : undefined,
-      distRedM: useCustomParams ? tunedDistRed[i] : undefined,
+      referenceRisk: referenceRisk[i],
+      referenceLevel: referenceLevel[i],
+      referenceReasonBits: referenceReason[i],
+      simulatedRisk: hasComparison ? simulatedRisk[i] : undefined,
+      simulatedLevel: hasComparison ? simulatedLevel[i] : undefined,
+      simulatedReasonBits: hasComparison ? simulatedReason[i] : undefined,
+      distOrangeM: hasComparison ? simulatedDistOrange[i] : undefined,
+      distRedM: hasComparison ? simulatedDistRed[i] : undefined,
     }));
 
-    // CSV rows
     const csvRows = rows.map((r) => ({
       tSec: round3(r.tSec),
       distanceM: round3(r.distanceM),
       relMps: round3(r.relMps),
       relSignedSampleMps: r.relSignedSampleMps == null || !Number.isFinite(r.relSignedSampleMps as number) ? '' : round3(r.relSignedSampleMps as number),
       relDerivValid: r.relDerivValid == null ? '' : r.relDerivValid,
-      ttcSec: round3(r.ttcSec),
+      relSignedEmaMps: r.relSignedEmaMps == null || !Number.isFinite(r.relSignedEmaMps as number) ? '' : round3(r.relSignedEmaMps as number),
+      ttcSec: Number.isFinite(r.ttcSec) ? round3(r.ttcSec) : '',
       ttcHeightSec: r.ttcHeightSec == null || !Number.isFinite(r.ttcHeightSec as number) ? '' : round3(r.ttcHeightSec as number),
       ttcDistSec: r.ttcDistSec == null || !Number.isFinite(r.ttcDistSec as number) ? '' : round3(r.ttcDistSec as number),
       boxHeightPx: r.boxHeightPx == null || !Number.isFinite(r.boxHeightPx as number) ? '' : round3(r.boxHeightPx as number),
@@ -674,28 +710,29 @@ export function App() {
       suppressRecedingHard: r.suppressRecedingHard == null ? '' : r.suppressRecedingHard,
       suppressSteadyGapHard: r.suppressSteadyGapHard == null ? '' : r.suppressSteadyGapHard,
       speedKmh: round3(r.speedKmh),
-      baseRisk: round3(r.baseRisk),
-      baseLevel: r.baseLevel,
-      baseReasonBits: r.baseReasonBits,
-      tunedRisk: r.tunedRisk == null ? '' : round3(r.tunedRisk),
-      tunedLevel: r.tunedLevel ?? '',
-      tunedReasonBits: r.tunedReasonBits ?? '',
-      distOrangeM: r.distOrangeM == null ? '' : round3(r.distOrangeM),
-      distRedM: r.distRedM == null ? '' : round3(r.distRedM),
+      referenceRisk: round3(r.referenceRisk),
+      referenceLevel: r.referenceLevel,
+      referenceReasonBits: r.referenceReasonBits,
+      simulatedRisk: r.simulatedRisk == null ? '' : round3(r.simulatedRisk),
+      simulatedLevel: r.simulatedLevel ?? '',
+      simulatedReasonBits: r.simulatedReasonBits ?? '',
+      distOrangeM: r.distOrangeM == null || !Number.isFinite(r.distOrangeM) ? '' : round3(r.distOrangeM),
+      distRedM: r.distRedM == null || !Number.isFinite(r.distRedM) ? '' : round3(r.distRedM),
     }));
 
     return {
       t,
-      base: { risk: baseRisk, level: baseLevel, reason: baseReason, raw: baseRaw, ema: baseEma, first: baseTimes },
-      tuned: useCustomParams ? { risk: tunedRisk, level: tunedLevel, reason: tunedReason, raw: tunedRaw, ema: tunedEma, first: tunedTimes, distOrange: tunedDistOrange, distRed: tunedDistRed } : null,
-      thresholds: thr,
-      mismatchCount: frames.some((f) => !!f.outKotlin) ? mismatch : null,
-      hasKotlinOut: frames.some((f) => !!f.outKotlin),
+      reference: { risk: referenceRisk, level: referenceLevel, reason: referenceReason, raw: referenceRaw, ema: referenceEma, first: referenceTimes },
+      simulated: hasComparison ? { risk: simulatedRisk, level: simulatedLevel, reason: simulatedReason, raw: simulatedRaw, ema: simulatedEma, first: simulatedTimes, distOrange: simulatedDistOrange, distRed: simulatedDistRed } : null,
+      thresholds,
+      mismatchCount: hasReferenceOut ? mismatch : null,
+      hasReferenceOut,
+      hasComparison,
       input: { speedKmh, distM, relMps, ttcSec },
       rows,
       csvRows,
     };
-  }, [activeFrames, whatIf, useCustomParams, customParams]);
+  }, [activeFrames, customParams, dataSource, useCustomParams, whatIf]);
 
   const inputSeries = useMemo(() => {
     if (!simulation) return [];
@@ -918,31 +955,31 @@ export function App() {
       {dataSource === 'upload' && <MdPanel title="Show test notes (MD)" md={activeScenario?.notesMd} />}
       </section>
 
-      <section style={{ marginTop: 12 }}><h3>Results</h3><p style={{ marginTop: 0, color: "#4b5563" }}>Risk, level, and timeline computed from default or custom parameters.</p>{simulation && (
+      <section style={{ marginTop: 12 }}><h3>Results</h3><p style={{ marginTop: 0, color: "#4b5563" }}>Reference timeline from Kotlin / CI when available, plus simulator recompute for parity or custom what-if.</p>{simulation && (
         <>
           <SummaryCards
-            baseFirstOrange={simulation.base.first.firstOrange}
-            baseFirstRed={simulation.base.first.firstRed}
-            tunedFirstOrange={simulation.tuned?.first.firstOrange ?? null}
-            tunedFirstRed={simulation.tuned?.first.firstRed ?? null}
+            referenceFirstOrange={simulation.reference.first.firstOrange}
+            referenceFirstRed={simulation.reference.first.firstRed}
+            simulatedFirstOrange={simulation.simulated?.first.firstOrange ?? null}
+            simulatedFirstRed={simulation.simulated?.first.firstRed ?? null}
             mismatchCount={simulation.mismatchCount}
-            hasKotlinOut={simulation.hasKotlinOut}
-            hasTuned={!!simulation.tuned}
+            hasReferenceOut={simulation.hasReferenceOut}
+            hasSimulated={!!simulation.simulated}
           />
 
           <PlotsPanel
             t={simulation.t}
-            baseEma={simulation.base.ema}
-            tunedEma={simulation.tuned?.ema}
-            baseRaw={simulation.base.raw}
-            tunedRaw={simulation.tuned?.raw}
-            baseLevel={simulation.base.level}
-            tunedLevel={simulation.tuned?.level}
+            baseEma={simulation.reference.ema}
+            tunedEma={simulation.simulated?.ema}
+            baseRaw={simulation.reference.raw}
+            tunedRaw={simulation.simulated?.raw}
+            baseLevel={simulation.reference.level}
+            tunedLevel={simulation.simulated?.level}
             thresholds={simulation.thresholds}
-            baseFirstOrange={simulation.base.first.firstOrange}
-            baseFirstRed={simulation.base.first.firstRed}
-            tunedFirstOrange={simulation.tuned?.first.firstOrange ?? null}
-            tunedFirstRed={simulation.tuned?.first.firstRed ?? null}
+            baseFirstOrange={simulation.reference.first.firstOrange}
+            baseFirstRed={simulation.reference.first.firstRed}
+            tunedFirstOrange={simulation.simulated?.first.firstOrange ?? null}
+            tunedFirstRed={simulation.simulated?.first.firstRed ?? null}
             showInputPlot={showInputPlot}
             inputSeries={inputSeries}
             onToggleInputPlot={setShowInputPlot}
@@ -953,7 +990,7 @@ export function App() {
             rows={simulation.rows}
             showOnlyDiffs={showOnlyDiffs}
             onToggleOnlyDiffs={setShowOnlyDiffs}
-            hasTuned={!!simulation.tuned}
+            hasComparison={simulation.hasComparison}
           />
         </>
       )}
